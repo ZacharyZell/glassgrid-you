@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Swift toolchain
+        run: swift --version
+
+      - name: Check static engineering invariants
+        run: |
+          if grep -rn ":has(" Sources/; then
+            echo "Error: Forbidden CSS :has() selector found in Sources/."
+            exit 1
+          fi
+          if grep -rn "MutationObserver" Sources/; then
+            echo "Error: Forbidden MutationObserver found in Sources/."
+            exit 1
+          fi
+          if grep -rn "AudioContext" Sources/; then
+            echo "Error: Forbidden WebAudio AudioContext found in Sources/."
+            exit 1
+          fi
+          if grep -rn "ytInitialPlayerResponse" Sources/; then
+            echo "Error: Forbidden static ytInitialPlayerResponse found in Sources/."
+            exit 1
+          fi
+          echo "All static invariants passed."
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Build release binary
+        run: swift build -c release

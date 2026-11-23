@@ -1,0 +1,532 @@
+import SwiftUI
+import YouTubeMacCore
+
+/// Compact macOS 26/27 Liquid Glass control bar for Native Multiview (2-Up / 3-Up / 2×2 Quad-Box).
+struct MultiviewControlBar: View {
+    @Bindable var controller: AppController
+    @State private var isSavePresetPopoverPresented = false
+    @State private var newPresetName = ""
+
+    private var availableTabsToAdd: [BrowserTab] {
+        controller.tabs.filter { !controller.multiviewTabIDs.contains($0.id) }
+    }
+
+    private var streamCountLabel: String {
+        let count = controller.multiviewTabs.count
+        return count == 4 ? "Quad-Box" : "\(count) Streams"
+    }
+
+    var body: some View {
+        LiquidGlassGroup(spacing: 8) {
+            HStack(spacing: 10) {
+                // Active Multiview indicator + count
+                HStack(spacing: 6) {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppleTheme.accent)
+                    Text(streamCountLabel)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 26)
+                .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accent.opacity(0.14))
+
+                // Layout mode segmented capsule (Grid / Spotlight / Stacked)
+                HStack(spacing: 2) {
+                    ForEach(MultiviewLayoutMode.allCases) { mode in
+                        let isSelected = controller.multiviewLayoutMode == mode
+                        Button {
+                            controller.setMultiviewLayoutMode(mode)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: mode.systemImage)
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text(mode.title)
+                                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                            }
+                            .foregroundStyle(isSelected ? AppleTheme.accent : Color.primary.opacity(0.76))
+                            .padding(.horizontal, 9)
+                            .frame(height: 22)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(isSelected ? AppleTheme.accent.opacity(0.16) : .clear)
+                            )
+                            .contentShape(Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Multiview \(mode.title) Layout (⌘⌥G)")
+                    }
+                }
+                .padding(.horizontal, 3)
+                .frame(height: 26)
+                .appleGlass(in: Capsule(style: .continuous), interactive: true)
+
+                Spacer(minLength: 8)
+
+                // Responsive audio hint (degrades gracefully at narrow Split Screen widths with zero mid-word truncation)
+                ViewThatFits(in: .horizontal) {
+                    Text("Click any stream or press ⌘⌥1–\(controller.multiviewTabs.count) for audio")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+
+                    Text("⌘⌥1–\(controller.multiviewTabs.count) audio")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+
+                    EmptyView()
+                }
+                .layoutPriority(-1)
+
+                // Trailing action capsule: Save Layout, Add Stream, Mute All, Exit Single View
+                HStack(spacing: 6) {
+                    savePresetButton
+
+                    addStreamMenu
+
+                    Button {
+                        controller.muteAllMultiviewTiles()
+                    } label: {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "speaker.slash.fill")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text("Mute All")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, 9)
+
+                            Image(systemName: "speaker.slash.fill")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, 8)
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.84))
+                        .frame(height: 26)
+                        .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Mute All Multiview Streams")
+
+                    Button {
+                        controller.exitMultiview()
+                    } label: {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "rectangle.fill")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text("Single View")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, 10)
+
+                            HStack(spacing: 4) {
+                                Image(systemName: "rectangle.fill")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                Text("Exit")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, 9)
+                        }
+                        .foregroundStyle(.primary)
+                        .frame(height: 26)
+                        .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Exit Multiview (⌘⇧G)")
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .frame(height: 36)
+        .background(AppleTheme.canvasColor)
+        .youtubeURLDropTarget(controller: controller)
+    }
+
+    @ViewBuilder
+    private var savePresetButton: some View {
+        Button {
+            newPresetName = defaultPresetName()
+            isSavePresetPopoverPresented = true
+        } label: {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    Image(systemName: "bookmark.badge.plus")
+                        .font(.system(size: 10.5, weight: .semibold))
+                    Text("Save")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .fixedSize()
+                .padding(.horizontal, 9)
+
+                Image(systemName: "bookmark.badge.plus")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+            }
+            .foregroundStyle(Color.primary.opacity(0.86))
+            .frame(height: 26)
+            .appleGlass(in: Capsule(style: .continuous), interactive: true)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Save Current Multiview Grid as Preset")
+        .popover(isPresented: $isSavePresetPopoverPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Save Multiview Preset")
+                    .font(.system(size: 13, weight: .semibold))
+
+                TextField("e.g. NFL Sunday Quad", text: $newPresetName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit {
+                        commitSavePreset()
+                    }
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") {
+                        isSavePresetPopoverPresented = false
+                    }
+                    Button("Save Preset") {
+                        commitSavePreset()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(14)
+        }
+    }
+
+    private func defaultPresetName() -> String {
+        let count = controller.multiviewTabs.count
+        return count == 4 ? "Quad-Box Preset" : "\(count)-Stream Multiview"
+    }
+
+    private func commitSavePreset() {
+        controller.saveCurrentMultiviewAsPreset(name: newPresetName)
+        isSavePresetPopoverPresented = false
+    }
+
+    @ViewBuilder
+    private var addStreamMenu: some View {
+        let canAdd = controller.canAddMultiviewTile
+        Menu {
+            Button {
+                controller.addTileToMultiview(url: SidebarDestination.home.url)
+            } label: {
+                Label("New YouTube Stream", systemImage: "play.rectangle")
+            }
+
+            Button {
+                controller.openYouTubeTVInMultiview()
+            } label: {
+                Label("Open YouTube TV Live Guide", systemImage: "tv")
+            }
+
+            Button {
+                controller.addClipboardURLToMultiview()
+            } label: {
+                Label("Open Copied YouTube Link", systemImage: "link.badge.plus")
+            }
+
+            if !availableTabsToAdd.isEmpty {
+                Divider()
+                Section("Add Open Tab") {
+                    ForEach(availableTabsToAdd) { tab in
+                        Button {
+                            controller.addExistingTabToMultiview(id: tab.id)
+                        } label: {
+                            Text(tab.displayTitle)
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: 10.5, weight: .bold))
+                Text(canAdd ? "Add Stream" : "4 / 4")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(canAdd ? Color.primary : Color.secondary)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .tint(canAdd ? .primary : .secondary)
+        .frame(height: 26)
+        .appleGlass(in: Capsule(style: .continuous), interactive: canAdd)
+        .disabled(!canAdd)
+        .help(canAdd ? "Add a YouTube or YouTube TV stream (up to 4)" : "Maximum 4 streams active")
+    }
+}
+
+/// Non-blocking Liquid Glass tile border and top-36pt-only pill overlay aligned pixel-for-pixel
+/// with `FlippedTabHostContainerView` via `MultiviewGridLayout`.
+/// Zero hit-testable views are placed over video bodies or bottom player scrubbers.
+struct MultiviewOverlayView: View {
+    @Bindable var controller: AppController
+    @State private var hoveredActionPillTileID: UUID?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let tiles = controller.multiviewTabs
+            let frames = MultiviewGridLayout.frames(
+                forCount: tiles.count,
+                in: proxy.size,
+                mode: controller.multiviewLayoutMode
+            )
+
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(tiles.enumerated()), id: \.element.id) { index, tab in
+                    if index < frames.count {
+                        let rect = frames[index]
+                        let isAudio = (controller.multiviewAudioTab?.id == tab.id)
+                        let isFocused = (controller.selectedTabID == tab.id)
+                        let isHovered = (controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id)
+
+                        // 0. Per-tile load failure / WebContent crash recovery card (strictly scoped to this tile's rect)
+                        if let tileError = tab.loadError {
+                            TabErrorOverlayView(
+                                error: tileError,
+                                isCompactTile: true,
+                                onRetry: { tab.reloadOrStop() }
+                            )
+                            .frame(width: rect.width, height: rect.height)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .position(x: rect.midX, y: rect.midY)
+                        }
+
+                        // 1. Non-interactive rounded border (100% pass-through to WKWebView)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                borderColor(isAudio: isAudio, isFocused: isFocused),
+                                lineWidth: isAudio ? 2.0 : 1.0
+                            )
+                            .frame(width: rect.width, height: rect.height)
+                            .position(x: rect.midX, y: rect.midY)
+                            .allowsHitTesting(false)
+
+                        // 2. Compact top-36pt corner controls (only the two corner pills accept hits;
+                        // empty space between them and everything below y+36 passes straight to WKWebView).
+                        tileTopCornerControls(
+                            tab: tab,
+                            index: index,
+                            totalCount: tiles.count,
+                            isAudio: isAudio,
+                            showActions: isHovered,
+                            tileWidth: rect.width
+                        )
+                        .frame(width: rect.width, height: 36, alignment: .top)
+                        .offset(x: rect.minX, y: rect.minY)
+                    }
+                }
+            }
+        }
+    }
+
+    private func borderColor(isAudio: Bool, isFocused: Bool) -> Color {
+        if isAudio {
+            return AppleTheme.accent.opacity(0.92)
+        }
+        if isFocused {
+            return Color.white.opacity(0.32)
+        }
+        return Color.primary.opacity(0.16)
+    }
+
+    @ViewBuilder
+    private func tileTopCornerControls(
+        tab: BrowserTab,
+        index: Int,
+        totalCount: Int,
+        isAudio: Bool,
+        showActions: Bool,
+        tileWidth: CGFloat
+    ) -> some View {
+        // Only the two compact pills inside this top 36pt bar accept pointer hits;
+        // the empty space between them passes clicks straight through to the WKWebView.
+        LiquidGlassGroup(spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
+                tileAudioBadge(
+                    tab: tab,
+                    slotNumber: index + 1,
+                    isAudio: isAudio,
+                    maxWidth: max(90, tileWidth - 200)
+                )
+
+                Spacer(minLength: 6)
+
+                if showActions {
+                    tileActionPill(tab: tab, index: index, totalCount: totalCount)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .animation(.easeOut(duration: 0.14), value: showActions)
+    }
+
+    @ViewBuilder
+    private func tileAudioBadge(
+        tab: BrowserTab,
+        slotNumber: Int,
+        isAudio: Bool,
+        maxWidth: CGFloat
+    ) -> some View {
+        let isMuted = tab.mediaStatus.isMuted || !isAudio
+        Button {
+            if isAudio {
+                controller.toggleMute(tabID: tab.id)
+            } else {
+                controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text("\(slotNumber)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(
+                        Circle()
+                            .fill(isAudio ? AppleTheme.accent : Color.white.opacity(0.22))
+                    )
+
+                Image(systemName: isMuted ? "speaker.slash.fill" : "waveform")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(isMuted ? Color.white.opacity(0.78) : AppleTheme.accent)
+
+                if tileTitleVisible(maxWidth: maxWidth) {
+                    Text(tab.displayTitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                if tab.mediaStatus.isHDR {
+                    Text("HDR")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .padding(.horizontal, 3.5)
+                        .padding(.vertical, 1)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.7)
+                        )
+                }
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 8)
+            .frame(height: 24)
+            .appleGlass(
+                in: Capsule(style: .continuous),
+                tint: isAudio ? Color.black.opacity(0.58) : Color.black.opacity(0.46),
+                interactive: true
+            )
+            .environment(\.colorScheme, .dark)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: min(240, maxWidth), alignment: .leading)
+        .help(isAudio ? "Active Audio Stream — Click to Mute/Unmute (⌘⌥\(slotNumber))" : "Switch Audio to Stream \(slotNumber) (⌘⌥\(slotNumber))")
+    }
+
+    private func tileTitleVisible(maxWidth: CGFloat) -> Bool {
+        maxWidth >= 110
+    }
+
+    @ViewBuilder
+    private func tileActionPill(tab: BrowserTab, index: Int, totalCount: Int) -> some View {
+        let isYTTV = YouTubeURLRouter.isYouTubeTVHost(tab.url.host)
+
+        HStack(spacing: 2) {
+            if index > 0 {
+                tileIconButton(
+                    systemImage: "chevron.left",
+                    helpText: "Move Tile Left"
+                ) {
+                    controller.moveMultiviewTile(id: tab.id, by: -1)
+                }
+            }
+
+            if index < totalCount - 1 {
+                tileIconButton(
+                    systemImage: "chevron.right",
+                    helpText: "Move Tile Right"
+                ) {
+                    controller.moveMultiviewTile(id: tab.id, by: 1)
+                }
+            }
+
+            if index > 0 {
+                tileIconButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    helpText: "Promote to Main Tile"
+                ) {
+                    controller.promoteMultiviewTileToPrimary(id: tab.id)
+                }
+            }
+
+            tileIconButton(
+                systemImage: isYTTV ? "tv" : "house",
+                helpText: isYTTV ? "Open YouTube TV Live Guide" : "Browse YouTube in This Tile"
+            ) {
+                controller.navigateMultiviewTileToBrowse(id: tab.id)
+            }
+
+            tileIconButton(
+                systemImage: "macwindow",
+                helpText: "Expand to Single View"
+            ) {
+                controller.exitMultiview(focusTabID: tab.id)
+            }
+
+            tileIconButton(
+                systemImage: "xmark",
+                helpText: "Remove from Multiview"
+            ) {
+                controller.removeTileFromMultiview(id: tab.id)
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(height: 24)
+        .appleGlass(
+            in: Capsule(style: .continuous),
+            tint: Color.black.opacity(0.54),
+            interactive: true
+        )
+        .environment(\.colorScheme, .dark)
+        .onHover { hovering in
+            hoveredActionPillTileID = hovering ? tab.id : (hoveredActionPillTileID == tab.id ? nil : hoveredActionPillTileID)
+        }
+    }
+
+    @ViewBuilder
+    private func tileIconButton(
+        systemImage: String,
+        helpText: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: 20, height: 20)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(helpText)
+    }
+}
