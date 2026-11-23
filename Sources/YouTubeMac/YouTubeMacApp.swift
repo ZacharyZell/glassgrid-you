@@ -225,6 +225,13 @@ struct YouTubeMacApp: App {
 
     @CommandsBuilder
     private var appCommands: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button(controller.isCheckingForUpdates ? "Checking for Updates…" : "Check for Updates…") {
+                controller.checkForUpdates(presentAlert: true)
+            }
+            .disabled(controller.isCheckingForUpdates)
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Tab") {
                 controller.createTab()

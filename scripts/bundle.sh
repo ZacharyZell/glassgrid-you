@@ -7,9 +7,16 @@ cd "$ROOT_DIR"
 APP_NAME="GlassGrid You"
 EXECUTABLE_NAME="GlassGridYou"
 BUNDLE_ID="com.glassgridyou.mac"
+APP_VERSION="${APP_VERSION:-1.0.0}"
+APP_BUILD="${APP_BUILD:-1}"
+SKIP_INSTALL="${SKIP_INSTALL:-0}"
+ENABLE_HARDENED_RUNTIME="${ENABLE_HARDENED_RUNTIME:-0}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+
 BUILD_DIR="$ROOT_DIR/build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 ICONSET_DIR="$BUILD_DIR/AppIcon.iconset"
+ENTITLEMENTS_PATH="$ROOT_DIR/scripts/entitlements.plist"
 INSTALL_PATH="/Applications/$APP_NAME.app"
 
 echo "==> Building release binary..."
@@ -23,7 +30,7 @@ if [[ ! -f "$RELEASE_BIN" ]]; then
     exit 1
 fi
 
-echo "==> Preparing .app bundle structure..."
+echo "==> Preparing .app bundle structure (v$APP_VERSION, build $APP_BUILD)..."
 rm -rf "$APP_BUNDLE" "$ICONSET_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
@@ -59,9 +66,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$APP_BUILD</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
     <key>LSMinimumSystemVersion</key>
@@ -113,10 +120,28 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-echo "==> Signing app bundle (ad-hoc)..."
+echo "==> Signing app bundle..."
 xattr -cr "$APP_BUNDLE"
-codesign --force --deep --sign - "$APP_BUNDLE"
-codesign --verify --deep --strict "$APP_BUNDLE"
+
+CODESIGN_ARGS=(--force)
+if [[ "$ENABLE_HARDENED_RUNTIME" == "1" ]]; then
+    CODESIGN_ARGS+=(--options runtime)
+    if [[ -f "$ENTITLEMENTS_PATH" ]]; then
+        CODESIGN_ARGS+=(--entitlements "$ENTITLEMENTS_PATH")
+    fi
+fi
+if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
+    CODESIGN_ARGS+=(--timestamp)
+fi
+CODESIGN_ARGS+=(--sign "$CODESIGN_IDENTITY" "$APP_BUNDLE")
+
+codesign "${CODESIGN_ARGS[@]}"
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+
+if [[ "$SKIP_INSTALL" == "1" ]]; then
+    echo "==> Built signed bundle at $APP_BUNDLE (SKIP_INSTALL=1)"
+    exit 0
+fi
 
 echo "==> Installing to $INSTALL_PATH..."
 rm -rf "$INSTALL_PATH"

@@ -1221,4 +1221,138 @@ final class YouTubeMacCoreTests: XCTestCase {
             "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
         )
     }
+
+    func testSemanticVersionParsingAndComparison() {
+        XCTAssertEqual(SemanticVersion("1.0.0"), SemanticVersion(major: 1, minor: 0, patch: 0))
+        XCTAssertEqual(SemanticVersion("v1.2.3"), SemanticVersion(major: 1, minor: 2, patch: 3))
+        XCTAssertEqual(SemanticVersion("V2.4"), SemanticVersion(major: 2, minor: 4, patch: 0))
+        XCTAssertEqual(SemanticVersion("1.5.0-beta.1+42"), SemanticVersion(major: 1, minor: 5, patch: 0))
+        XCTAssertNil(SemanticVersion(""))
+        XCTAssertNil(SemanticVersion("not-a-version"))
+        XCTAssertNil(SemanticVersion("1"))
+        XCTAssertNil(SemanticVersion("1.2.3.4"))
+
+        XCTAssertTrue(SemanticVersion(major: 1, minor: 0, patch: 0) < SemanticVersion(major: 1, minor: 0, patch: 1))
+        XCTAssertTrue(SemanticVersion(major: 1, minor: 2, patch: 9) < SemanticVersion(major: 1, minor: 3, patch: 0))
+        XCTAssertTrue(SemanticVersion(major: 1, minor: 9, patch: 9) < SemanticVersion(major: 2, minor: 0, patch: 0))
+        XCTAssertFalse(SemanticVersion(major: 2, minor: 0, patch: 0) < SemanticVersion(major: 2, minor: 0, patch: 0))
+    }
+
+    func testUpdateCheckerTrustedURLValidationAndReleaseParsing() throws {
+        // Trusted URL validation
+        XCTAssertTrue(UpdateChecker.isTrustedGitHubDownloadURL(try XCTUnwrap(URL(string: "https://github.com/ZacharyZell/glassgrid-you/releases/tag/v1.1.0"))))
+        XCTAssertTrue(UpdateChecker.isTrustedGitHubDownloadURL(try XCTUnwrap(URL(string: "https://objects.githubusercontent.com/glassgrid/GlassGrid-You-1.1.0.dmg"))))
+        XCTAssertFalse(UpdateChecker.isTrustedGitHubDownloadURL(try XCTUnwrap(URL(string: "http://github.com/ZacharyZell/glassgrid-you/releases"))))
+        XCTAssertFalse(UpdateChecker.isTrustedGitHubDownloadURL(try XCTUnwrap(URL(string: "https://evil-github.com/malware.dmg"))))
+        XCTAssertFalse(UpdateChecker.isTrustedGitHubDownloadURL(try XCTUnwrap(URL(string: "https://example.com/GlassGrid-You-1.1.0.dmg"))))
+
+        let current = SemanticVersion(major: 1, minor: 0, patch: 0)
+
+        // Newer release with trusted .dmg asset
+        let newerJSON = """
+        {
+          "tag_name": "v1.2.0",
+          "html_url": "https://github.com/ZacharyZell/glassgrid-you/releases/tag/v1.2.0",
+          "draft": false,
+          "prerelease": false,
+          "body": "Signed macOS release.",
+          "assets": [
+            {
+              "name": "GlassGrid-You-1.2.0.dmg.sha256",
+              "browser_download_url": "https://github.com/ZacharyZell/glassgrid-you/releases/download/v1.2.0/GlassGrid-You-1.2.0.dmg.sha256"
+            },
+            {
+              "name": "GlassGrid-You-1.2.0.dmg",
+              "browser_download_url": "https://github.com/ZacharyZell/glassgrid-you/releases/download/v1.2.0/GlassGrid-You-1.2.0.dmg"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let newerResult = UpdateChecker.parseLatestRelease(from: newerJSON, currentVersion: current)
+        guard case .updateAvailable(let parsedCurrent, let info) = newerResult else {
+            return XCTFail("Expected .updateAvailable, got \(newerResult)")
+        }
+        XCTAssertEqual(parsedCurrent, current)
+        XCTAssertEqual(info.tagName, "v1.2.0")
+        XCTAssertEqual(info.version, SemanticVersion(major: 1, minor: 2, patch: 0))
+        XCTAssertEqual(
+            info.dmgDownloadURL?.absoluteString,
+            "https://github.com/ZacharyZell/glassgrid-you/releases/download/v1.2.0/GlassGrid-You-1.2.0.dmg"
+        )
+        XCTAssertEqual(info.preferredDownloadURL, info.dmgDownloadURL)
+
+        // Up-to-date release
+        let sameVersionJSON = """
+        {
+          "tag_name": "v1.0.0",
+          "html_url": "https://github.com/ZacharyZell/glassgrid-you/releases/tag/v1.0.0",
+          "draft": false,
+          "prerelease": false
+        }
+        """.data(using: .utf8)!
+        XCTAssertEqual(
+            UpdateChecker.parseLatestRelease(from: sameVersionJSON, currentVersion: current),
+            .upToDate(current: current)
+        )
+
+        // Draft and prerelease skipped cleanly
+        let prereleaseJSON = """
+        {
+          "tag_name": "v2.0.0-beta.1",
+          "html_url": "https://github.com/ZacharyZell/glassgrid-you/releases/tag/v2.0.0-beta.1",
+          "draft": false,
+          "prerelease": true
+        }
+        """.data(using: .utf8)!
+        XCTAssertEqual(
+            UpdateChecker.parseLatestRelease(from: prereleaseJSON, currentVersion: current),
+            .noReleasesPublished
+        )
+
+        // Untrusted release URL rejected
+        let untrustedReleaseJSON = """
+        {
+          "tag_name": "v1.3.0",
+          "html_url": "https://phishing.example.com/v1.3.0",
+          "draft": false,
+          "prerelease": false
+        }
+        """.data(using: .utf8)!
+        if case .failed = UpdateChecker.parseLatestRelease(from: untrustedReleaseJSON, currentVersion: current) {
+            // expected
+        } else {
+            XCTFail("Expected untrusted release URL to fail security validation")
+        }
+
+        // Untrusted .dmg asset falls back safely to releaseURL
+        let untrustedAssetJSON = """
+        {
+          "tag_name": "v1.3.0",
+          "html_url": "https://github.com/ZacharyZell/glassgrid-you/releases/tag/v1.3.0",
+          "draft": false,
+          "prerelease": false,
+          "assets": [
+            {
+              "name": "GlassGrid-You-1.3.0.dmg",
+              "browser_download_url": "https://untrusted.example.com/GlassGrid-You-1.3.0.dmg"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        if case .updateAvailable(_, let safeInfo) = UpdateChecker.parseLatestRelease(from: untrustedAssetJSON, currentVersion: current) {
+            XCTAssertNil(safeInfo.dmgDownloadURL)
+            XCTAssertEqual(safeInfo.preferredDownloadURL, safeInfo.releaseURL)
+        } else {
+            XCTFail("Expected valid releaseURL with nil untrusted dmgDownloadURL")
+        }
+
+        // Malformed JSON fails gracefully
+        let malformed = Data("not json".utf8)
+        if case .failed = UpdateChecker.parseLatestRelease(from: malformed, currentVersion: current) {
+            // expected
+        } else {
+            XCTFail("Expected malformed JSON to fail gracefully")
+        }
+    }
 }

@@ -2,6 +2,7 @@
 
 **A native, distraction-free macOS client for YouTube & YouTube TV — built with Swift 6, SwiftUI, AppKit, and WebKit.**
 
+[![CI](https://github.com/ZacharyZell/glassgrid-you/actions/workflows/ci.yml/badge.svg)](https://github.com/ZacharyZell/glassgrid-you/actions/workflows/ci.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14.0%2B%20(Liquid%20Glass%20on%20macOS%2026%2B)-000000?logo=apple)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0%20Strict%20Concurrency-F05138?logo=swift&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
@@ -135,6 +136,16 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 
 ---
 
+## Download & Support
+
+GlassGrid You is **100% free and open-source under the MIT License** — with zero paywalls, zero telemetry, and zero update nags.
+
+- **Build Free from Source (MIT):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below).
+- **Signed & Notarized `.dmg` Releases:** Check [GitHub Releases](https://github.com/ZacharyZell/glassgrid-you/releases) for pre-built macOS disk images, or run **GlassGrid You → Check for Updates…** anytime inside the app. Maintainers can package signed & notarized releases with `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
+- **Support Development:** If GlassGrid You makes your Mac feel better every day, you can optionally support ongoing macOS & WebKit maintenance via [GitHub Sponsors](https://github.com/sponsors/ZacharyZell).
+
+---
+
 ## Build & Install
 
 ```bash
@@ -150,7 +161,7 @@ swift test
 
 This installs **`/Applications/GlassGrid You.app`** (bundle identifier `com.glassgridyou.mac`, URL scheme `glassgridyou://`).
 
-> **Code Signing & Gatekeeper Note:** `./scripts/bundle.sh` performs an ad-hoc code signature (`codesign --force --deep --sign -`) intended for local builds on your own Mac. If you distribute `.app` or `.dmg` binaries publicly, sign and notarize with your own Apple Developer ID certificate.
+> **Code Signing & Gatekeeper Note:** `./scripts/bundle.sh` performs an ad-hoc code signature (`codesign --force --sign -`) intended for local builds on your own Mac. To build a Hardened Runtime signed & notarized `.dmg` for distribution, use `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
 
 ---
 
@@ -158,7 +169,7 @@ This installs **`/Applications/GlassGrid You.app`** (bundle identifier `com.glas
 
 GlassGrid You is organized into two Swift Package Manager targets plus a unit test suite:
 
-- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`).
+- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `UpdateChecker`).
 - **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`).
 - **`Tests/YouTubeMacCoreTests`**: Unit tests covering routing, URL parsing, enhancement script generation, multiview layouts, SponsorBlock prefix hashing, command palette ranking, chapter parsing, and session persistence.
 

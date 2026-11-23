@@ -687,30 +687,27 @@ extension BrowserTab: WKUIDelegate {
     public func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
-        initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor () -> Void
-    ) {
+        initiatedByFrame frame: WKFrameInfo
+    ) async {
         let alert = NSAlert()
         alert.messageText = "GlassGrid You"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
         alert.runModal()
-        completionHandler()
     }
 
     public func webView(
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
-        initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor (Bool) -> Void
-    ) {
+        initiatedByFrame frame: WKFrameInfo
+    ) async -> Bool {
         let alert = NSAlert()
         alert.messageText = "GlassGrid You"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
         let response = alert.runModal()
-        completionHandler(response == .alertFirstButtonReturn)
+        return response == .alertFirstButtonReturn
     }
 }
 

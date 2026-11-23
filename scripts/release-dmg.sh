@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+APP_NAME="GlassGrid You"
+VERSION="1.0.0"
+BUILD_NUMBER="1"
+IDENTITY=""
+NOTARY_PROFILE="GlassGridYouNotary"
+AD_HOC="0"
+SKIP_NOTARIZE="0"
+OUTPUT_DIR="$ROOT_DIR/build/release"
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/release-dmg.sh [options]
+
+Builds, signs (Hardened Runtime), packages, and optionally notarizes GlassGrid You as a macOS .dmg.
+
+Options:
+  --version <semver>         CFBundleShortVersionString (default: 1.0.0)
+  --build <number>           CFBundleVersion (default: 1)
+  --identity <name>          Codesigning identity (auto-detects "Developer ID Application" if omitted)
+  --notary-profile <name>    notarytool Keychain profile name (default: GlassGridYouNotary)
+  --ad-hoc                   Use ad-hoc signing (implies --skip-notarize; for local dry-run testing)
+  --skip-notarize            Skip notarytool submission, stapling, and Gatekeeper spctl checks
+  --output-dir <path>        Output directory for .dmg and .sha256 (default: build/release)
+  -h, --help                 Show this help message
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            VERSION="${2:?Missing value for --version}"
+            shift 2
+            ;;
+        --build)
+            BUILD_NUMBER="${2:?Missing value for --build}"
+            shift 2
+            ;;
+        --identity)
+            IDENTITY="${2:?Missing value for --identity}"
+            shift 2
+            ;;
+        --notary-profile)
+            NOTARY_PROFILE="${2:?Missing value for --notary-profile}"
+            shift 2
+            ;;
+        --ad-hoc)
+            AD_HOC="1"
+            SKIP_NOTARIZE="1"
+            shift
+            ;;
+        --skip-notarize)
+            SKIP_NOTARIZE="1"
+            shift
+            ;;
+        --output-dir)
+            OUTPUT_DIR="${2:?Missing value for --output-dir}"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown argument: $1" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+done
+
+ENTITLEMENTS_PATH="$ROOT_DIR/scripts/entitlements.plist"
+if [[ ! -f "$ENTITLEMENTS_PATH" ]]; then
+    echo "Error: Missing entitlements file at $ENTITLEMENTS_PATH" >&2
+    exit 1
+fi
+
+if [[ "$AD_HOC" == "1" ]]; then
+    SIGN_IDENTITY="-"
+    echo "==> Dry-run mode: ad-hoc Hardened Runtime signing (notarization skipped)"
+else
+    if [[ -z "$IDENTITY" ]]; then
+        IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+            | awk -F'"' '/Developer ID Application:/ { print $2; exit }' || true)"
+    fi
+    if [[ -z "$IDENTITY" ]]; then
+        cat >&2 <<'EOF'
+Error: No "Developer ID Application" signing certificate found in your Keychain.
+
+To sign and notarize a public release:
+  1. Open Xcode -> Settings -> Accounts -> Manage Certificates -> "+" -> "Developer ID Application"
+  2. Store notarization credentials via `xcrun notarytool store-credentials "GlassGridYouNotary" ...`
+  3. See docs/RELEASING.md for the complete step-by-step release guide.
+
+To test the .dmg packaging pipeline locally without a Developer ID certificate, run:
+  ./scripts/release-dmg.sh --version 1.0.0 --ad-hoc --skip-notarize
+EOF
+        exit 1
+    fi
+    SIGN_IDENTITY="$IDENTITY"
+    echo "==> Using signing identity: $SIGN_IDENTITY"
+fi
+
+echo "==> Assembling $APP_NAME.app (v$VERSION, build $BUILD_NUMBER) with Hardened Runtime..."
+APP_VERSION="$VERSION" \
+APP_BUILD="$BUILD_NUMBER" \
+SKIP_INSTALL=1 \
+ENABLE_HARDENED_RUNTIME=1 \
+CODESIGN_IDENTITY="$SIGN_IDENTITY" \
+    "$ROOT_DIR/scripts/bundle.sh"
+
+APP_BUNDLE="$ROOT_DIR/build/$APP_NAME.app"
+
+echo "==> Verifying Hardened Runtime flags on $APP_BUNDLE..."
+CODESIGN_INFO="$(codesign -dvv "$APP_BUNDLE" 2>&1)"
+if ! grep -q "flags=.*runtime" <<< "$CODESIGN_INFO"; then
+    echo "Error: Hardened Runtime flag not detected on $APP_BUNDLE" >&2
+    echo "$CODESIGN_INFO" >&2
+    exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+DMG_NAME="GlassGrid-You-${VERSION}.dmg"
+DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
+SHA_PATH="${DMG_PATH}.sha256"
+
+STAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+
+echo "==> Staging drag-to-Applications DMG layout..."
+ditto "$APP_BUNDLE" "$STAGE_DIR/$APP_NAME.app"
+ln -s /Applications "$STAGE_DIR/Applications"
+
+echo "==> Creating compressed UDZO disk image: $DMG_PATH..."
+rm -f "$DMG_PATH" "$SHA_PATH"
+hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$STAGE_DIR" \
+    -ov \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    "$DMG_PATH"
+
+if [[ "$AD_HOC" != "1" ]]; then
+    echo "==> Signing disk image with $SIGN_IDENTITY..."
+    codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
+    codesign --verify --verbose=2 "$DMG_PATH"
+fi
+
+if [[ "$SKIP_NOTARIZE" != "1" ]]; then
+    echo "==> Submitting $DMG_NAME for Apple notarization (profile: $NOTARY_PROFILE)..."
+    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+
+    echo "==> Stapling and validating notarization ticket..."
+    xcrun stapler staple "$DMG_PATH"
+    xcrun stapler validate "$DMG_PATH"
+
+    echo "==> Verifying Gatekeeper acceptance..."
+    spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
+    spctl --assess --type execute --verbose "$APP_BUNDLE"
+else
+    echo "==> Skipping notarization, stapling, and Gatekeeper spctl checks (--skip-notarize)."
+fi
+
+echo "==> Generating and verifying portable SHA-256 checksum..."
+(
+    cd "$(dirname "$DMG_PATH")"
+    shasum -a 256 "$(basename "$DMG_PATH")" > "$(basename "$SHA_PATH")"
+    shasum -a 256 -c "$(basename "$SHA_PATH")"
+)
+
+echo "==> Release artifacts ready:"
+echo "    DMG:    $DMG_PATH"
+echo "    SHA256: $SHA_PATH"

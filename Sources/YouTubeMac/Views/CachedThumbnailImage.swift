@@ -13,7 +13,7 @@ final class ThumbnailImageCache {
         return c
     }()
 
-    private var inFlight: [URL: Task<NSImage?, Never>] = [:]
+    private var inFlight: [URL: Task<Data?, Never>] = [:]
 
     func cachedImage(for url: URL) -> NSImage? {
         cache.object(forKey: url as NSURL)
@@ -24,28 +24,40 @@ final class ThumbnailImageCache {
             return existing
         }
         if let task = inFlight[url] {
-            return await task.value
+            let data = await task.value
+            if let existing = cache.object(forKey: url as NSURL) {
+                return existing
+            }
+            return decodeAndCache(data, for: url)
         }
 
-        let task = Task<NSImage?, Never> {
+        let task = Task<Data?, Never> {
             var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 8)
             request.httpShouldHandleCookies = false
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode),
-                  let image = NSImage(data: data) else {
+                  !data.isEmpty else {
                 return nil
             }
-            return image
+            return data
         }
         inFlight[url] = task
-        let result = await task.value
+        let data = await task.value
         inFlight.removeValue(forKey: url)
-        if let result {
-            let cost = Int(result.size.width * result.size.height * 4)
-            cache.setObject(result, forKey: url as NSURL, cost: max(1, cost))
+        if let existing = cache.object(forKey: url as NSURL) {
+            return existing
         }
-        return result
+        return decodeAndCache(data, for: url)
+    }
+
+    private func decodeAndCache(_ data: Data?, for url: URL) -> NSImage? {
+        guard let data, let image = NSImage(data: data) else {
+            return nil
+        }
+        let cost = Int(image.size.width * image.size.height * 4)
+        cache.setObject(image, forKey: url as NSURL, cost: max(1, cost))
+        return image
     }
 }
 

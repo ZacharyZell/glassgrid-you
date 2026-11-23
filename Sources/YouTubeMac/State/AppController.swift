@@ -54,6 +54,9 @@ public final class AppController {
     public var commandPaletteSuggestions: [String] = []
     public var commandPaletteFocusTrigger: Int = 0
 
+    public var isCheckingForUpdates: Bool = false
+    public var lastUpdateCheckResult: ReleaseCheckResult?
+
     @ObservationIgnored
     weak var mainWindow: NSWindow?
 
@@ -2868,6 +2871,77 @@ public final class AppController {
     private func applyConfigToAllTabs() {
         for tab in tabs {
             tab.applyConfig(configForTab(id: tab.id))
+        }
+    }
+
+    public var currentAppVersion: String {
+        if let raw = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return "1.0.0"
+    }
+
+    /// Opens a validated `https://` GitHub URL in the user's default browser.
+    public func openTrustedGitHubURL(_ url: URL) {
+        guard UpdateChecker.isTrustedGitHubDownloadURL(url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Strictly user-initiated update check against GitHub Releases (zero startup/background polling).
+    public func checkForUpdates(presentAlert: Bool) {
+        guard !isCheckingForUpdates else { return }
+        isCheckingForUpdates = true
+        let versionString = currentAppVersion
+
+        Task { @MainActor [weak self] in
+            let result = await UpdateChecker.checkLatestRelease(currentVersionString: versionString)
+            guard let self else { return }
+            self.lastUpdateCheckResult = result
+            self.isCheckingForUpdates = false
+            if presentAlert {
+                self.presentUpdateCheckAlert(result)
+            }
+        }
+    }
+
+    private func presentUpdateCheckAlert(_ result: ReleaseCheckResult) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+
+        switch result {
+        case .updateAvailable(let current, let latest):
+            alert.messageText = "GlassGrid You \(latest.tagName) is Available"
+            alert.informativeText = "You are currently running v\(current). Would you like to download the latest release from GitHub?"
+            alert.addButton(withTitle: "Download Release")
+            alert.addButton(withTitle: "Later")
+            if alert.runModal() == .alertFirstButtonReturn {
+                openTrustedGitHubURL(latest.preferredDownloadURL)
+            }
+
+        case .upToDate(let current):
+            alert.messageText = "You’re Up to Date"
+            alert.informativeText = "GlassGrid You v\(current) is the latest version."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+
+        case .noReleasesPublished:
+            alert.messageText = "No Releases Published Yet"
+            alert.informativeText = "GlassGrid You v\(currentAppVersion) has no published GitHub Release builds yet."
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "View Releases")
+            if alert.runModal() == .alertSecondButtonReturn {
+                openTrustedGitHubURL(UpdateChecker.releasesPageURL)
+            }
+
+        case .failed(let message):
+            alert.messageText = "Unable to Check for Updates"
+            alert.informativeText = message
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
 

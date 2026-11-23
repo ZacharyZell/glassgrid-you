@@ -247,9 +247,61 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section("About & Updates") {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("GlassGrid You v\(controller.currentAppVersion)")
+                            .font(.body)
+                        Text(updateStatusCaption)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if case .updateAvailable(_, let latest) = controller.lastUpdateCheckResult {
+                        Button("Download \(latest.tagName)") {
+                            controller.openTrustedGitHubURL(latest.preferredDownloadURL)
+                        }
+                    }
+                    Button(controller.isCheckingForUpdates ? "Checking…" : "Check for Updates") {
+                        controller.checkForUpdates(presentAlert: false)
+                    }
+                    .disabled(controller.isCheckingForUpdates)
+                }
+
+                HStack {
+                    Text("Open-source under MIT — zero paywalls, telemetry, or nags.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Support on GitHub") {
+                        controller.openTrustedGitHubURL(UpdateChecker.sponsorsURL)
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+            }
         }
         .formStyle(.grouped)
         .padding(.vertical, 4)
+    }
+
+    private var updateStatusCaption: String {
+        if controller.isCheckingForUpdates {
+            return "Checking GitHub Releases…"
+        }
+        switch controller.lastUpdateCheckResult {
+        case .none:
+            return "Manual update checks only — never runs in the background."
+        case .upToDate(let current):
+            return "Up to date (v\(current))."
+        case .updateAvailable(_, let latest):
+            return "Update available: \(latest.tagName)."
+        case .noReleasesPublished:
+            return "No GitHub Releases published yet."
+        case .failed(let reason):
+            return reason
+        }
     }
 
     private func showTransientStatus(_ message: String) {
