@@ -1618,4 +1618,63 @@ final class YouTubeMacCoreTests: XCTestCase {
         XCTAssertFalse(boot.contains("AudioContext"))
         XCTAssertFalse(boot.contains("ytInitialPlayerResponse"))
     }
+
+    // MARK: - Wave B: Multi-Window Title Formatting & Sparkle 2 Configuration Guard
+
+    func testSparkleConfigurationValidation() {
+        let validKey = Data(repeating: 0x42, count: 32).base64EncodedString()
+        let shortKey = Data(repeating: 0x42, count: 16).base64EncodedString()
+
+        XCTAssertTrue(
+            SparkleConfiguration.isConfigured(infoDictionary: [
+                SparkleConfiguration.feedURLKey: SparkleConfiguration.defaultFeedURLString,
+                SparkleConfiguration.publicEDKey: validKey
+            ])
+        )
+        XCTAssertFalse(SparkleConfiguration.isConfigured(infoDictionary: nil))
+        XCTAssertFalse(SparkleConfiguration.isConfigured(infoDictionary: [:]))
+        XCTAssertFalse(
+            SparkleConfiguration.isConfigured(infoDictionary: [
+                SparkleConfiguration.feedURLKey: SparkleConfiguration.defaultFeedURLString,
+                SparkleConfiguration.publicEDKey: ""
+            ])
+        )
+        XCTAssertFalse(
+            SparkleConfiguration.isConfigured(infoDictionary: [
+                SparkleConfiguration.feedURLKey: "http://example.com/appcast.xml",
+                SparkleConfiguration.publicEDKey: validKey
+            ])
+        )
+        XCTAssertFalse(
+            SparkleConfiguration.isConfigured(infoDictionary: [
+                SparkleConfiguration.feedURLKey: SparkleConfiguration.defaultFeedURLString,
+                SparkleConfiguration.publicEDKey: shortKey
+            ])
+        )
+        XCTAssertFalse(
+            SparkleConfiguration.isConfigured(infoDictionary: [
+                SparkleConfiguration.feedURLKey: SparkleConfiguration.defaultFeedURLString,
+                SparkleConfiguration.publicEDKey: "not-valid-base64!!!"
+            ])
+        )
+    }
+
+    func testWindowTitleFormatterForMultiviewSingleAndHome() {
+        XCTAssertEqual(
+            WindowTitleFormatter.title(isMultiview: true, multiviewCount: 4, tabTitle: "ESPN", isHome: false),
+            "Multiview (4 Streams) — GlassGrid You"
+        )
+        XCTAssertEqual(
+            WindowTitleFormatter.title(isMultiview: false, multiviewCount: 0, tabTitle: "(12) Costa Rica 4K HDR - YouTube", isHome: false),
+            "Costa Rica 4K HDR — GlassGrid You"
+        )
+        XCTAssertEqual(
+            WindowTitleFormatter.title(isMultiview: false, multiviewCount: 0, tabTitle: "YouTube", isHome: true),
+            "GlassGrid You"
+        )
+        XCTAssertEqual(
+            WindowTitleFormatter.title(isMultiview: false, multiviewCount: 0, tabTitle: "", isHome: false),
+            "GlassGrid You"
+        )
+    }
 }

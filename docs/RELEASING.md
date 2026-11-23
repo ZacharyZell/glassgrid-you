@@ -1,6 +1,6 @@
 # Releasing GlassGrid You for macOS
 
-This guide walks through signing, notarizing, and publishing a Gatekeeper-approved `.dmg` release of **GlassGrid You** using an Apple Developer account.
+This guide walks through signing, notarizing, and publishing a Gatekeeper-approved `.dmg` release of **GlassGrid You** with optional **Sparkle 2** silent auto-updates.
 
 ---
 
@@ -8,6 +8,11 @@ This guide walks through signing, notarizing, and publishing a Gatekeeper-approv
 
 1. **Apple Developer Program membership** (required for `Developer ID Application` signing & Apple Notarization).
 2. **Xcode 16+** installed locally with your Apple ID signed in.
+3. *(Optional, for Sparkle 2 silent auto-updates)* **Sparkle CLI tools** (`generate_keys`, `sign_update`):
+   ```bash
+   brew install sparkle
+   ```
+   *(Or download `Sparkle-2.x.tar.xz` from [sparkle-project/Sparkle Releases](https://github.com/sparkle-project/Sparkle/releases) and use `bin/generate_keys` & `bin/sign_update`.)*
 
 ---
 
@@ -39,43 +44,66 @@ xcrun notarytool store-credentials "GlassGridYouNotary" \
 
 ---
 
-## 3. Build, Sign, Package & Notarize the `.dmg`
+## 3. *(Optional)* Generate a Sparkle 2 EdDSA Keypair
+
+Generate an Ed25519 keypair once. Sparkle stores the **private key strictly inside your macOS login Keychain** (**never** commit a private key to Git) and prints the public key (`SUPublicEDKey`):
+
+```bash
+generate_keys
+```
+
+Copy the printed base64 `<key>` value to pass via `--sparkle-public-key` (or `SPARKLE_PUBLIC_ED_KEY`).
+
+> **Fork & Source Build Safety:** If `SUPublicEDKey` is omitted, GlassGrid You automatically disables Sparkle and falls back cleanly to its zero-dependency GitHub Releases `UpdateChecker` with zero error dialogs.
+
+---
+
+## 4. Build, Sign Inside-Out, Package & Notarize the `.dmg`
 
 Run the release script with the target semantic version and build number:
 
 ```bash
-./scripts/release-dmg.sh --version 1.0.0 --build 1
+./scripts/release-dmg.sh \
+  --version 1.1.0 \
+  --build 2 \
+  --sparkle-public-key "<YOUR_BASE64_ED25519_PUBLIC_KEY>"
 ```
 
 What `release-dmg.sh` does automatically:
-1. Builds the Swift 6 release binary, generates the Liquid Glass `AppIcon.icns`, and injects `CFBundleShortVersionString` / `CFBundleVersion` via `scripts/bundle.sh`.
-2. Strips extended attributes (`xattr -cr`) and signs `GlassGrid You.app` with **Hardened Runtime** (`--options runtime --timestamp`) and the minimal non-sandboxed [`scripts/entitlements.plist`](../scripts/entitlements.plist).
-3. Verifies strict signature integrity (`codesign --verify --deep --strict`) and Hardened Runtime flags.
+1. Builds the Swift 6 release binary, embeds `Sparkle.framework` via `ditto` (preserving `Versions/Current` symlinks), adds `@executable_path/../Frameworks` rpath before signing, generates the Liquid Glass `AppIcon.icns`, and injects version/Sparkle metadata into `Info.plist` via `scripts/bundle.sh`.
+2. Strips extended attributes (`xattr -cr`) and signs strictly **inside-out** with **Hardened Runtime** (`--options runtime --timestamp`, never `--deep`):
+   - `Sparkle.framework/Versions/B/XPCServices/Downloader.xpc` (`--preserve-metadata=entitlements`)
+   - `Sparkle.framework/Versions/B/XPCServices/Installer.xpc`
+   - `Sparkle.framework/Versions/B/Autoupdate`
+   - `Sparkle.framework/Versions/B/Updater.app`
+   - `Sparkle.framework`
+   - `GlassGrid You.app` (with minimal non-sandboxed [`scripts/entitlements.plist`](../scripts/entitlements.plist))
+3. Verifies strict signature integrity (`codesign --verify --deep --strict --verbose=2`) and Hardened Runtime flags.
 4. Packages a drag-to-Applications compressed `UDZO` disk image at `build/release/GlassGrid-You-<version>.dmg`.
 5. Signs the `.dmg` container itself, submits to Apple Notarization (`xcrun notarytool submit --wait`), staples the ticket (`xcrun stapler staple`), and verifies Gatekeeper acceptance (`spctl --assess`).
-6. Writes and verifies a portable `GlassGrid-You-<version>.dmg.sha256` checksum.
+6. Writes and verifies a portable `GlassGrid-You-<version>.dmg.sha256` checksum (and if `sign_update` is installed, emits `build/release/appcast-item-<version>.xml` ready to paste into `appcast.xml`).
 
 ### Local Dry-Run (No Developer ID Certificate Needed)
 
-To verify `.app` Hardened Runtime signing, `.dmg` creation, and SHA-256 checksum generation locally without notarization:
+To verify inside-out Hardened Runtime signing, `Sparkle.framework` embedding, `.dmg` creation, and SHA-256 checksum generation locally without notarization:
 
 ```bash
-./scripts/release-dmg.sh --version 1.0.0 --ad-hoc --skip-notarize
+./scripts/release-dmg.sh --version 1.1.0 --ad-hoc --skip-notarize
 ```
 
 ---
 
-## 4. Publish the Release
+## 5. Publish the Release
 
-1. Tag and create a GitHub Release (`v1.0.0`) on [`ZacharyZell/glassgrid-you`](https://github.com/ZacharyZell/glassgrid-you/releases):
+1. Tag and create a GitHub Release (`v1.1.0`) on [`ZacharyZell/glassgrid-you`](https://github.com/ZacharyZell/glassgrid-you/releases):
    ```bash
-   git tag -a v1.0.0 -m "GlassGrid You v1.0.0"
-   git push origin v1.0.0
-   gh release create v1.0.0 \
-     build/release/GlassGrid-You-1.0.0.dmg \
-     build/release/GlassGrid-You-1.0.0.dmg.sha256 \
-     --title "GlassGrid You v1.0.0" \
+   git tag -a v1.1.0 -m "GlassGrid You v1.1.0"
+   git push origin v1.1.0
+   gh release create v1.1.0 \
+     build/release/GlassGrid-You-1.1.0.dmg \
+     build/release/GlassGrid-You-1.1.0.dmg.sha256 \
+     --title "GlassGrid You v1.1.0" \
      --generate-notes
    ```
-   Once published, users clicking **GlassGrid You → Check for Updates…** in the app menu automatically detect the new release via GitHub Releases!
-2. Optionally mirror the signed & notarized `.dmg` on **Lemon Squeezy** or **Gumroad** for supporters who prefer a direct download store.
+2. If using Sparkle 2 silent auto-updates, paste `build/release/appcast-item-1.1.0.xml` into `appcast.xml` at the root of `main` and push.
+3. Optionally mirror the signed & notarized `.dmg` on **Lemon Squeezy** or **Gumroad** for supporters who prefer a direct download store.

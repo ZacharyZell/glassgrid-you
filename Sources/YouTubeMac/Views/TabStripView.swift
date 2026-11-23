@@ -212,6 +212,9 @@ struct TabStripView: View {
                     controller.addExistingTabToMultiview(id: tab.id)
                 }
             }
+            Button("Open in New Window") {
+                controller.openTabInNewWindow(id: tab.id)
+            }
             if tab.id == controller.poppedOutTabID {
                 Button("Return Mini-Player to Tab") {
                     controller.dockMiniPlayer(selectTab: true, focusMain: false)

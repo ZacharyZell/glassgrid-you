@@ -240,6 +240,13 @@ struct MainWindowView: View {
             if !isOmniboxFocused {
                 controller.syncOmniboxToSelectedTab()
             }
+            controller.syncWindowTitle()
+        }
+        .onChange(of: controller.selectedTab?.title) { _, _ in
+            controller.syncWindowTitle()
+        }
+        .onChange(of: controller.multiviewTabIDs.count) { _, _ in
+            controller.syncWindowTitle()
         }
     }
 

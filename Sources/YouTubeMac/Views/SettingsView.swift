@@ -3,7 +3,7 @@ import YouTubeMacCore
 
 /// Native macOS Preferences window organized per Apple HIG: General, Playback, Distraction-Free, and Account & Data.
 struct SettingsView: View {
-    @Bindable var controller: AppController
+    @Bindable var coordinator: AppCoordinator
     @State private var showClearDataConfirm = false
     @State private var statusMessage: String?
     @State private var statusClearTask: Task<Void, Never>?
@@ -32,13 +32,13 @@ struct SettingsView: View {
                     Label("Account & Data", systemImage: "person.crop.circle")
                 }
         }
-        .frame(width: 540, height: 450)
+        .frame(width: 540, height: 485)
         .alert("Sign Out & Clear All Site Data?", isPresented: $showClearDataConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Clear All Data", role: .destructive) {
                 Task {
-                    await controller.clearAllWebsiteData()
-                    showTransientStatus("Cleared cookies, cache, and signed-out all tabs.")
+                    await coordinator.clearAllWebsiteData()
+                    showTransientStatus("Cleared cookies, cache, and signed-out all windows.")
                 }
             }
         } message: {
@@ -48,7 +48,8 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var generalTab: some View {
-        @Bindable var settings = controller.settings
+        @Bindable var settings = coordinator.settings
+        @Bindable var updater = coordinator.updater
 
         Form {
             Section("Startup & Appearance") {
@@ -79,6 +80,31 @@ struct SettingsView: View {
                 Toggle("Always show tab bar", isOn: $settings.alwaysShowTabBar)
                 Toggle("Show menu bar quick-controls", isOn: $settings.showMenuBarControls)
             }
+
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
+
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("GlassGrid You v\(updater.currentAppVersion)")
+                            .font(.body)
+                        Text(updateStatusCaption)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !updater.isSparkleConfigured,
+                       case .updateAvailable(_, let latest) = updater.lastUpdateCheckResult {
+                        Button("Download \(latest.tagName)") {
+                            updater.openTrustedGitHubURL(latest.preferredDownloadURL)
+                        }
+                    }
+                    Button(updater.isCheckingForUpdates ? "Checking…" : "Check Now…") {
+                        updater.checkForUpdates(presentAlert: updater.isSparkleConfigured)
+                    }
+                    .disabled(!updater.canCheckForUpdates)
+                }
+            }
         }
         .formStyle(.grouped)
         .padding(.vertical, 4)
@@ -86,7 +112,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var playbackTab: some View {
-        @Bindable var settings = controller.settings
+        @Bindable var settings = coordinator.settings
 
         Form {
             Section("Video Quality & Speed") {
@@ -138,7 +164,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var distractionFreeTab: some View {
-        @Bindable var settings = controller.settings
+        @Bindable var settings = coordinator.settings
 
         Form {
             Section("Shorts & Feed") {
@@ -176,7 +202,7 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button("Sign In…") {
-                        controller.openSignIn()
+                        coordinator.openSignIn()
                     }
                 }
 
@@ -184,7 +210,7 @@ struct SettingsView: View {
                     Text("Manage Google Account")
                     Spacer()
                     Button("Open Account") {
-                        controller.openGoogleAccount()
+                        coordinator.openGoogleAccount()
                     }
                 }
             }
@@ -199,13 +225,13 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Button("Clear History") {
-                        controller.clearLocalHistory()
+                        coordinator.clearLocalHistory()
                         showTransientStatus("Cleared local history & Multiview presets.")
                     }
                     .disabled(
-                        controller.settings.continueWatching.isEmpty
-                            && controller.settings.watchedChannels.isEmpty
-                            && controller.settings.savedMultiviewPresets.isEmpty
+                        coordinator.settings.continueWatching.isEmpty
+                            && coordinator.settings.watchedChannels.isEmpty
+                            && coordinator.settings.savedMultiviewPresets.isEmpty
                     )
                 }
 
@@ -219,7 +245,7 @@ struct SettingsView: View {
                     Spacer()
                     Button("Clear Cache") {
                         Task {
-                            await controller.clearWebCache()
+                            await coordinator.clearWebCache()
                             showTransientStatus("Web cache cleared.")
                         }
                     }
@@ -236,7 +262,7 @@ struct SettingsView: View {
                     Button("Clear All Data…", role: .destructive) {
                         showClearDataConfirm = true
                     }
-                    .disabled(controller.isSigningOutData)
+                    .disabled(coordinator.isSigningOutData)
                 }
             }
 
@@ -248,34 +274,14 @@ struct SettingsView: View {
                 }
             }
 
-            Section("About & Updates") {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("GlassGrid You v\(controller.currentAppVersion)")
-                            .font(.body)
-                        Text(updateStatusCaption)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if case .updateAvailable(_, let latest) = controller.lastUpdateCheckResult {
-                        Button("Download \(latest.tagName)") {
-                            controller.openTrustedGitHubURL(latest.preferredDownloadURL)
-                        }
-                    }
-                    Button(controller.isCheckingForUpdates ? "Checking…" : "Check for Updates") {
-                        controller.checkForUpdates(presentAlert: false)
-                    }
-                    .disabled(controller.isCheckingForUpdates)
-                }
-
+            Section("Open Source") {
                 HStack {
-                    Text("Open-source under MIT — zero paywalls, telemetry, or nags.")
+                    Text("MIT Licensed — zero paywalls, telemetry, or nags.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Support on GitHub") {
-                        controller.openTrustedGitHubURL(UpdateChecker.sponsorsURL)
+                        coordinator.updater.openTrustedGitHubURL(UpdateChecker.sponsorsURL)
                     }
                     .buttonStyle(.link)
                     .font(.caption)
@@ -287,12 +293,16 @@ struct SettingsView: View {
     }
 
     private var updateStatusCaption: String {
-        if controller.isCheckingForUpdates {
+        let updater = coordinator.updater
+        if updater.isSparkleConfigured {
+            return "Signed Sparkle 2 updates enabled."
+        }
+        if updater.isCheckingForUpdates {
             return "Checking GitHub Releases…"
         }
-        switch controller.lastUpdateCheckResult {
+        switch updater.lastUpdateCheckResult {
         case .none:
-            return "Manual update checks only — never runs in the background."
+            return "Source build — checks GitHub Releases on demand."
         case .upToDate(let current):
             return "Up to date (v\(current))."
         case .updateAvailable(_, let latest):

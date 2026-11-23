@@ -23,8 +23,8 @@ Browser tabs bury YouTube behind cluttered web chrome, drain battery with ambien
 
 ## Highlights & Screenshots
 
-### Native Multiview Mode (2-Up, 3-Up & 2×2 Quad-Box)
-Watch up to **4 simultaneous YouTube & YouTube TV streams** in **Grid**, **Spotlight**, or **Stacked** layouts with single-stream crimson audio focus, optional 15% background audio ducking, per-tile reorder controls, a configurable Multiview quality ceiling (Auto / 1080p / 720p), and one-click **Saved Multiview Presets**.
+### Native Multiview Mode (2-Up, 3-Up & 2×2 Quad-Box + Companion Web Tiles)
+Watch up to **4 simultaneous YouTube, YouTube TV, and Companion Web streams** (Twitch, ESPN Scores, NFL.com, Peacock, Paramount+, Prime Video, or any HTTPS URL) in **Grid**, **Spotlight**, or **Stacked** layouts with **120Hz draggable custom tile dividers** (double-click to reset), single-stream crimson audio focus, optional 15% background audio ducking, per-tile reorder controls, a configurable Multiview quality ceiling (Auto / 1080p / 720p), and one-click **Saved Multiview Presets** that remember custom split ratios.
 
 <p align="center">
   <img src="docs/screenshots/multiview-quad-night.png" alt="GlassGrid You 2x2 Quad-Box Multiview playing four 4K streams simultaneously" width="100%" />
@@ -50,6 +50,9 @@ Borderless, always-on-top floating 16:9 Mini-Player with magnetic corner snappin
 
 ### Native macOS Experience
 - **Liquid Glass Chrome**: Uses macOS 26/27 `.glassEffect` & `GlassEffectContainer` when compiled with Swift 6.2+ SDKs, and gracefully falls back to native `.regularMaterial` on macOS 14–15.
+- **Multi-Window Support (`⌘N`)**: Open independent windows across multiple displays (`Open in New Window`, `Launch Preset in New Window`) with per-window Multiview, shared settings & Day/Night theme sync, dynamic window titles, and a single conflict-free Floating Mini-Player.
+- **Custom Sidebar Channel Folders**: Group pinned channels, playlists, and Companion sites into collapsible sidebar folders with 1-click **Open in Multiview**, non-destructive folder deletion, and `⌘K` Command Palette search.
+- **Sparkle 2 Silent Auto-Updates**: Signed releases include embedded Sparkle 2 EdDSA-verified auto-updates (with zero-dependency GitHub Releases fallback on source builds and forks).
 - **Multi-Tab Architecture & Session Restoration**: Keeps background tab audio alive, supports drag-to-reorder, middle-click close, manual **Sleep Tab** (`Unload Page`), reopen closed tab (`⌘⇧T`), and lazy session restoration across launches.
 - **Control Center Menu Bar**: Compact now-playing popover with 16:9 thumbnail, live interactive timeline scrubber, transport controls, chapter jump menu, Multiview audio switcher, and Sleep Timer.
 - **System-Aware Auto-Pause**: Automatically pauses playback on AirPods/headphone disconnect (CoreAudio listener), screen lock, or macOS sleep — configurable in Settings.
@@ -73,11 +76,13 @@ Borderless, always-on-top floating 16:9 Mini-Player with magnetic corner snappin
 
 Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`](Sources/YouTubeMac/YouTubeMacApp.swift):
 
-### File & Tabs
+### File, Windows & Tabs
 | Shortcut | Action |
 | :--- | :--- |
+| `⌘N` | New Window |
 | `⌘T` | New Tab |
 | `⌘W` | Close Tab |
+| `⌘⇧W` | Close Window |
 | `⌘⇧T` | Reopen Closed Tab |
 | `⌘⇧]` / `⌘⇧[` | Next / Previous Tab |
 | `⌘1` – `⌘9` | Jump to Tab 1–9 |
@@ -169,8 +174,8 @@ This installs **`/Applications/GlassGrid You.app`** (bundle identifier `com.glas
 
 GlassGrid You is organized into two Swift Package Manager targets plus a unit test suite:
 
-- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `UpdateChecker`).
-- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`).
+- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`).
+- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`).
 - **`Tests/YouTubeMacCoreTests`**: Unit tests covering routing, URL parsing, enhancement script generation, multiview layouts, SponsorBlock prefix hashing, command palette ranking, chapter parsing, and session persistence.
 
 Key engineering invariants enforced in code and CI (see [`AGENTS.md`](AGENTS.md)):

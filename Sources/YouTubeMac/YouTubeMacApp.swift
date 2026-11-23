@@ -2,16 +2,17 @@ import AppKit
 import SwiftUI
 import YouTubeMacCore
 
-/// AppKit lifecycle bridge handling Dock reopen events, macOS Services, and incoming `glassgridyou://` URLs.
+/// AppKit lifecycle bridge handling Dock reopen events, macOS Services, and incoming `glassgridyou://` URLs
+/// across all open GlassGrid You windows via `AppCoordinator`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    weak var controller: AppController?
+    weak var coordinator: AppCoordinator?
     private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.servicesProvider = self
-        controller?.settings.applyAppearance()
+        coordinator?.settings.applyAppearance()
         flushPendingURLs()
     }
 
@@ -25,69 +26,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let url = YouTubeURLRouter.extractYouTubeURLFromString(candidate) else {
             return
         }
-        if let controller {
-            controller.handleDroppedURL(url)
+        if let coordinator {
+            coordinator.handleDroppedURL(url)
         } else {
             pendingURLs.append(url)
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        controller?.focusMainWindow()
+        coordinator?.handleDockReopen(hasVisibleWindows: flag)
         return true
     }
 
     func applicationDidResignActive(_ notification: Notification) {
-        controller?.handleAppDidResignActive()
+        coordinator?.handleAppDidResignActive()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        controller?.handleAppDidBecomeActive()
+        coordinator?.handleAppDidBecomeActive()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        controller?.handleAppWillTerminate()
+        coordinator?.handleAppWillTerminate()
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        guard let controller else { return nil }
+        guard let coordinator else { return nil }
         let menu = NSMenu(title: "GlassGrid You")
 
-        let status = controller.nowPlayingStatus
-        if status.hasVideo {
-            let titleText = status.title.isEmpty ? "Now Playing" : status.title
-            let truncated = titleText.count > 44 ? String(titleText.prefix(43)) + "…" : titleText
-            let header = NSMenuItem(title: truncated, action: nil, keyEquivalent: "")
-            header.isEnabled = false
-            menu.addItem(header)
+        let controller = coordinator.nowPlayingController
+        if let controller {
+            let status = controller.nowPlayingStatus
+            if status.hasVideo {
+                let titleText = status.title.isEmpty ? "Now Playing" : status.title
+                let truncated = titleText.count > 44 ? String(titleText.prefix(43)) + "…" : titleText
+                let header = NSMenuItem(title: truncated, action: nil, keyEquivalent: "")
+                header.isEnabled = false
+                menu.addItem(header)
 
-            let playItem = NSMenuItem(
-                title: status.isPlaying ? "Pause" : "Play",
-                action: #selector(dockTogglePlayPause),
+                let playItem = NSMenuItem(
+                    title: status.isPlaying ? "Pause" : "Play",
+                    action: #selector(dockTogglePlayPause),
+                    keyEquivalent: ""
+                )
+                playItem.target = self
+                menu.addItem(playItem)
+
+                let muteItem = NSMenuItem(
+                    title: status.isMuted ? "Unmute" : "Mute",
+                    action: #selector(dockToggleMute),
+                    keyEquivalent: ""
+                )
+                muteItem.target = self
+                menu.addItem(muteItem)
+
+                menu.addItem(.separator())
+            }
+
+            let multiviewItem = NSMenuItem(
+                title: controller.isMultiviewActive ? "Exit Multiview" : "Enter Multiview",
+                action: #selector(dockToggleMultiview),
                 keyEquivalent: ""
             )
-            playItem.target = self
-            menu.addItem(playItem)
-
-            let muteItem = NSMenuItem(
-                title: status.isMuted ? "Unmute" : "Mute",
-                action: #selector(dockToggleMute),
-                keyEquivalent: ""
-            )
-            muteItem.target = self
-            menu.addItem(muteItem)
-
-            menu.addItem(.separator())
+            multiviewItem.target = self
+            multiviewItem.isEnabled = !controller.anyTabInFullscreen
+            menu.addItem(multiviewItem)
         }
 
-        let multiviewItem = NSMenuItem(
-            title: controller.isMultiviewActive ? "Exit Multiview" : "Enter Multiview",
-            action: #selector(dockToggleMultiview),
-            keyEquivalent: ""
-        )
-        multiviewItem.target = self
-        multiviewItem.isEnabled = !controller.anyTabInFullscreen
-        menu.addItem(multiviewItem)
+        let newWindowItem = NSMenuItem(title: "New Window", action: #selector(dockNewWindow), keyEquivalent: "")
+        newWindowItem.target = self
+        menu.addItem(newWindowItem)
 
         let newTabItem = NSMenuItem(title: "New Tab", action: #selector(dockNewTab), keyEquivalent: "")
         newTabItem.target = self
@@ -97,50 +105,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipItem.target = self
         menu.addItem(clipItem)
 
-        menu.addItem(.separator())
+        if let controller {
+            menu.addItem(.separator())
 
-        let sleepRootTitle = controller.sleepTimerOption.map { "Sleep Timer (\($0.shortTitle))" } ?? "Sleep Timer"
-        let sleepRoot = NSMenuItem(title: sleepRootTitle, action: nil, keyEquivalent: "")
-        let sleepSubmenu = NSMenu(title: "Sleep Timer")
-        for option in SleepTimerOption.allCases {
-            let item = NSMenuItem(title: option.title, action: #selector(dockSelectSleepTimer(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = option.rawValue
-            item.state = (controller.sleepTimerOption == option) ? .on : .off
-            sleepSubmenu.addItem(item)
+            let sleepRootTitle = controller.sleepTimerOption.map { "Sleep Timer (\($0.shortTitle))" } ?? "Sleep Timer"
+            let sleepRoot = NSMenuItem(title: sleepRootTitle, action: nil, keyEquivalent: "")
+            let sleepSubmenu = NSMenu(title: "Sleep Timer")
+            for option in SleepTimerOption.allCases {
+                let item = NSMenuItem(title: option.title, action: #selector(dockSelectSleepTimer(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = option.rawValue
+                item.state = (controller.sleepTimerOption == option) ? .on : .off
+                sleepSubmenu.addItem(item)
+            }
+            if controller.isSleepTimerActive {
+                sleepSubmenu.addItem(.separator())
+                let offItem = NSMenuItem(title: "Turn Off Sleep Timer", action: #selector(dockClearSleepTimer), keyEquivalent: "")
+                offItem.target = self
+                sleepSubmenu.addItem(offItem)
+            }
+            sleepRoot.submenu = sleepSubmenu
+            menu.addItem(sleepRoot)
         }
-        if controller.isSleepTimerActive {
-            sleepSubmenu.addItem(.separator())
-            let offItem = NSMenuItem(title: "Turn Off Sleep Timer", action: #selector(dockClearSleepTimer), keyEquivalent: "")
-            offItem.target = self
-            sleepSubmenu.addItem(offItem)
-        }
-        sleepRoot.submenu = sleepSubmenu
-        menu.addItem(sleepRoot)
 
         return menu
     }
 
     @objc private func dockTogglePlayPause() {
-        controller?.togglePlayPause()
+        coordinator?.nowPlayingController?.togglePlayPause()
     }
 
     @objc private func dockToggleMute() {
-        controller?.toggleMute()
+        coordinator?.nowPlayingController?.toggleMute()
     }
 
     @objc private func dockToggleMultiview() {
-        controller?.focusMainWindow()
-        controller?.toggleMultiview()
+        guard let target = coordinator?.commandTarget else {
+            coordinator?.openNewWindow()
+            return
+        }
+        target.focusMainWindow()
+        target.toggleMultiview()
+    }
+
+    @objc private func dockNewWindow() {
+        coordinator?.openNewWindow()
     }
 
     @objc private func dockNewTab() {
-        controller?.focusMainWindow()
-        controller?.createTab()
+        guard let target = coordinator?.commandTarget else {
+            coordinator?.openNewWindow()
+            return
+        }
+        target.focusMainWindow()
+        target.createTab()
     }
 
     @objc private func dockOpenClipboardURL() {
-        controller?.openURLFromClipboard()
+        coordinator?.openURLFromClipboard()
     }
 
     @objc private func dockSelectSleepTimer(_ sender: NSMenuItem) {
@@ -148,53 +170,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let option = SleepTimerOption(rawValue: raw) else {
             return
         }
-        controller?.setSleepTimer(option)
+        coordinator?.nowPlayingController?.setSleepTimer(option)
     }
 
     @objc private func dockClearSleepTimer() {
-        controller?.setSleepTimer(nil)
+        coordinator?.nowPlayingController?.setSleepTimer(nil)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let controller else {
+        guard let coordinator else {
             pendingURLs.append(contentsOf: urls)
             return
         }
         for url in urls {
-            controller.handleIncomingURL(url)
+            coordinator.handleIncomingURL(url)
         }
     }
 
-    func attachController(_ controller: AppController) {
-        guard self.controller !== controller else { return }
-        self.controller = controller
-        controller.settings.applyAppearance()
+    func attachCoordinator(_ coordinator: AppCoordinator) {
+        guard self.coordinator !== coordinator else { return }
+        self.coordinator = coordinator
+        coordinator.settings.applyAppearance()
         flushPendingURLs()
     }
 
     private func flushPendingURLs() {
-        guard let controller, !pendingURLs.isEmpty else { return }
+        guard let coordinator, !pendingURLs.isEmpty else { return }
         let urls = pendingURLs
         pendingURLs.removeAll()
         for url in urls {
-            controller.handleIncomingURL(url)
+            coordinator.handleIncomingURL(url)
         }
+    }
+}
+
+/// Hosts a single macOS window scene backed idempotently by `AppCoordinator.controller(for:)`
+/// and registers SwiftUI's `openWindow` action so `⌘N`, Dock reopen, and deep links always work.
+private struct WindowSceneRootView: View {
+    let coordinator: AppCoordinator
+    let appDelegate: AppDelegate
+    let windowID: UUID
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let controller = coordinator.controller(for: windowID)
+        MainWindowView(controller: controller)
+            .task {
+                appDelegate.attachCoordinator(coordinator)
+                coordinator.openWindowHandler = { id in
+                    openWindow(id: "main", value: id)
+                }
+            }
+            .preferredColorScheme(coordinator.settings.preferredColorScheme)
+            .tint(AppleTheme.accent)
     }
 }
 
 @main
 struct YouTubeMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var controller = AppController()
+    @State private var coordinator = AppCoordinator()
 
     var body: some Scene {
-        Window("GlassGrid You", id: "main") {
-            MainWindowView(controller: controller)
-                .task {
-                    appDelegate.attachController(controller)
-                }
-                .preferredColorScheme(controller.settings.preferredColorScheme)
-                .tint(AppleTheme.accent)
+        WindowGroup("GlassGrid You", id: "main", for: UUID.self) { $windowID in
+            WindowSceneRootView(
+                coordinator: coordinator,
+                appDelegate: appDelegate,
+                windowID: windowID
+            )
+        } defaultValue: {
+            UUID()
         }
         .defaultSize(width: 1280, height: 820)
         .windowStyle(.hiddenTitleBar)
@@ -204,306 +249,340 @@ struct YouTubeMacApp: App {
 
         MenuBarExtra(
             "GlassGrid You",
-            systemImage: controller.nowPlayingStatus.isPlaying ? "play.circle.fill" : "play.rectangle.fill",
+            systemImage: (coordinator.nowPlayingController?.nowPlayingStatus.isPlaying ?? false) ? "play.circle.fill" : "play.rectangle.fill",
             isInserted: Binding(
-                get: { controller.settings.showMenuBarControls },
-                set: { controller.settings.showMenuBarControls = $0 }
+                get: { coordinator.settings.showMenuBarControls },
+                set: { coordinator.settings.showMenuBarControls = $0 }
             )
         ) {
-            MenuBarView(controller: controller)
-                .preferredColorScheme(controller.settings.preferredColorScheme)
+            MenuBarView(coordinator: coordinator)
+                .preferredColorScheme(coordinator.settings.preferredColorScheme)
                 .tint(AppleTheme.accent)
         }
         .menuBarExtraStyle(.window)
 
         Settings {
-            SettingsView(controller: controller)
-                .preferredColorScheme(controller.settings.preferredColorScheme)
+            SettingsView(coordinator: coordinator)
+                .preferredColorScheme(coordinator.settings.preferredColorScheme)
                 .tint(AppleTheme.accent)
         }
     }
 
     @CommandsBuilder
     private var appCommands: some Commands {
+        // Snapshot strictly for menu labels & disabled states; every action closure resolves
+        // `coordinator.commandTarget` dynamically at execution time to eliminate stale-window races.
+        let targetSnapshot = coordinator.commandTarget
+        let activeMediaStatus = targetSnapshot?.nowPlayingStatus ?? .empty
+        let anyFullscreen = targetSnapshot?.anyTabInFullscreen ?? false
+        let isPoppedOut = targetSnapshot?.isSelectedTabPoppedOut ?? false
+
         CommandGroup(after: .appInfo) {
-            Button(controller.isCheckingForUpdates ? "Checking for Updates…" : "Check for Updates…") {
-                controller.checkForUpdates(presentAlert: true)
+            Button(coordinator.updater.isCheckingForUpdates ? "Checking for Updates…" : "Check for Updates…") {
+                coordinator.updater.checkForUpdates(presentAlert: true)
             }
-            .disabled(controller.isCheckingForUpdates)
+            .disabled(!coordinator.updater.canCheckForUpdates)
         }
 
         CommandGroup(replacing: .newItem) {
+            Button("New Window") {
+                coordinator.openNewWindow()
+            }
+            .keyboardShortcut("n", modifiers: .command)
+
             Button("New Tab") {
-                controller.createTab()
+                if let active = coordinator.commandTarget {
+                    active.createTab()
+                } else {
+                    coordinator.openNewWindow()
+                }
             }
             .keyboardShortcut("t", modifiers: .command)
 
             Button("Close Tab") {
-                controller.closeTab(id: controller.selectedTabID)
+                guard let active = coordinator.commandTarget else { return }
+                active.closeTab(id: active.selectedTabID)
             }
             .keyboardShortcut("w", modifiers: .command)
-            .disabled(controller.anyTabInFullscreen)
+            .disabled(targetSnapshot == nil || anyFullscreen)
+
+            Button("Close Window") {
+                coordinator.commandTarget?.closeWindow()
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil || anyFullscreen)
 
             Button("Reopen Closed Tab") {
-                controller.reopenClosedTab()
+                coordinator.commandTarget?.reopenClosedTab()
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(controller.closedTabURLs.isEmpty)
+            .disabled(targetSnapshot?.closedTabURLs.isEmpty ?? true)
 
             Divider()
 
             Button("Open YouTube URL from Clipboard") {
-                controller.openURLFromClipboard()
+                coordinator.openURLFromClipboard()
             }
             .keyboardShortcut("v", modifiers: [.command, .shift])
 
             Button("Copy Current Link") {
-                controller.copyCurrentURL()
+                coordinator.commandTarget?.copyCurrentURL()
             }
             .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil)
 
             Button("Copy Link at Current Time") {
-                controller.copyCurrentURLAtTime()
+                coordinator.commandTarget?.copyCurrentURLAtTime()
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .disabled(!controller.nowPlayingStatus.hasVideo)
+            .disabled(!activeMediaStatus.hasVideo)
 
             Button("Share Link…") {
-                controller.shareCurrentURL()
+                coordinator.commandTarget?.shareCurrentURL()
             }
-            .disabled(controller.currentShareURL == nil)
+            .disabled(targetSnapshot?.currentShareURL == nil)
 
             Button("Share Link at Current Time…") {
-                controller.shareCurrentURLAtTime()
+                coordinator.commandTarget?.shareCurrentURLAtTime()
             }
-            .disabled(controller.currentTimestampedShareURL == nil)
+            .disabled(targetSnapshot?.currentTimestampedShareURL == nil)
 
             Button("Open Current Page in Default Browser") {
-                controller.openCurrentInDefaultBrowser()
+                coordinator.commandTarget?.openCurrentInDefaultBrowser()
             }
             .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil)
         }
 
         CommandGroup(after: .pasteboard) {
             Divider()
 
             Button("Find on Page…") {
-                controller.presentFindBar()
+                coordinator.commandTarget?.presentFindBar()
             }
             .keyboardShortcut("f", modifiers: .command)
-            .disabled(controller.anyTabInFullscreen || controller.isSelectedTabPoppedOut)
+            .disabled(targetSnapshot == nil || anyFullscreen || isPoppedOut)
 
             Button("Find Next") {
-                controller.findNextOnPage()
+                coordinator.commandTarget?.findNextOnPage()
             }
             .keyboardShortcut("g", modifiers: .command)
-            .disabled(controller.anyTabInFullscreen || controller.isSelectedTabPoppedOut)
+            .disabled(targetSnapshot == nil || anyFullscreen || isPoppedOut)
         }
 
         CommandMenu("Navigate") {
             Button("Focus URL Bar") {
-                controller.focusOmnibox(clearForSearch: false)
+                coordinator.commandTarget?.focusOmnibox(clearForSearch: false)
             }
             .keyboardShortcut("l", modifiers: .command)
+            .disabled(targetSnapshot == nil)
 
             Button("Command Palette & Search…") {
-                controller.toggleCommandPalette()
+                coordinator.commandTarget?.toggleCommandPalette()
             }
             .keyboardShortcut("k", modifiers: .command)
-            .disabled(controller.anyTabInFullscreen)
+            .disabled(targetSnapshot == nil || anyFullscreen)
 
             Divider()
 
             Button("Back") {
-                controller.selectedTab?.goBack()
+                coordinator.commandTarget?.selectedTab?.goBack()
             }
             .keyboardShortcut("[", modifiers: .command)
-            .disabled(controller.isSelectedTabPoppedOut || !(controller.selectedTab?.canGoBack ?? false))
+            .disabled(targetSnapshot == nil || isPoppedOut || !(targetSnapshot?.selectedTab?.canGoBack ?? false))
 
             Button("Forward") {
-                controller.selectedTab?.goForward()
+                coordinator.commandTarget?.selectedTab?.goForward()
             }
             .keyboardShortcut("]", modifiers: .command)
-            .disabled(controller.isSelectedTabPoppedOut || !(controller.selectedTab?.canGoForward ?? false))
+            .disabled(targetSnapshot == nil || isPoppedOut || !(targetSnapshot?.selectedTab?.canGoForward ?? false))
 
             Button("Reload Page") {
-                controller.selectedTab?.reloadOrStop()
+                coordinator.commandTarget?.selectedTab?.reloadOrStop()
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(controller.isSelectedTabPoppedOut)
+            .disabled(targetSnapshot == nil || isPoppedOut)
 
             Divider()
 
             Button("Home") {
-                controller.navigateSelectedTab(to: .home)
+                coordinator.commandTarget?.navigateSelectedTab(to: .home)
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil)
 
             Button("Subscriptions") {
-                controller.navigateSelectedTab(to: .subscriptions)
+                coordinator.commandTarget?.navigateSelectedTab(to: .subscriptions)
             }
             .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil)
 
             Button("Watch Later") {
-                controller.navigateSelectedTab(to: .watchLater)
+                coordinator.commandTarget?.navigateSelectedTab(to: .watchLater)
             }
             .keyboardShortcut("l", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil)
 
             Button("History") {
-                controller.navigateSelectedTab(to: .history)
+                coordinator.commandTarget?.navigateSelectedTab(to: .history)
             }
             .keyboardShortcut("y", modifiers: .command)
+            .disabled(targetSnapshot == nil)
 
-            Button(controller.isCurrentPagePinned ? "Unpin Current Page" : "Pin Current Page") {
-                controller.togglePinCurrentPage()
+            Button((targetSnapshot?.isCurrentPagePinned ?? false) ? "Unpin Current Page" : "Pin Current Page") {
+                coordinator.commandTarget?.togglePinCurrentPage()
             }
             .keyboardShortcut("d", modifiers: .command)
+            .disabled(targetSnapshot == nil)
 
             Divider()
 
             Button("Select Next Tab") {
-                controller.selectNextTab()
+                coordinator.commandTarget?.selectNextTab()
             }
             .keyboardShortcut("]", modifiers: [.command, .shift])
-            .disabled(controller.tabs.count < 2 || controller.anyTabInFullscreen)
+            .disabled((targetSnapshot?.tabs.count ?? 0) < 2 || anyFullscreen)
 
             Button("Select Previous Tab") {
-                controller.selectPreviousTab()
+                coordinator.commandTarget?.selectPreviousTab()
             }
             .keyboardShortcut("[", modifiers: [.command, .shift])
-            .disabled(controller.tabs.count < 2 || controller.anyTabInFullscreen)
+            .disabled((targetSnapshot?.tabs.count ?? 0) < 2 || anyFullscreen)
 
             ForEach(1...9, id: \.self) { number in
                 Button("Tab \(number)") {
-                    controller.selectTab(atIndex: number)
+                    coordinator.commandTarget?.selectTab(atIndex: number)
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
-                .disabled(!controller.tabs.indices.contains(number - 1) || controller.anyTabInFullscreen)
+                .disabled(!(targetSnapshot?.tabs.indices.contains(number - 1) ?? false) || anyFullscreen)
             }
         }
 
         CommandMenu("Playback") {
-            Button(controller.nowPlayingStatus.isPlaying ? "Pause" : "Play") {
-                controller.togglePlayPause()
+            Button(activeMediaStatus.isPlaying ? "Pause" : "Play") {
+                coordinator.commandTarget?.togglePlayPause()
             }
             .keyboardShortcut("\\", modifiers: .command)
-            .disabled(!controller.nowPlayingStatus.hasVideo)
+            .disabled(!activeMediaStatus.hasVideo)
 
-            Button(controller.nowPlayingStatus.isMuted ? "Unmute" : "Mute") {
-                controller.toggleMute()
+            Button(activeMediaStatus.isMuted ? "Unmute" : "Mute") {
+                coordinator.commandTarget?.toggleMute()
             }
             .keyboardShortcut("m", modifiers: [.command, .option])
-            .disabled(!controller.nowPlayingStatus.hasVideo)
+            .disabled(!activeMediaStatus.hasVideo)
 
             Button("Picture in Picture") {
-                controller.togglePictureInPicture()
+                coordinator.commandTarget?.togglePictureInPicture()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
-            .disabled(!controller.nowPlayingStatus.hasVideo)
+            .disabled(!activeMediaStatus.hasVideo)
 
-            Button(controller.isMiniPlayer ? "Exit Mini-Player" : "Mini-Player") {
-                controller.toggleMiniPlayer()
+            Button((targetSnapshot?.isMiniPlayer ?? false) ? "Exit Mini-Player" : "Mini-Player") {
+                coordinator.commandTarget?.toggleMiniPlayer()
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
-            .disabled(!controller.isMiniPlayer && !controller.canPopOutActiveTab)
+            .disabled(targetSnapshot == nil || (!(targetSnapshot?.isMiniPlayer ?? false) && !(targetSnapshot?.canPopOutActiveTab ?? false)))
 
-            Button(controller.alwaysOnTop ? "Disable Always on Top" : "Always on Top") {
-                controller.toggleAlwaysOnTop()
+            Button((targetSnapshot?.alwaysOnTop ?? false) ? "Disable Always on Top" : "Always on Top") {
+                coordinator.commandTarget?.toggleAlwaysOnTop()
             }
             .keyboardShortcut("p", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil)
 
-            Button(controller.focusModeActive ? "Exit Focus Mode" : "Focus Mode") {
-                controller.toggleFocusMode()
+            Button((targetSnapshot?.focusModeActive ?? false) ? "Exit Focus Mode" : "Focus Mode") {
+                coordinator.commandTarget?.toggleFocusMode()
             }
             .keyboardShortcut("f", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil)
 
             Button("Toggle Theater Mode") {
-                controller.toggleTheaterMode()
+                coordinator.commandTarget?.toggleTheaterMode()
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil)
 
             Divider()
 
-            Button(controller.isMultiviewActive ? "Exit Multiview" : "Multiview (Up to 4 Streams)") {
-                controller.toggleMultiview()
+            Button((targetSnapshot?.isMultiviewActive ?? false) ? "Exit Multiview" : "Multiview (Up to 4 Streams)") {
+                coordinator.commandTarget?.toggleMultiview()
             }
             .keyboardShortcut("g", modifiers: [.command, .shift])
-            .disabled(controller.anyTabInFullscreen)
+            .disabled(targetSnapshot == nil || anyFullscreen)
 
             Button("Cycle Multiview Layout") {
-                controller.cycleMultiviewLayoutMode()
+                coordinator.commandTarget?.cycleMultiviewLayoutMode()
             }
             .keyboardShortcut("g", modifiers: [.command, .option])
-            .disabled(!controller.isMultiviewActive || controller.anyTabInFullscreen)
+            .disabled(!(targetSnapshot?.isMultiviewActive ?? false) || anyFullscreen)
 
             Button("Add Stream to Multiview") {
-                controller.addTileToMultiview()
+                coordinator.commandTarget?.addTileToMultiview()
             }
-            .disabled((controller.isMultiviewActive && !controller.canAddMultiviewTile) || controller.anyTabInFullscreen)
+            .disabled(targetSnapshot == nil || ((targetSnapshot?.isMultiviewActive ?? false) && !(targetSnapshot?.canAddMultiviewTile ?? false)) || anyFullscreen)
 
             Button("Open YouTube TV in Multiview") {
-                controller.openYouTubeTVInMultiview()
+                coordinator.commandTarget?.openYouTubeTVInMultiview()
             }
-            .disabled((controller.isMultiviewActive && !controller.canAddMultiviewTile) || controller.anyTabInFullscreen)
+            .disabled(targetSnapshot == nil || ((targetSnapshot?.isMultiviewActive ?? false) && !(targetSnapshot?.canAddMultiviewTile ?? false)) || anyFullscreen)
 
             Menu("Multiview Audio Focus") {
                 ForEach(1...MultiviewGridLayout.maxTiles, id: \.self) { slot in
                     Button("Stream \(slot) Audio") {
-                        controller.focusMultiviewAudio(slot: slot)
+                        coordinator.commandTarget?.focusMultiviewAudio(slot: slot)
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(slot)")), modifiers: [.command, .option])
-                    .disabled(!controller.isMultiviewActive || !controller.multiviewTabIDs.indices.contains(slot - 1))
+                    .disabled(!(targetSnapshot?.isMultiviewActive ?? false) || !(targetSnapshot?.multiviewTabIDs.indices.contains(slot - 1) ?? false))
                 }
 
                 Divider()
 
                 Button("Next Stream Audio") {
-                    controller.cycleMultiviewAudioFocus(by: 1)
+                    coordinator.commandTarget?.cycleMultiviewAudioFocus(by: 1)
                 }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-                .disabled(!controller.isMultiviewActive)
+                .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
 
                 Button("Previous Stream Audio") {
-                    controller.cycleMultiviewAudioFocus(by: -1)
+                    coordinator.commandTarget?.cycleMultiviewAudioFocus(by: -1)
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                .disabled(!controller.isMultiviewActive)
+                .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
 
                 Divider()
 
                 Button("Mute All Streams") {
-                    controller.muteAllMultiviewTiles()
+                    coordinator.commandTarget?.muteAllMultiviewTiles()
                 }
-                .disabled(!controller.isMultiviewActive)
+                .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
             }
 
             Divider()
 
             Menu("Playback Speed") {
                 Button("Increase Speed (+0.1×)") {
-                    controller.stepPlaybackRate(by: 0.1)
+                    coordinator.commandTarget?.stepPlaybackRate(by: 0.1)
                 }
                 .keyboardShortcut("]", modifiers: [.command, .option])
-                .disabled(!controller.nowPlayingStatus.hasVideo)
+                .disabled(!activeMediaStatus.hasVideo)
 
                 Button("Decrease Speed (−0.1×)") {
-                    controller.stepPlaybackRate(by: -0.1)
+                    coordinator.commandTarget?.stepPlaybackRate(by: -0.1)
                 }
                 .keyboardShortcut("[", modifiers: [.command, .option])
-                .disabled(!controller.nowPlayingStatus.hasVideo)
+                .disabled(!activeMediaStatus.hasVideo)
 
                 Button("Reset Speed (1×)") {
-                    controller.resetPlaybackRate()
+                    coordinator.commandTarget?.resetPlaybackRate()
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
-                .disabled(!controller.nowPlayingStatus.hasVideo)
+                .disabled(!activeMediaStatus.hasVideo)
 
                 Divider()
 
                 ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { rate in
-                    let isCurrent = controller.nowPlayingStatus.hasVideo && abs(controller.nowPlayingStatus.playbackRate - rate) < 0.02
+                    let isCurrent = activeMediaStatus.hasVideo && abs(activeMediaStatus.playbackRate - rate) < 0.02
                     Button {
-                        controller.setPlaybackRate(rate)
+                        coordinator.commandTarget?.setPlaybackRate(rate)
                     } label: {
                         if isCurrent {
                             Label(MediaStatus.formatPlaybackRate(rate), systemImage: "checkmark")
@@ -511,40 +590,41 @@ struct YouTubeMacApp: App {
                             Text(MediaStatus.formatPlaybackRate(rate))
                         }
                     }
-                    .disabled(!controller.nowPlayingStatus.hasVideo)
+                    .disabled(!activeMediaStatus.hasVideo)
                 }
             }
 
             Menu("Sleep Timer") {
                 ForEach(SleepTimerOption.allCases) { option in
                     Button {
-                        controller.setSleepTimer(option)
+                        coordinator.commandTarget?.setSleepTimer(option)
                     } label: {
-                        if controller.sleepTimerOption == option {
+                        if targetSnapshot?.sleepTimerOption == option {
                             Label(option.title, systemImage: "checkmark")
                         } else {
                             Text(option.title)
                         }
                     }
+                    .disabled(targetSnapshot == nil)
                 }
 
-                if controller.isSleepTimerActive {
+                if targetSnapshot?.isSleepTimerActive == true {
                     Divider()
                     Button("Turn Off Sleep Timer") {
-                        controller.setSleepTimer(nil)
+                        coordinator.commandTarget?.setSleepTimer(nil)
                     }
                 }
             }
 
-            if controller.activeChapters.count >= 2 {
+            if let targetSnapshot, targetSnapshot.activeChapters.count >= 2 {
                 Menu("Chapters") {
-                    let chapters = controller.activeChapters
-                    let current = controller.activeTimeline.flatMap {
+                    let chapters = targetSnapshot.activeChapters
+                    let current = targetSnapshot.activeTimeline.flatMap {
                         VideoChapterParser.activeChapter(at: $0.currentTime, in: chapters)
                     }
                     ForEach(chapters) { chapter in
                         Button {
-                            controller.seek(to: chapter.startSeconds)
+                            coordinator.commandTarget?.seek(to: chapter.startSeconds)
                         } label: {
                             let label = "\(chapter.formattedStartTime)  \(chapter.title)"
                             if current?.id == chapter.id {
@@ -560,33 +640,42 @@ struct YouTubeMacApp: App {
             Divider()
 
             Button("Copy Video Frame") {
-                controller.copyVideoFrame()
+                coordinator.commandTarget?.copyVideoFrame()
             }
-            .disabled(!controller.nowPlayingStatus.hasVideo)
+            .disabled(!activeMediaStatus.hasVideo)
 
             Button("Save Video Frame…") {
-                controller.saveVideoFrame()
+                coordinator.commandTarget?.saveVideoFrame()
             }
-            .disabled(!controller.nowPlayingStatus.hasVideo)
+            .disabled(!activeMediaStatus.hasVideo)
         }
 
         CommandGroup(after: .sidebar) {
             Button("Toggle Sidebar") {
-                controller.toggleSidebar()
+                coordinator.commandTarget?.toggleSidebar()
             }
             .keyboardShortcut("s", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil)
 
-            Button(controller.settings.isEffectivelyDark ? "Switch to Day Mode" : "Switch to Night Mode") {
-                controller.toggleDayNightMode()
+            Button(coordinator.settings.isEffectivelyDark ? "Switch to Day Mode" : "Switch to Night Mode") {
+                if let active = coordinator.commandTarget {
+                    active.toggleDayNightMode()
+                } else {
+                    coordinator.settings.appearance = coordinator.settings.isEffectivelyDark ? .light : .dark
+                }
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
 
             Menu("Appearance") {
                 ForEach(AppAppearance.allCases) { mode in
                     Button {
-                        controller.setAppearance(mode)
+                        if let active = coordinator.commandTarget {
+                            active.setAppearance(mode)
+                        } else {
+                            coordinator.settings.appearance = mode
+                        }
                     } label: {
-                        if controller.settings.appearance == mode {
+                        if coordinator.settings.appearance == mode {
                             Label(mode.title, systemImage: "checkmark")
                         } else {
                             Text(mode.title)
@@ -598,41 +687,44 @@ struct YouTubeMacApp: App {
             Divider()
 
             Button("Zoom In") {
-                controller.zoomIn()
+                coordinator.commandTarget?.zoomIn()
             }
             .keyboardShortcut("=", modifiers: .command)
+            .disabled(targetSnapshot == nil)
 
             Button("Zoom Out") {
-                controller.zoomOut()
+                coordinator.commandTarget?.zoomOut()
             }
             .keyboardShortcut("-", modifiers: .command)
+            .disabled(targetSnapshot == nil)
 
             Button("Actual Size") {
-                controller.resetZoom()
+                coordinator.commandTarget?.resetZoom()
             }
             .keyboardShortcut("0", modifiers: .command)
+            .disabled(targetSnapshot == nil)
 
             Divider()
 
             Toggle(
                 "Hide YouTube Shorts",
                 isOn: Binding(
-                    get: { controller.settings.hideShorts },
-                    set: { controller.settings.hideShorts = $0 }
+                    get: { coordinator.settings.hideShorts },
+                    set: { coordinator.settings.hideShorts = $0 }
                 )
             )
             Toggle(
                 "Clean Web Chrome",
                 isOn: Binding(
-                    get: { controller.settings.cleanWebChrome },
-                    set: { controller.settings.cleanWebChrome = $0 }
+                    get: { coordinator.settings.cleanWebChrome },
+                    set: { coordinator.settings.cleanWebChrome = $0 }
                 )
             )
             Toggle(
                 "Default to Theater Mode",
                 isOn: Binding(
-                    get: { controller.settings.autoTheaterMode },
-                    set: { controller.settings.autoTheaterMode = $0 }
+                    get: { coordinator.settings.autoTheaterMode },
+                    set: { coordinator.settings.autoTheaterMode = $0 }
                 )
             )
         }

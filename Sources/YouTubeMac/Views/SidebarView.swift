@@ -388,6 +388,9 @@ struct SidebarView: View {
             Button("Open in New Tab") {
                 controller.createTab(url: destination.url, select: true)
             }
+            Button("Open in New Window") {
+                controller.openURLInNewWindow(destination.url)
+            }
         }
     }
 
@@ -605,6 +608,9 @@ struct SidebarView: View {
                         routingMode: YouTubeURLRouter.preferredRoutingMode(for: url)
                     )
                 }
+                Button("Open in New Window") {
+                    controller.openURLInNewWindow(url)
+                }
             }
             Button("Rename…") {
                 renamePinDraft = item.title
@@ -737,6 +743,9 @@ struct SidebarView: View {
         .contextMenu {
             Button("Launch Preset") {
                 controller.launchMultiviewPreset(preset)
+            }
+            Button("Launch Preset in New Window") {
+                controller.launchPresetInNewWindow(preset)
             }
             Button("Rename…") {
                 renamePresetDraft = preset.name

@@ -36,6 +36,7 @@ public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case toggleSidebar
     case findOnPage
     case newTab
+    case newWindow
     case openClipboardURL
     case copyVideoFrame
     case saveVideoFrame

@@ -45,6 +45,7 @@ public final class AppSettings {
         static let savedMultiviewPresets = "ytmac.savedMultiviewPresets"
         static let multiviewQualityCeiling = "ytmac.multiviewQualityCeiling"
         static let multiviewAudioDuckingEnabled = "ytmac.multiviewAudioDuckingEnabled"
+        static let automaticallyChecksForUpdates = "ytmac.automaticallyChecksForUpdates"
     }
 
     @ObservationIgnored
@@ -284,6 +285,13 @@ public final class AppSettings {
         }
     }
 
+    public var automaticallyChecksForUpdates: Bool {
+        didSet {
+            guard automaticallyChecksForUpdates != oldValue else { return }
+            defaults.set(automaticallyChecksForUpdates, forKey: Keys.automaticallyChecksForUpdates)
+        }
+    }
+
     public var savedSession: SavedSession? {
         get {
             guard let data = defaults.data(forKey: Keys.savedSession),
@@ -392,6 +400,7 @@ public final class AppSettings {
         self.autoPauseOnSystemEvents = defaults.object(forKey: Keys.autoPauseOnSystemEvents) as? Bool ?? true
         self.searchAutocompleteEnabled = defaults.object(forKey: Keys.searchAutocompleteEnabled) as? Bool ?? true
         self.multiviewAudioDuckingEnabled = defaults.object(forKey: Keys.multiviewAudioDuckingEnabled) as? Bool ?? false
+        self.automaticallyChecksForUpdates = defaults.object(forKey: Keys.automaticallyChecksForUpdates) as? Bool ?? true
 
         if let rawCeiling = defaults.string(forKey: Keys.multiviewQualityCeiling),
            let parsedCeiling = MultiviewQualityCeiling(rawValue: rawCeiling) {

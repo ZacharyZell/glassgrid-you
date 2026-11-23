@@ -137,8 +137,106 @@ private struct MenuBarActionRow: View {
     }
 }
 
-/// Apple Control Center & Liquid Glass menu bar Now Playing popover with transport and window controls.
+/// Apple Control Center & Liquid Glass menu bar Now Playing popover with multi-window transport & window controls.
 struct MenuBarView: View {
+    @Bindable var coordinator: AppCoordinator
+    @Environment(\.openWindow) private var openWindow
+    @State private var isSettingsHovered = false
+    @State private var isQuitHovered = false
+
+    var body: some View {
+        Group {
+            if let controller = coordinator.nowPlayingController {
+                MenuBarActiveControllerView(coordinator: coordinator, controller: controller)
+            } else {
+                emptyWindowsPopover
+            }
+        }
+        .task {
+            coordinator.openWindowHandler = { id in
+                openWindow(id: "main", value: id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyWindowsPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(AppleTheme.accent.opacity(0.14))
+                    .frame(width: 44, height: 32)
+                    .overlay(
+                        Image(systemName: "play.rectangle.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(AppleTheme.accent)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("GlassGrid You")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("No open windows")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            Divider()
+                .opacity(0.6)
+
+            VStack(spacing: 2) {
+                MenuBarActionRow(title: "New GlassGrid You Window", systemImage: "macwindow.badge.plus") {
+                    coordinator.openNewWindow()
+                }
+                MenuBarActionRow(title: "Open Copied YouTube URL", systemImage: "link.badge.plus") {
+                    coordinator.openURLFromClipboard()
+                }
+            }
+
+            Divider()
+                .opacity(0.6)
+
+            HStack {
+                SettingsLink {
+                    Text("Settings…")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isSettingsHovered ? Color.primary : .secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(isSettingsHovered ? Color.primary.opacity(0.08) : .clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .onHover { isSettingsHovered = $0 }
+
+                Spacer()
+
+                Button {
+                    NSApp.terminate(nil)
+                } label: {
+                    Text("Quit GlassGrid You")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isQuitHovered ? Color.primary : .secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(isQuitHovered ? Color.primary.opacity(0.08) : .clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .onHover { isQuitHovered = $0 }
+            }
+        }
+        .padding(14)
+        .frame(width: 318)
+    }
+}
+
+private struct MenuBarActiveControllerView: View {
+    @Bindable var coordinator: AppCoordinator
     @Bindable var controller: AppController
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
@@ -546,6 +644,22 @@ struct MenuBarView: View {
             }
 
             MenuBarActionRow(
+                title: "New Window",
+                systemImage: "macwindow.badge.plus"
+            ) {
+                coordinator.openNewWindow()
+            }
+
+            if coordinator.hasMultipleWindows {
+                MenuBarActionRow(
+                    title: "Bring All Windows to Front",
+                    systemImage: "macwindow.on.rectangle"
+                ) {
+                    coordinator.bringAllWindowsToFront()
+                }
+            }
+
+            MenuBarActionRow(
                 title: "Open Copied YouTube URL",
                 systemImage: "link.badge.plus"
             ) {
@@ -658,8 +772,9 @@ struct MenuBarView: View {
 
     private func openOrFocusMainWindow() {
         if controller.mainWindow == nil {
-            openWindow(id: "main")
+            coordinator.openNewWindow()
+        } else {
+            controller.focusMainWindow()
         }
-        controller.focusMainWindow()
     }
 }

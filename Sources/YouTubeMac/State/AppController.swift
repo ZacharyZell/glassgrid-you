@@ -16,6 +16,8 @@ public final class AppController {
         case leftApp
     }
 
+    public let windowID: UUID
+    public let isPrimaryWindow: Bool
     public let settings: AppSettings
     public var tabs: [BrowserTab] = []
     public var selectedTabID: UUID
@@ -57,17 +59,17 @@ public final class AppController {
     public var commandPaletteSuggestions: [String] = []
     public var commandPaletteFocusTrigger: Int = 0
 
-    public var isCheckingForUpdates: Bool = false
-    public var lastUpdateCheckResult: ReleaseCheckResult?
+    @ObservationIgnored
+    public weak var coordinator: AppCoordinator?
 
     @ObservationIgnored
     weak var mainWindow: NSWindow?
 
     @ObservationIgnored
-    private let systemPlaybackGuard = SystemPlaybackGuard()
+    private var hasCascadedSecondaryWindow = false
 
     @ObservationIgnored
-    private let suggestClient = YouTubeSuggestClient()
+    private var isWindowTornDown = false
 
     @ObservationIgnored
     private var suggestDebounceTask: Task<Void, Never>?
@@ -91,10 +93,13 @@ public final class AppController {
     private var sidebarVisibleBeforeMultiview: Bool?
 
     @ObservationIgnored
-    private let floatingMiniPlayer: FloatingMiniPlayerController
+    private let fallbackFloatingMiniPlayer: FloatingMiniPlayerController?
 
     @ObservationIgnored
-    private let sponsorBlockClient = SponsorBlockClient()
+    private let fallbackSponsorBlockClient = SponsorBlockClient()
+
+    @ObservationIgnored
+    private let fallbackSuggestClient = YouTubeSuggestClient()
 
     @ObservationIgnored
     private var sponsorFetchTasks: [UUID: Task<Void, Never>] = [:]
@@ -109,106 +114,140 @@ public final class AppController {
     private var resignActiveTask: Task<Void, Never>?
 
     @ObservationIgnored
-    private var initialThemeCookieSyncTask: Task<Void, Never>?
-
-    @ObservationIgnored
-    private var appearanceSyncTask: Task<Void, Never>?
-
-    @ObservationIgnored
     private var windowObservers: [NSObjectProtocol] = []
 
     @ObservationIgnored
     private var workspaceObservers: [NSObjectProtocol] = []
 
+    private var floatingMiniPlayer: FloatingMiniPlayerController {
+        coordinator?.floatingMiniPlayer ?? fallbackFloatingMiniPlayer!
+    }
+
+    private var sponsorBlockClient: SponsorBlockClient {
+        coordinator?.sponsorBlockClient ?? fallbackSponsorBlockClient
+    }
+
+    private var suggestClient: YouTubeSuggestClient {
+        coordinator?.suggestClient ?? fallbackSuggestClient
+    }
+
+    private var initialThemeCookieSyncTask: Task<Void, Never>? {
+        coordinator?.initialThemeCookieSyncTask
+    }
+
     private static let defaultMinSize = NSSize(width: 780, height: 520)
 
-    public init(settings: AppSettings = AppSettings()) {
-        self.settings = settings
-        self.isSidebarVisible = settings.isSidebarVisible
-        self.floatingMiniPlayer = FloatingMiniPlayerController(initialSavedFrame: settings.savedMiniPlayerFrame)
+    public init(
+        windowID: UUID = UUID(),
+        isPrimaryWindow: Bool = true,
+        launchRequest: WindowLaunchRequest = .standard,
+        coordinator: AppCoordinator? = nil,
+        settings: AppSettings? = nil
+    ) {
+        let resolvedSettings = coordinator?.settings ?? settings ?? AppSettings()
+        self.windowID = windowID
+        self.isPrimaryWindow = isPrimaryWindow
+        self.coordinator = coordinator
+        self.settings = resolvedSettings
+        self.isSidebarVisible = resolvedSettings.isSidebarVisible
+        self.fallbackFloatingMiniPlayer = coordinator == nil
+            ? FloatingMiniPlayerController(initialSavedFrame: resolvedSettings.savedMiniPlayerFrame)
+            : nil
 
         let placeholderID = UUID()
         self.selectedTabID = placeholderID
 
+        let pendingSync = coordinator?.initialThemeCookieSyncTask
         let initialSelectedTab: BrowserTab
         let initialSelectedURL: URL
+        var presetToLaunch: MultiviewPreset?
 
-        if settings.restoreTabsOnLaunch,
-           let saved = settings.savedSession,
-           let sanitized = SessionRestorationFilter.sanitize(tabs: saved.tabs, selectedIndex: saved.selectedIndex) {
-            var restoredTabs: [BrowserTab] = []
-            restoredTabs.reserveCapacity(sanitized.tabs.count)
-            for (idx, snap) in sanitized.tabs.enumerated() {
-                guard let tabURL = snap.url else { continue }
-                let isSelected = (idx == sanitized.selectedIndex)
-                let tab = makeTab(
-                    url: tabURL,
-                    initialTitle: snap.title,
-                    routingMode: snap.routingMode,
-                    deferInitialLoad: isSelected,
-                    lazyLoad: !isSelected
-                )
-                restoredTabs.append(tab)
-            }
-            if !restoredTabs.isEmpty {
-                let clampedIdx = min(max(0, sanitized.selectedIndex), restoredTabs.count - 1)
-                self.tabs = restoredTabs
-                initialSelectedTab = restoredTabs[clampedIdx]
-                initialSelectedURL = initialSelectedTab.url
-            } else {
-                let fallbackURL = settings.startupDestination.url
-                let fallbackTab = makeTab(url: fallbackURL, deferInitialLoad: true)
-                self.tabs = [fallbackTab]
-                initialSelectedTab = fallbackTab
-                initialSelectedURL = fallbackURL
-            }
-        } else {
-            let fallbackURL = settings.startupDestination.url
+        switch launchRequest {
+        case .url(let targetURL, let routingMode):
+            let tab = makeTab(
+                url: targetURL,
+                routingMode: routingMode,
+                deferInitialLoad: pendingSync != nil
+            )
+            self.tabs = [tab]
+            initialSelectedTab = tab
+            initialSelectedURL = targetURL
+
+        case .multiviewPreset(let preset):
+            let fallbackURL = resolvedSettings.startupDestination.url
             let fallbackTab = makeTab(url: fallbackURL, deferInitialLoad: true)
             self.tabs = [fallbackTab]
             initialSelectedTab = fallbackTab
             initialSelectedURL = fallbackURL
+            presetToLaunch = preset
+
+        case .standard:
+            if isPrimaryWindow,
+               resolvedSettings.restoreTabsOnLaunch,
+               let saved = resolvedSettings.savedSession,
+               let sanitized = SessionRestorationFilter.sanitize(tabs: saved.tabs, selectedIndex: saved.selectedIndex) {
+                var restoredTabs: [BrowserTab] = []
+                restoredTabs.reserveCapacity(sanitized.tabs.count)
+                for (idx, snap) in sanitized.tabs.enumerated() {
+                    guard let tabURL = snap.url else { continue }
+                    let isSelected = (idx == sanitized.selectedIndex)
+                    let tab = makeTab(
+                        url: tabURL,
+                        initialTitle: snap.title,
+                        routingMode: snap.routingMode,
+                        deferInitialLoad: isSelected && pendingSync != nil,
+                        lazyLoad: !isSelected
+                    )
+                    restoredTabs.append(tab)
+                }
+                if !restoredTabs.isEmpty {
+                    let clampedIdx = min(max(0, sanitized.selectedIndex), restoredTabs.count - 1)
+                    self.tabs = restoredTabs
+                    initialSelectedTab = restoredTabs[clampedIdx]
+                    initialSelectedURL = initialSelectedTab.url
+                } else {
+                    let fallbackURL = resolvedSettings.startupDestination.url
+                    let fallbackTab = makeTab(url: fallbackURL, deferInitialLoad: pendingSync != nil)
+                    self.tabs = [fallbackTab]
+                    initialSelectedTab = fallbackTab
+                    initialSelectedURL = fallbackURL
+                }
+            } else {
+                let fallbackURL = resolvedSettings.startupDestination.url
+                let fallbackTab = makeTab(url: fallbackURL, deferInitialLoad: pendingSync != nil)
+                self.tabs = [fallbackTab]
+                initialSelectedTab = fallbackTab
+                initialSelectedURL = fallbackURL
+            }
         }
 
         self.selectedTabID = initialSelectedTab.id
         self.omniboxText = initialSelectedTab.url.absoluteString
 
-        settings.onWebConfigDidChange = { [weak self] in
-            self?.applyConfigToAllTabs()
-        }
-        settings.onWindowPreferencesDidChange = { [weak self] in
-            self?.applyWindowLevelAndCollectionBehavior()
-            self?.floatingMiniPlayer.updateCollectionBehavior(allSpaces: self?.settings.miniPlayerAllSpaces ?? true)
-        }
-        settings.onAppearanceDidChange = { [weak self] in
-            self?.handleAppearanceDidChange()
-        }
-        settings.onSponsorBlockSettingDidChange = { [weak self] enabled in
-            self?.handleSponsorBlockSettingChanged(enabled: enabled)
-        }
-        settings.onSystemPlaybackGuardSettingDidChange = { [weak self] enabled in
-            self?.updateSystemPlaybackGuard(enabled: enabled)
-        }
-        settings.onMultiviewAudioDuckingDidChange = { [weak self] _ in
-            guard let self, self.isMultiviewActive else { return }
-            self.applyMultiviewAudioFocus(unmuteAudioTab: true)
-        }
-
-        floatingMiniPlayer.onFrameChanged = { [weak self] frame in
-            self?.settings.savedMiniPlayerFrame = frame
-        }
-        floatingMiniPlayer.onWindowClosedExternally = { [weak self] in
-            self?.closeMiniPlayerPopup()
-        }
-
-        updateSystemPlaybackGuard(enabled: settings.autoPauseOnSystemEvents)
-
-        // Sync YouTube's PREF cookie in WKHTTPCookieStore BEFORE the very first HTTP request goes out.
-        self.initialThemeCookieSyncTask = Task { @MainActor [weak self, weak initialSelectedTab] in
-            guard let self else { return }
-            await self.syncThemeCookieToWebKitStore()
-            self.initialThemeCookieSyncTask = nil
-            initialSelectedTab?.load(initialSelectedURL)
+        if let preset = presetToLaunch {
+            let launchBlock: @MainActor () -> Void = { [weak self] in
+                guard let self, !self.isWindowTornDown else { return }
+                let placeholderTab = self.tabs.first
+                self.launchMultiviewPreset(preset)
+                if let placeholderTab,
+                   self.tabs.count > 1,
+                   !self.multiviewTabIDs.contains(placeholderTab.id) {
+                    self.closeTab(id: placeholderTab.id)
+                }
+            }
+            if let pendingSync {
+                Task { @MainActor in
+                    await pendingSync.value
+                    launchBlock()
+                }
+            } else {
+                launchBlock()
+            }
+        } else if let pendingSync {
+            Task { @MainActor [weak initialSelectedTab] in
+                await pendingSync.value
+                initialSelectedTab?.load(initialSelectedURL)
+            }
         }
     }
 
@@ -431,11 +470,17 @@ public final class AppController {
         sponsorFetchTasks.removeValue(forKey: id)
 
         if tabs.count <= 1 {
-            // Standard macOS single-tab behavior: restore mini-player cleanly, pause active video, then hide window.
+            // In multi-window mode, closing the sole tab of a secondary window closes that window cleanly.
+            if coordinator?.hasMultipleWindows == true {
+                closeWindow()
+                return
+            }
+            // Standard macOS single-window behavior: restore mini-player cleanly, pause active video, then hide window.
             if id == poppedOutTabID {
                 let detached = floatingMiniPlayer.detachAndHide()
                 poppedOutTabID = nil
                 poppedOutReason = nil
+                coordinator?.releaseMiniPlayerOwnership(for: windowID)
                 if let tab = detached ?? tabs.first(where: { $0.id == id }) {
                     tab.needsPostAttachResize = true
                     tab.pauseAllPlayback()
@@ -452,6 +497,7 @@ public final class AppController {
             floatingMiniPlayer.detachAndHide()
             poppedOutTabID = nil
             poppedOutReason = nil
+            coordinator?.releaseMiniPlayerOwnership(for: windowID)
         }
 
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
@@ -696,6 +742,7 @@ public final class AppController {
         if let currentURL = selectedTab?.url {
             omniboxText = currentURL.absoluteString
         }
+        syncWindowTitle()
     }
 
     public func openURLFromClipboard() {
@@ -1689,6 +1736,7 @@ public final class AppController {
 
         tab.needsPostAttachResize = false
         tab.cancelPostAttachResize()
+        coordinator?.prepareMiniPlayerOwnership(for: windowID)
         poppedOutTabID = tab.id
         poppedOutReason = reason
 
@@ -1724,6 +1772,7 @@ public final class AppController {
         let detachedTab = floatingMiniPlayer.detachAndHide()
         poppedOutTabID = nil
         poppedOutReason = nil
+        coordinator?.releaseMiniPlayerOwnership(for: windowID)
 
         if let tab = detachedTab ?? tabs.first(where: { $0.id == poppedID }) {
             tab.needsPostAttachResize = true
@@ -1748,6 +1797,7 @@ public final class AppController {
         let detachedTab = floatingMiniPlayer.detachAndHide()
         poppedOutTabID = nil
         poppedOutReason = nil
+        coordinator?.releaseMiniPlayerOwnership(for: windowID)
 
         if let tab = detachedTab ?? tabs.first(where: { $0.id == poppedID }) {
             tab.needsPostAttachResize = true
@@ -2052,7 +2102,39 @@ public final class AppController {
         for tab in tabs {
             flushWatchProgress(for: tab)
         }
-        persistSessionNow()
+        cancelAllBackgroundTasks()
+    }
+
+    /// Cleanly tears down a closing window so zero audio, WKWebView, observer, or Task leaks remain.
+    public func teardownWindow() {
+        guard !isWindowTornDown else { return }
+        isWindowTornDown = true
+
+        if poppedOutTabID != nil {
+            _ = floatingMiniPlayer.detachAndHide()
+            poppedOutTabID = nil
+            poppedOutReason = nil
+            coordinator?.releaseMiniPlayerOwnership(for: windowID)
+        }
+
+        for tab in tabs {
+            flushWatchProgress(for: tab)
+        }
+
+        cancelAllBackgroundTasks()
+        clearWindowObservers()
+
+        for tab in tabs {
+            tab.teardown()
+        }
+        tabs.removeAll()
+        multiviewTabIDs.removeAll()
+        multiviewAudioTabID = nil
+        mainWindow = nil
+        isMainWindowVisible = false
+    }
+
+    private func cancelAllBackgroundTasks() {
         sleepTimerTask?.cancel()
         sleepTimerTask = nil
         findDebounceTask?.cancel()
@@ -2061,7 +2143,14 @@ public final class AppController {
         suggestDebounceTask = nil
         sessionSaveTask?.cancel()
         sessionSaveTask = nil
-        systemPlaybackGuard.stop()
+        toastDismissTask?.cancel()
+        toastDismissTask = nil
+        resignActiveTask?.cancel()
+        resignActiveTask = nil
+        for (_, task) in sponsorFetchTasks {
+            task.cancel()
+        }
+        sponsorFetchTasks.removeAll()
     }
 
     // MARK: - Command Palette, Saved Multiview Presets & Drag-and-Drop
@@ -2204,6 +2293,14 @@ public final class AppController {
                 keywords: "open tab",
                 systemImage: "plus.square",
                 shortcutHint: "⌘T",
+                isFeaturedWhenEmpty: false
+            ),
+            CommandPaletteActionDescriptor(
+                action: .newWindow,
+                title: "New Window",
+                keywords: "window multi dual monitor display",
+                systemImage: "macwindow.badge.plus",
+                shortcutHint: "⌘N",
                 isFeaturedWhenEmpty: false
             ),
             CommandPaletteActionDescriptor(
@@ -2370,6 +2467,9 @@ public final class AppController {
                 return
             case .newTab:
                 createTab()
+            case .newWindow:
+                openNewWindow()
+                return
             case .openClipboardURL:
                 openURLFromClipboard()
             case .copyVideoFrame:
@@ -2630,13 +2730,52 @@ public final class AppController {
         }
     }
 
-    private func updateSystemPlaybackGuard(enabled: Bool) {
-        if enabled {
-            systemPlaybackGuard.start { [weak self] reason in
-                self?.pauseAllPlayingTabs(reason: reason)
-            }
+    public func openNewWindow() {
+        coordinator?.openNewWindow()
+    }
+
+    public func closeWindow() {
+        mainWindow?.performClose(nil)
+    }
+
+    public func openTabInNewWindow(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        let baseURL = tab.pendingLazyURL ?? tab.url
+        let targetURL: URL
+        if tab.mediaStatus.hasVideo, tab.timeline.currentTime >= 1 {
+            targetURL = YouTubeURLRouter.urlWithTimestamp(baseURL, seconds: tab.timeline.currentTime)
         } else {
-            systemPlaybackGuard.stop()
+            targetURL = baseURL
+        }
+        coordinator?.openURLInNewWindow(targetURL, routingMode: tab.routingMode)
+    }
+
+    public func openURLInNewWindow(_ url: URL) {
+        coordinator?.openURLInNewWindow(url)
+    }
+
+    public func launchPresetInNewWindow(_ preset: MultiviewPreset) {
+        coordinator?.launchPresetInNewWindow(preset)
+    }
+
+    func refreshMultiviewAudioDuckingIfActive() {
+        guard isMultiviewActive else { return }
+        applyMultiviewAudioFocus(unmuteAudioTab: true)
+    }
+
+    func persistSessionForClose() {
+        persistSessionNow()
+    }
+
+    func reloadAllTabsToStartupDestination() {
+        if isMultiviewActive {
+            exitMultiview(focusTabID: selectedTabID, showFeedback: false)
+        }
+        if poppedOutTabID != nil {
+            dockMiniPlayer(selectTab: true, focusMain: false)
+        }
+        for tab in tabs {
+            tab.load(settings.startupDestination.url)
         }
     }
 
@@ -2660,6 +2799,8 @@ public final class AppController {
     }
 
     private func scheduleSessionSave() {
+        // Only persist session from the primary window (or sole open window) so secondary windows don't overwrite it.
+        guard isPrimaryWindow || coordinator?.hasMultipleWindows != true else { return }
         sessionSaveTask?.cancel()
         sessionSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -2712,6 +2853,25 @@ public final class AppController {
 
     // MARK: - Window Management
 
+    public func syncWindowTitle() {
+        guard let window = mainWindow else { return }
+        let isHome: Bool
+        if let tab = selectedTab {
+            isHome = !tab.isCompanionTab && SidebarDestination.matching(url: tab.url) == .home
+        } else {
+            isHome = true
+        }
+        let nextTitle = WindowTitleFormatter.title(
+            isMultiview: isMultiviewActive,
+            multiviewCount: multiviewTabs.count,
+            tabTitle: selectedTab?.displayTitle ?? "",
+            isHome: isHome
+        )
+        if window.title != nextTitle {
+            window.title = nextTitle
+        }
+    }
+
     public func attachMainWindow(_ window: NSWindow) {
         guard mainWindow !== window else { return }
         clearWindowObservers()
@@ -2721,10 +2881,20 @@ public final class AppController {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
         window.minSize = Self.defaultMinSize
+        // SwiftUI's AppKitWindowController owns every WindowGroup NSWindow and requires isReleasedWhenClosed = false
+        // (setting true double-releases the NSWindow on close).
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.backgroundColor = AppleTheme.canvasNSColor
-        window.setFrameAutosaveName("GlassGridYouMainWindow")
+
+        if isPrimaryWindow {
+            window.setFrameAutosaveName("GlassGridYouMainWindow")
+        } else if !hasCascadedSecondaryWindow {
+            hasCascadedSecondaryWindow = true
+            coordinator?.cascadeSecondaryWindow(window, excluding: windowID)
+        }
+
+        syncWindowTitle()
         settings.applyAppearance()
         applyWindowLevelAndCollectionBehavior()
         isMainWindowVisible = window.isVisible
@@ -2737,13 +2907,24 @@ public final class AppController {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     guard let self else { return }
                     self.isMainWindowVisible = true
                     self.isMainWindowMiniaturized = false
+                    self.coordinator?.markWindowActive(self.windowID)
                     if self.poppedOutReason == .leftApp {
                         self.dockMiniPlayer(selectTab: true, focusMain: false)
                     }
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didBecomeMainNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.coordinator?.markWindowActive(self.windowID)
                 }
             },
             center.addObserver(
@@ -2751,7 +2932,7 @@ public final class AppController {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.hoveredMultiviewTileID = nil
                 }
             },
@@ -2760,8 +2941,10 @@ public final class AppController {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.isMainWindowVisible = false
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isMainWindowVisible = false
+                    self.coordinator?.handleWindowWillClose(self.windowID)
                 }
             },
             center.addObserver(
@@ -2769,7 +2952,7 @@ public final class AppController {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.isMainWindowMiniaturized = true
                 }
             },
@@ -2778,7 +2961,7 @@ public final class AppController {
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.isMainWindowMiniaturized = false
                     self?.isMainWindowVisible = true
                 }
@@ -2875,6 +3058,10 @@ public final class AppController {
     }
 
     public func clearAllWebsiteData() async {
+        if let coordinator {
+            await coordinator.clearAllWebsiteData()
+            return
+        }
         isSigningOutData = true
         defer { isSigningOutData = false }
 
@@ -2889,7 +3076,6 @@ public final class AppController {
         let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
         let records = await store.dataRecords(ofTypes: allTypes)
         await store.removeData(ofTypes: allTypes, for: records)
-        await syncThemeCookieToWebKitStore()
 
         for tab in tabs {
             tab.load(settings.startupDestination.url)
@@ -2898,7 +3084,7 @@ public final class AppController {
 
     // MARK: - SponsorBlock Integration (Strictly Opt-In)
 
-    private func handleSponsorBlockSettingChanged(enabled: Bool) {
+    func handleSponsorBlockSettingChanged(enabled: Bool) {
         if enabled {
             for tab in tabs {
                 refreshSponsorSegmentsIfNeeded(for: tab, url: tab.url)
@@ -2936,51 +3122,6 @@ public final class AppController {
                 return
             }
             tab.applySponsorSegments(videoID: videoID, segments: segments)
-        }
-    }
-
-    // MARK: - Theme Cookie Sync
-
-    private func handleAppearanceDidChange() {
-        appearanceSyncTask?.cancel()
-        appearanceSyncTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.syncThemeCookieToWebKitStore()
-            guard !Task.isCancelled else { return }
-            self.applyConfigToAllTabs()
-        }
-    }
-
-    private func syncThemeCookieToWebKitStore() async {
-        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
-        let allCookies = await cookieStore.allCookies()
-        let existingPREF = allCookies.first { cookie in
-            cookie.name == "PREF"
-                && YouTubeURLRouter.isYouTubeHost(cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
-        }
-        let systemIsDark = (NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) ?? .darkAqua) == .darkAqua
-        let merged = YouTubeThemeCookie.mergedPREFValue(
-            existingPREF?.value,
-            appearance: settings.appearance,
-            systemIsDark: systemIsDark
-        )
-        if existingPREF?.value == merged {
-            return
-        }
-
-        var properties: [HTTPCookiePropertyKey: Any] = [
-            .domain: ".youtube.com",
-            .path: "/",
-            .name: "PREF",
-            .value: merged,
-            .expires: Date().addingTimeInterval(365 * 24 * 60 * 60),
-            .sameSitePolicy: HTTPCookieStringPolicy.sameSiteLax
-        ]
-        if existingPREF?.isSecure == true {
-            properties[.secure] = "TRUE"
-        }
-        if let cookie = HTTPCookie(properties: properties) {
-            await cookieStore.setCookie(cookie)
         }
     }
 
@@ -3163,83 +3304,15 @@ public final class AppController {
         if let tab = tabs.first(where: { $0.id == tabID }) {
             refreshSponsorSegmentsIfNeeded(for: tab, url: newURL)
         }
+        if tabID == selectedTabID {
+            syncWindowTitle()
+        }
         scheduleSessionSave()
     }
 
-    private func applyConfigToAllTabs() {
+    func applyConfigToAllTabs() {
         for tab in tabs {
             tab.applyConfig(configForTab(id: tab.id))
-        }
-    }
-
-    public var currentAppVersion: String {
-        if let raw = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-        return "1.0.0"
-    }
-
-    /// Opens a validated `https://` GitHub URL in the user's default browser.
-    public func openTrustedGitHubURL(_ url: URL) {
-        guard UpdateChecker.isTrustedGitHubDownloadURL(url) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    /// Strictly user-initiated update check against GitHub Releases (zero startup/background polling).
-    public func checkForUpdates(presentAlert: Bool) {
-        guard !isCheckingForUpdates else { return }
-        isCheckingForUpdates = true
-        let versionString = currentAppVersion
-
-        Task { @MainActor [weak self] in
-            let result = await UpdateChecker.checkLatestRelease(currentVersionString: versionString)
-            guard let self else { return }
-            self.lastUpdateCheckResult = result
-            self.isCheckingForUpdates = false
-            if presentAlert {
-                self.presentUpdateCheckAlert(result)
-            }
-        }
-    }
-
-    private func presentUpdateCheckAlert(_ result: ReleaseCheckResult) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-
-        switch result {
-        case .updateAvailable(let current, let latest):
-            alert.messageText = "GlassGrid You \(latest.tagName) is Available"
-            alert.informativeText = "You are currently running v\(current). Would you like to download the latest release from GitHub?"
-            alert.addButton(withTitle: "Download Release")
-            alert.addButton(withTitle: "Later")
-            if alert.runModal() == .alertFirstButtonReturn {
-                openTrustedGitHubURL(latest.preferredDownloadURL)
-            }
-
-        case .upToDate(let current):
-            alert.messageText = "You’re Up to Date"
-            alert.informativeText = "GlassGrid You v\(current) is the latest version."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-
-        case .noReleasesPublished:
-            alert.messageText = "No Releases Published Yet"
-            alert.informativeText = "GlassGrid You v\(currentAppVersion) has no published GitHub Release builds yet."
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "View Releases")
-            if alert.runModal() == .alertSecondButtonReturn {
-                openTrustedGitHubURL(UpdateChecker.releasesPageURL)
-            }
-
-        case .failed(let message):
-            alert.messageText = "Unable to Check for Updates"
-            alert.informativeText = message
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
         }
     }
 
