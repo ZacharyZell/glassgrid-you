@@ -377,7 +377,7 @@ struct HomeShelfBarView: View {
             }
         }
         .padding(.vertical, 8)
-        .background(AppleTheme.canvasColor)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
     }
 }
 
@@ -624,7 +624,7 @@ struct PopulatedHomeDashboardView: View {
             .padding(.vertical, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppleTheme.canvasColor)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
     }
 }
 
@@ -687,6 +687,6 @@ struct HiddenHomeFeedRecoveryView: View {
         .appleGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppleTheme.canvasColor)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
     }
 }

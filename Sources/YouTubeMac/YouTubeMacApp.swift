@@ -284,6 +284,10 @@ struct YouTubeMacApp: App {
             .disabled(!coordinator.updater.canCheckForUpdates)
         }
 
+        // Suppress AppKit's auto-inserted "Hide Toolbar (⌥⌘T)" item so the unified titlebar
+        // toolbar stays locked and never conflicts with Toggle Theater Mode (⌘⌥T).
+        CommandGroup(replacing: .toolbar) {}
+
         CommandGroup(replacing: .newItem) {
             Button("New Window") {
                 coordinator.openNewWindow()

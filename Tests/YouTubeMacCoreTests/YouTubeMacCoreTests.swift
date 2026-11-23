@@ -1677,4 +1677,63 @@ final class YouTubeMacCoreTests: XCTestCase {
             "GlassGrid You"
         )
     }
+
+    // MARK: - v1.1.1: Window Chrome Rounded-Arc Containment & Unified Titlebar Geometry
+
+    func testWindowChromeLayoutTahoeAndSequoiaUnifiedPassAllInvariants() {
+        XCTAssertEqual(WindowChromeLayout.sidebarHeaderCenterY, 26.0, accuracy: 0.001)
+        XCTAssertEqual(WindowChromeLayout.topHeaderBarCenterY, 26.0, accuracy: 0.001)
+
+        // Sidebar Expanded / Collapsed / Native Fullscreen padding contract
+        XCTAssertEqual(WindowChromeLayout.sidebarHeaderLeadingPadding(isNativeFullScreen: false), 78.0, accuracy: 0.001)
+        XCTAssertEqual(WindowChromeLayout.sidebarHeaderLeadingPadding(isNativeFullScreen: true), 8.0, accuracy: 0.001)
+        XCTAssertEqual(WindowChromeLayout.collapsedNavLeadingPadding(isSidebarVisible: true, isNativeFullScreen: false), 8.0, accuracy: 0.001)
+        XCTAssertEqual(WindowChromeLayout.collapsedNavLeadingPadding(isSidebarVisible: false, isNativeFullScreen: false), 90.0, accuracy: 0.001)
+        XCTAssertEqual(WindowChromeLayout.collapsedNavLeadingPadding(isSidebarVisible: false, isNativeFullScreen: true), 12.0, accuracy: 0.001)
+
+        // macOS 26/27 Tahoe unified 52pt titlebar
+        let tahoeAudit = WindowChromeLayout.audit(trafficLights: .tahoeUnified)
+        XCTAssertTrue(tahoeAudit.passed, "Tahoe unified audit failed: \(tahoeAudit.violations)")
+        XCTAssertEqual(tahoeAudit.minInwardClearance, 11.0, accuracy: 0.01)
+        XCTAssertEqual(tahoeAudit.sidebarHeaderCenterDelta, 0.0, accuracy: 0.01)
+        XCTAssertEqual(tahoeAudit.topHeaderBarCenterDelta, 0.0, accuracy: 0.01)
+        XCTAssertEqual(tahoeAudit.expandedSidebarLeadingClearance, 7.0, accuracy: 0.01)
+        XCTAssertEqual(tahoeAudit.collapsedNavLeadingClearance, 11.0, accuracy: 0.01)
+
+        // macOS 15 Sequoia unified 52pt titlebar
+        let sequoiaAudit = WindowChromeLayout.audit(trafficLights: .sequoiaUnified)
+        XCTAssertTrue(sequoiaAudit.passed, "Sequoia unified audit failed: \(sequoiaAudit.violations)")
+        XCTAssertEqual(sequoiaAudit.minInwardClearance, 11.0, accuracy: 0.01)
+        XCTAssertEqual(sequoiaAudit.sidebarHeaderCenterDelta, 1.0, accuracy: 0.01)
+        XCTAssertEqual(sequoiaAudit.topHeaderBarCenterDelta, 1.0, accuracy: 0.01)
+        XCTAssertEqual(sequoiaAudit.expandedSidebarLeadingClearance, 14.0, accuracy: 0.01)
+        XCTAssertEqual(sequoiaAudit.collapsedNavLeadingClearance, 18.0, accuracy: 0.01)
+    }
+
+    func testWindowChromeLayoutDetectsCompactTitlebarCornerArcClipAndCollapsedOverlap() {
+        // Negative regression 1: historical compact 32pt titlebar clips the 16pt corner arc by ~2.31pt
+        let legacyAudit = WindowChromeLayout.audit(trafficLights: .legacyCompact32)
+        XCTAssertFalse(legacyAudit.passed)
+        XCTAssertLessThan(legacyAudit.minInwardClearance, 0.0)
+        XCTAssertEqual(legacyAudit.minInwardClearance, -2.3137, accuracy: 0.01)
+        XCTAssertGreaterThan(legacyAudit.sidebarHeaderCenterDelta, WindowChromeLayout.maximumCenterlineDelta)
+        XCTAssertGreaterThan(legacyAudit.topHeaderBarCenterDelta, WindowChromeLayout.maximumCenterlineDelta)
+
+        // Negative regression 2: old 78pt collapsed padding overlaps Tahoe zoom.maxX = 79pt
+        let oldCollapsedPaddingAudit = WindowChromeLayout.audit(
+            trafficLights: .tahoeUnified,
+            collapsedLeadingPaddingOverride: 78.0
+        )
+        XCTAssertFalse(oldCollapsedPaddingAudit.passed)
+        XCTAssertLessThan(oldCollapsedPaddingAudit.collapsedNavLeadingClearance, 0.0)
+
+        // Safety check: degenerate small rounded rect clamps corner radius cleanly without NaN/Inf
+        let degenerateClearance = WindowChromeLayout.inwardClearance(
+            ofCircleIn: CGRect(x: 2, y: 2, width: 10, height: 10),
+            insideRoundedRect: CGRect(x: 0, y: 0, width: 6, height: 6),
+            cornerRadius: 40
+        )
+        XCTAssertTrue(degenerateClearance.isFinite)
+        XCTAssertLessThan(degenerateClearance, 0.0)
+    }
 }

@@ -83,10 +83,10 @@ struct SidebarView: View {
                             controller.toggleSidebar()
                         }
                     }
-                    .padding(.leading, 68)
+                    .padding(.leading, WindowChromeLayout.sidebarHeaderLeadingPadding(isNativeFullScreen: controller.isWindowInNativeFullScreen))
                     .padding(.trailing, 8)
                 }
-                .frame(height: 36)
+                .frame(height: WindowChromeLayout.sidebarHeaderHeight)
 
                 // Original Liquid Glass brand mark
                 HStack(spacing: 8) {
@@ -329,12 +329,12 @@ struct SidebarView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)
             }
-            .appleGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .appleGlass(in: RoundedRectangle(cornerRadius: WindowChromeLayout.sidebarCardCornerRadius, style: .continuous))
             .shadow(color: .black.opacity(isResolvedDark ? 0.28 : 0.08), radius: 10, y: 2)
             .youtubeURLDropTarget(controller: controller)
-            .padding(.leading, 8)
-            .padding(.vertical, 8)
-            .padding(.trailing, 4)
+            .padding(.leading, WindowChromeLayout.sidebarCardLeadingInset)
+            .padding(.vertical, WindowChromeLayout.sidebarCardVerticalInset)
+            .padding(.trailing, WindowChromeLayout.sidebarCardTrailingInset)
         }
     }
 

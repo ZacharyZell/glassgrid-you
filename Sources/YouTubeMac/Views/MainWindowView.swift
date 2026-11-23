@@ -94,7 +94,7 @@ struct MainWindowView: View {
         HStack(spacing: 0) {
             if controller.isSidebarVisible {
                 SidebarView(controller: controller)
-                    .frame(width: 234)
+                    .frame(width: WindowChromeLayout.sidebarWidth)
                     .opacity(shouldDimCinemaChrome && !isSidebarHovered ? 0.42 : 1.0)
                     .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isSidebarHovered)
                     .onHover { isSidebarHovered = $0 }
@@ -104,11 +104,13 @@ struct MainWindowView: View {
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
                     topHeaderBar
+                        .zIndex(1)
 
                     if shouldShowTabStrip {
                         TabStripView(controller: controller)
                     }
                 }
+                .zIndex(1)
                 .opacity(shouldDimCinemaChrome && !isHeaderHovered ? 0.42 : 1.0)
                 .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isHeaderHovered)
                 .onHover { isHeaderHovered = $0 }
@@ -295,7 +297,13 @@ struct MainWindowView: View {
                     .padding(.horizontal, 4)
                     .frame(height: 32)
                     .appleGlass(in: Capsule(style: .continuous), interactive: true)
-                    .padding(.leading, controller.isSidebarVisible ? 8 : 78)
+                    .padding(
+                        .leading,
+                        WindowChromeLayout.collapsedNavLeadingPadding(
+                            isSidebarVisible: controller.isSidebarVisible,
+                            isNativeFullScreen: controller.isWindowInNativeFullScreen
+                        )
+                    )
 
                     Spacer(minLength: 6)
 
@@ -364,8 +372,8 @@ struct MainWindowView: View {
                 }
             }
         }
-        .frame(height: 46)
-        .background(AppleTheme.canvasColor)
+        .frame(height: WindowChromeLayout.topHeaderBarHeight)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
         .youtubeURLDropTarget(controller: controller)
     }
 
@@ -765,7 +773,7 @@ struct MainWindowView: View {
         .appleGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppleTheme.canvasColor)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
     }
 
     private func activateOmniboxForSearch(clearInput: Bool) {

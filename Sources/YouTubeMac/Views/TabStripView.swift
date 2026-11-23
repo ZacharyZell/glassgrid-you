@@ -84,7 +84,7 @@ struct TabStripView: View {
             .padding(.trailing, 10)
         }
         .frame(height: 36)
-        .background(AppleTheme.canvasColor)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
         .youtubeURLDropTarget(controller: controller)
     }
 

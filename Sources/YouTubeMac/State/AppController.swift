@@ -41,6 +41,7 @@ public final class AppController {
     public var omniboxClearOnFocus: Bool = false
     public var isMainWindowVisible: Bool = true
     public var isMainWindowMiniaturized: Bool = false
+    public var isWindowInNativeFullScreen: Bool = false
     public var isSigningOutData: Bool = false
     public var activeToast: HUDToast?
     public var isContinueWatchingExpanded: Bool = true
@@ -2872,6 +2873,38 @@ public final class AppController {
         }
     }
 
+    private func installUnifiedToolbar(on window: NSWindow) {
+        if window.toolbar?.identifier == NSToolbar.Identifier("GlassGridYouUnifiedTitlebar"),
+           window.toolbar?.isVisible == true {
+            return
+        }
+        // Attach an empty unified NSToolbar so macOS positions the traffic-light buttons inside a
+        // 52pt unified titlebar (centerY = 26pt, inset cleanly inside the floating Liquid Glass
+        // sidebar card's 16pt corner radius instead of clipping the top-left border).
+        let toolbar = NSToolbar(identifier: "GlassGridYouUnifiedTitlebar")
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.isVisible = true
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
+    }
+
+    private func syncUnifiedToolbarForFullScreenState(on window: NSWindow) {
+        let inNativeFullScreen = window.styleMask.contains(.fullScreen)
+        if isWindowInNativeFullScreen != inNativeFullScreen {
+            isWindowInNativeFullScreen = inNativeFullScreen
+        }
+        if inNativeFullScreen {
+            if window.toolbar != nil {
+                window.toolbar = nil
+            }
+        } else {
+            installUnifiedToolbar(on: window)
+        }
+    }
+
     public func attachMainWindow(_ window: NSWindow) {
         guard mainWindow !== window else { return }
         clearWindowObservers()
@@ -2879,6 +2912,12 @@ public final class AppController {
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        let inNativeFullScreen = window.styleMask.contains(.fullScreen)
+        if inNativeFullScreen {
+            window.toolbar = nil
+        } else {
+            installUnifiedToolbar(on: window)
+        }
         window.isMovableByWindowBackground = false
         window.minSize = Self.defaultMinSize
         // SwiftUI's AppKitWindowController owns every WindowGroup NSWindow and requires isReleasedWhenClosed = false
@@ -2899,6 +2938,7 @@ public final class AppController {
         applyWindowLevelAndCollectionBehavior()
         isMainWindowVisible = window.isVisible
         isMainWindowMiniaturized = window.isMiniaturized
+        isWindowInNativeFullScreen = inNativeFullScreen
 
         let center = NotificationCenter.default
         windowObservers = [
@@ -2911,6 +2951,9 @@ public final class AppController {
                     guard let self else { return }
                     self.isMainWindowVisible = true
                     self.isMainWindowMiniaturized = false
+                    if let win = self.mainWindow {
+                        self.syncUnifiedToolbarForFullScreenState(on: win)
+                    }
                     self.coordinator?.markWindowActive(self.windowID)
                     if self.poppedOutReason == .leftApp {
                         self.dockMiniPlayer(selectTab: true, focusMain: false)
@@ -2964,6 +3007,40 @@ public final class AppController {
                 MainActor.assumeIsolated {
                     self?.isMainWindowMiniaturized = false
                     self?.isMainWindowVisible = true
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.willEnterFullScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isWindowInNativeFullScreen = true
+                    self.mainWindow?.toolbar = nil
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didEnterFullScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let win = self.mainWindow else { return }
+                    self.syncUnifiedToolbarForFullScreenState(on: win)
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didExitFullScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isWindowInNativeFullScreen = false
+                    if let window = self.mainWindow {
+                        self.installUnifiedToolbar(on: window)
+                    }
                 }
             },
             center.addObserver(

@@ -64,7 +64,7 @@ struct TabErrorOverlayView: View {
         .appleGlass(in: RoundedRectangle(cornerRadius: isCompactTile ? 14 : 20, style: .continuous))
         .shadow(color: .black.opacity(0.14), radius: isCompactTile ? 10 : 18, y: 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppleTheme.canvasColor.opacity(isCompactTile ? 0.94 : 1.0))
+        .background(AppleTheme.canvasColor.opacity(isCompactTile ? 0.94 : 1.0), ignoresSafeAreaEdges: [])
     }
 
     private var iconName: String {
