@@ -6,6 +6,8 @@ struct MultiviewControlBar: View {
     @Bindable var controller: AppController
     @State private var isSavePresetPopoverPresented = false
     @State private var newPresetName = ""
+    @State private var isCompanionPopoverPresented = false
+    @State private var companionURLDraft = ""
 
     private var availableTabsToAdd: [BrowserTab] {
         controller.tabs.filter { !controller.multiviewTabIDs.contains($0.id) }
@@ -147,7 +149,7 @@ struct MultiviewControlBar: View {
         }
         .frame(height: 36)
         .background(AppleTheme.canvasColor)
-        .youtubeURLDropTarget(controller: controller)
+        .youtubeURLDropTarget(controller: controller, allowCompanionURLs: true)
     }
 
     @ViewBuilder
@@ -232,9 +234,16 @@ struct MultiviewControlBar: View {
             }
 
             Button {
+                companionURLDraft = ""
+                isCompanionPopoverPresented = true
+            } label: {
+                Label("Add Companion / Web Tile…", systemImage: "globe")
+            }
+
+            Button {
                 controller.addClipboardURLToMultiview()
             } label: {
-                Label("Open Copied YouTube Link", systemImage: "link.badge.plus")
+                Label("Open Copied Link", systemImage: "link.badge.plus")
             }
 
             if !availableTabsToAdd.isEmpty {
@@ -267,7 +276,89 @@ struct MultiviewControlBar: View {
         .frame(height: 26)
         .appleGlass(in: Capsule(style: .continuous), interactive: canAdd)
         .disabled(!canAdd)
-        .help(canAdd ? "Add a YouTube or YouTube TV stream (up to 4)" : "Maximum 4 streams active")
+        .help(canAdd ? "Add a YouTube, YouTube TV, or Companion Web stream (up to 4)" : "Maximum 4 streams active")
+        .popover(isPresented: $isCompanionPopoverPresented, arrowEdge: .bottom) {
+            companionTilePopover
+        }
+    }
+
+    @ViewBuilder
+    private var companionTilePopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(AppleTheme.accent)
+                Text("Add Companion / Web Tile")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+
+            LiquidGlassGroup(spacing: 6) {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)],
+                    spacing: 6
+                ) {
+                    ForEach(CompanionQuickSite.catalog) { site in
+                        Button {
+                            controller.openCompanionTile(url: site.url)
+                            isCompanionPopoverPresented = false
+                        } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: site.systemImage)
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(AppleTheme.accent)
+                                    .frame(width: 16)
+                                VStack(alignment: .leading, spacing: 0.5) {
+                                    Text(site.name)
+                                        .font(.system(size: 11.5, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text(site.subtitle)
+                                        .font(.system(size: 9.5))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .appleGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), interactive: true)
+                            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Or open any website")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 6) {
+                    TextField("Enter website or URL (e.g. espn.com)…", text: $companionURLDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            submitCompanionURL()
+                        }
+
+                    Button("Add Tile") {
+                        submitCompanionURL()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(companionURLDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 310)
+    }
+
+    private func submitCompanionURL() {
+        if controller.openCompanionTile(rawInput: companionURLDraft) {
+            companionURLDraft = ""
+            isCompanionPopoverPresented = false
+        }
     }
 }
 
@@ -284,7 +375,14 @@ struct MultiviewOverlayView: View {
             let frames = MultiviewGridLayout.frames(
                 forCount: tiles.count,
                 in: proxy.size,
-                mode: controller.multiviewLayoutMode
+                mode: controller.multiviewLayoutMode,
+                ratios: controller.multiviewSplitRatios
+            )
+            let dividers = MultiviewGridLayout.dividers(
+                forCount: tiles.count,
+                in: proxy.size,
+                mode: controller.multiviewLayoutMode,
+                ratios: controller.multiviewSplitRatios
             )
 
             ZStack(alignment: .topLeading) {
@@ -293,7 +391,8 @@ struct MultiviewOverlayView: View {
                         let rect = frames[index]
                         let isAudio = (controller.multiviewAudioTab?.id == tab.id)
                         let isFocused = (controller.selectedTabID == tab.id)
-                        let isHovered = (controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id)
+                        let isHovered = controller.activeMultiviewDividerDragID == nil
+                            && ((controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id))
 
                         // 0. Per-tile load failure / WebContent crash recovery card (strictly scoped to this tile's rect)
                         if let tileError = tab.loadError {
@@ -331,8 +430,51 @@ struct MultiviewOverlayView: View {
                         .offset(x: rect.minX, y: rect.minY)
                     }
                 }
+
+                // 3. Purely visual Liquid Glass divider pills & live drag ratio capsules (100% non-hit-tested;
+                // AppKit MultiviewDividerNSView handles 120Hz cursor & drag hit-testing underneath).
+                ForEach(dividers) { divider in
+                    let isDragging = controller.activeMultiviewDividerDragID == divider.id
+                    let isHovering = controller.hoveredMultiviewDividerID == divider.id
+                    if isDragging || isHovering {
+                        dividerVisual(for: divider, isDragging: isDragging)
+                    }
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func dividerVisual(for divider: MultiviewDividerDescriptor, isDragging: Bool) -> some View {
+        let isVertical = divider.axis == .vertical
+        let pillWidth: CGFloat = isVertical ? 4 : 44
+        let pillHeight: CGFloat = isVertical ? 44 : 4
+
+        ZStack {
+            Capsule(style: .continuous)
+                .fill(isDragging ? AppleTheme.accent : Color.primary.opacity(0.36))
+                .frame(width: pillWidth, height: pillHeight)
+                .shadow(color: Color.black.opacity(isDragging ? 0.38 : 0.18), radius: 3, y: 1)
+
+            if isDragging {
+                Text("\(divider.leadingPercent)% / \(divider.trailingPercent)%")
+                    .font(.system(size: 9.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .appleGlass(
+                        in: Capsule(style: .continuous),
+                        tint: Color.black.opacity(0.68)
+                    )
+                    .environment(\.colorScheme, .dark)
+                    .fixedSize()
+                    .offset(x: isVertical ? 36 : 0, y: isVertical ? 0 : -22)
+            }
+        }
+        .position(x: divider.frame.midX, y: divider.frame.midY)
+        .allowsHitTesting(false)
+        .transition(.opacity)
+        .animation(.easeOut(duration: 0.12), value: isDragging)
     }
 
     private func borderColor(isAudio: Bool, isFocused: Bool) -> Color {
@@ -385,9 +527,12 @@ struct MultiviewOverlayView: View {
         isAudio: Bool,
         maxWidth: CGFloat
     ) -> some View {
+        let isSilentCompanionWeb = tab.isCompanionTab && !tab.mediaStatus.hasVideo
         let isMuted = tab.mediaStatus.isMuted || !isAudio
         Button {
-            if isAudio {
+            if isSilentCompanionWeb {
+                controller.selectTab(id: tab.id)
+            } else if isAudio {
                 controller.toggleMute(tabID: tab.id)
             } else {
                 controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
@@ -403,9 +548,15 @@ struct MultiviewOverlayView: View {
                             .fill(isAudio ? AppleTheme.accent : Color.white.opacity(0.22))
                     )
 
-                Image(systemName: isMuted ? "speaker.slash.fill" : "waveform")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(isMuted ? Color.white.opacity(0.78) : AppleTheme.accent)
+                if isSilentCompanionWeb {
+                    Image(systemName: "globe")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.84))
+                } else {
+                    Image(systemName: isMuted ? "speaker.slash.fill" : "waveform")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(isMuted ? Color.white.opacity(0.78) : AppleTheme.accent)
+                }
 
                 if tileTitleVisible(maxWidth: maxWidth) {
                     Text(tab.displayTitle)
@@ -450,6 +601,7 @@ struct MultiviewOverlayView: View {
     @ViewBuilder
     private func tileActionPill(tab: BrowserTab, index: Int, totalCount: Int) -> some View {
         let isYTTV = YouTubeURLRouter.isYouTubeTVHost(tab.url.host)
+        let isCompanion = tab.isCompanionTab
 
         HStack(spacing: 2) {
             if index > 0 {
@@ -479,11 +631,20 @@ struct MultiviewOverlayView: View {
                 }
             }
 
-            tileIconButton(
-                systemImage: isYTTV ? "tv" : "house",
-                helpText: isYTTV ? "Open YouTube TV Live Guide" : "Browse YouTube in This Tile"
-            ) {
-                controller.navigateMultiviewTileToBrowse(id: tab.id)
+            if isCompanion {
+                tileIconButton(
+                    systemImage: "arrow.clockwise",
+                    helpText: "Reload Companion Site"
+                ) {
+                    tab.reloadOrStop()
+                }
+            } else {
+                tileIconButton(
+                    systemImage: isYTTV ? "tv" : "house",
+                    helpText: isYTTV ? "Open YouTube TV Live Guide" : "Browse YouTube in This Tile"
+                ) {
+                    controller.navigateMultiviewTileToBrowse(id: tab.id)
+                }
             }
 
             tileIconButton(

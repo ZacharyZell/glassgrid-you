@@ -72,6 +72,7 @@ private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
 @Observable
 public final class BrowserTab: NSObject, Identifiable {
     public let id = UUID()
+    public let routingMode: TabRoutingMode
     public var title: String = "YouTube"
     public var url: URL
     public var isLoading: Bool = false
@@ -174,6 +175,7 @@ public final class BrowserTab: NSObject, Identifiable {
     public init(
         initialURL: URL,
         initialTitle: String? = nil,
+        routingMode: TabRoutingMode? = nil,
         initialConfig: DistractionFreeConfig,
         deferInitialLoad: Bool = false,
         lazyLoad: Bool = false,
@@ -181,9 +183,13 @@ public final class BrowserTab: NSObject, Identifiable {
         routingPreferencesProvider: @escaping () -> (openExternalLinksInBrowser: Bool, redirectShortsToWatch: Bool),
         onOpenInNewTab: ((URL, Bool) -> Void)? = nil
     ) {
+        let resolvedRoutingMode = routingMode ?? YouTubeURLRouter.preferredRoutingMode(for: initialURL)
+        self.routingMode = resolvedRoutingMode
         self.url = initialURL
         if let initialTitle, !initialTitle.isEmpty {
             self.title = initialTitle
+        } else if resolvedRoutingMode == .companion {
+            self.title = initialURL.host?.replacingOccurrences(of: "www.", with: "") ?? "Web"
         }
         if lazyLoad {
             self.pendingLazyURL = initialURL
@@ -234,6 +240,14 @@ public final class BrowserTab: NSObject, Identifiable {
         }
     }
 
+    public var isCompanionTab: Bool {
+        if routingMode == .companion {
+            return true
+        }
+        guard let host = url.host else { return false }
+        return !YouTubeURLRouter.isYouTubeHost(host) && !YouTubeURLRouter.isGoogleAuthHost(host)
+    }
+
     public var displayTitle: String {
         let cleaned = YouTubeTitleFormatter.clean(title)
         if !cleaned.isEmpty {
@@ -242,6 +256,9 @@ public final class BrowserTab: NSObject, Identifiable {
         let mediaCleaned = YouTubeTitleFormatter.clean(mediaStatus.title)
         if !mediaCleaned.isEmpty {
             return mediaCleaned
+        }
+        if isCompanionTab {
+            return url.host?.replacingOccurrences(of: "www.", with: "") ?? "Web"
         }
         return "YouTube"
     }
@@ -528,7 +545,7 @@ public final class BrowserTab: NSObject, Identifiable {
             }
             url = webURL
             onURLDidChange?(id, webURL)
-            if let host = webURL.host, YouTubeURLRouter.isYouTubeTVHost(host) {
+            if let host = webURL.host, !YouTubeURLRouter.isStandardYouTubeHost(host) {
                 evaluate(EnhancementScript.notifyRouteChangedScript)
             }
         }
@@ -562,7 +579,8 @@ extension BrowserTab: WKNavigationDelegate {
                 currentPageURL: webView.url,
                 isUserLinkClick: true,
                 openExternalLinksInBrowser: prefs.openExternalLinksInBrowser,
-                redirectShortsToWatch: prefs.redirectShortsToWatch
+                redirectShortsToWatch: prefs.redirectShortsToWatch,
+                routingMode: routingMode
             )
             switch decision {
             case .allowInApp:
@@ -585,7 +603,8 @@ extension BrowserTab: WKNavigationDelegate {
             currentPageURL: webView.url,
             isUserLinkClick: isUserClick,
             openExternalLinksInBrowser: prefs.openExternalLinksInBrowser,
-            redirectShortsToWatch: prefs.redirectShortsToWatch
+            redirectShortsToWatch: prefs.redirectShortsToWatch,
+            routingMode: routingMode
         )
 
         switch decision {
@@ -666,12 +685,17 @@ extension BrowserTab: WKUIDelegate {
             currentPageURL: webView.url,
             isUserLinkClick: true,
             openExternalLinksInBrowser: prefs.openExternalLinksInBrowser,
-            redirectShortsToWatch: prefs.redirectShortsToWatch
+            redirectShortsToWatch: prefs.redirectShortsToWatch,
+            routingMode: routingMode
         )
 
         switch decision {
         case .allowInApp:
             if let host = targetURL.host, YouTubeURLRouter.isGoogleAuthHost(host) {
+                webView.load(URLRequest(url: targetURL))
+            } else if routingMode == .companion,
+                      let path = targetURL.path.lowercased() as String?,
+                      (path.contains("oauth") || path.contains("login") || path.contains("signin") || path.contains("auth")) {
                 webView.load(URLRequest(url: targetURL))
             } else {
                 onOpenInNewTab?(targetURL, true)
@@ -777,10 +801,10 @@ extension BrowserTab: WKScriptMessageHandler {
         let duration = body["duration"] as? Double ?? 0
         timeline.update(currentTime: currentTime, duration: duration)
 
-        // Throttled Continue Watching & Most Watched Channel tracking (skip tv.youtube.com since resumeURL targets www.youtube.com).
+        // Throttled Continue Watching & Most Watched Channel tracking (strictly www.youtube.com — skip tv.youtube.com & Companion sites).
         if newStatus.hasVideo,
            let parsedURL = URL(string: newStatus.urlString) ?? Optional(url),
-           !YouTubeURLRouter.isYouTubeTVHost(parsedURL.host ?? ""),
+           YouTubeURLRouter.isStandardYouTubeHost(parsedURL.host),
            let videoID = YouTubeURLRouter.extractVideoID(from: parsedURL) {
             let now = Date()
             let pausedTransition = wasPlaying && !newStatus.isPlaying

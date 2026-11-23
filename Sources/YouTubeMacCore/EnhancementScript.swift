@@ -34,11 +34,11 @@ public enum EnhancementScript {
             const QUALITY_LADDER = ['highres', 'hd2160', 'hd1440', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
 
             function ensureStyleElement() {
-                if (document.getElementById('ytmac-style')) return;
+                if (isWebCompanionHost() || !document.head || document.getElementById('ytmac-style')) return;
                 const styleEl = document.createElement('style');
                 styleEl.id = 'ytmac-style';
                 styleEl.textContent = styleText;
-                (document.head || document.documentElement).appendChild(styleEl);
+                document.head.appendChild(styleEl);
             }
 
             function setDatasetFlag(root, key, enabled) {
@@ -53,7 +53,11 @@ public enum EnhancementScript {
             }
 
             function isStandardYouTubeHost() {
-                return !isYouTubeTVHost() && /youtube\\.com$/i.test(location.hostname);
+                return !isYouTubeTVHost() && /(^|\\.)(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)$/i.test(location.hostname);
+            }
+
+            function isWebCompanionHost() {
+                return !isYouTubeTVHost() && !isStandardYouTubeHost();
             }
 
             function isWatchPage() {
@@ -61,10 +65,14 @@ public enum EnhancementScript {
                     // YouTube TV uses path-based /watch/<id>; /live is the Live EPG Guide (not a watch page).
                     return /^\\/watch\\/[^/?#]+/.test(location.pathname);
                 }
+                if (isWebCompanionHost()) {
+                    return false;
+                }
                 return location.pathname.startsWith('/watch') || /^\\/live\\/[^/?#]+/.test(location.pathname);
             }
 
             function getPlayer() {
+                if (isWebCompanionHost()) return null;
                 return document.getElementById('movie_player') || document.querySelector('.html5-video-player');
             }
 
@@ -72,7 +80,40 @@ public enum EnhancementScript {
                 return isWatchPage() && Boolean(getPlayer() || document.querySelector('video.html5-main-video'));
             }
 
+            function findPrimaryWebVideo() {
+                const videos = document.querySelectorAll('video');
+                if (!videos || videos.length === 0) return null;
+                let bestPlaying = null;
+                let bestPlayingArea = -1;
+                let bestVisible = null;
+                let bestVisibleArea = -1;
+                let fallback = null;
+                for (let i = 0; i < videos.length; i += 1) {
+                    const v = videos[i];
+                    if (!v) continue;
+                    const hasMedia = Boolean(v.src || v.currentSrc || v.readyState > 0 || (v.querySelector && v.querySelector('source[src]')));
+                    if (!hasMedia) continue;
+                    if (!fallback) fallback = v;
+                    const rect = v.getBoundingClientRect();
+                    const area = Math.max(0, rect.width) * Math.max(0, rect.height);
+                    if (!v.paused && !v.ended && v.readyState >= 2) {
+                        if (area >= bestPlayingArea) {
+                            bestPlaying = v;
+                            bestPlayingArea = area;
+                        }
+                    }
+                    if (area >= 160 * 90 && area > bestVisibleArea) {
+                        bestVisible = v;
+                        bestVisibleArea = area;
+                    }
+                }
+                return bestPlaying || bestVisible || fallback;
+            }
+
             function getMainVideo() {
+                if (isWebCompanionHost()) {
+                    return findPrimaryWebVideo();
+                }
                 const player = getPlayer();
                 if (player) {
                     const v = player.querySelector('video.html5-main-video') || player.querySelector('video');
@@ -83,6 +124,8 @@ public enum EnhancementScript {
                 }
                 return null;
             }
+
+            window.__ytmacGetMainVideo = getMainVideo;
 
             let lastProgrammaticMuteActionAt = 0;
             let lastKnownMuted = null;
@@ -103,13 +146,13 @@ public enum EnhancementScript {
 
             let tileResizeTimer = null;
             function scheduleTileWatchResizeSync() {
-                if (isYouTubeTVHost()) return;
+                if (!isStandardYouTubeHost()) return;
                 const root = document.documentElement;
                 if (!root || root.dataset.ytmacTilePlayer !== 'true' || root.dataset.ytmacOnWatch !== 'true') return;
                 if (document.fullscreenElement) return;
 
                 const syncOnce = () => {
-                    if (document.fullscreenElement || isYouTubeTVHost()) return;
+                    if (document.fullscreenElement || !isStandardYouTubeHost()) return;
                     const r = document.documentElement;
                     if (!r || r.dataset.ytmacTilePlayer !== 'true' || r.dataset.ytmacOnWatch !== 'true') return;
                     window.dispatchEvent(new Event('resize'));
@@ -308,32 +351,34 @@ public enum EnhancementScript {
                 const root = document.documentElement;
                 if (!root) return;
                 const isYTTV = isYouTubeTVHost();
-                const hostTag = isYTTV ? 'yttv' : 'youtube';
+                const isStdYT = isStandardYouTubeHost();
+                const isWeb = isWebCompanionHost();
+                const hostTag = isYTTV ? 'yttv' : (isStdYT ? 'youtube' : 'web');
                 if (root.dataset.ytmacHost !== hostTag) {
                     root.dataset.ytmacHost = hostTag;
                 }
 
                 const prevOnWatch = root.dataset.ytmacOnWatch === 'true';
                 const prevTilePlayer = root.dataset.ytmacTilePlayer === 'true';
-                const onWatch = isWatchPageWithPlayer();
-                const tilePlayer = Boolean(cfg.miniPlayerActive || cfg.multiviewTileActive);
+                const onWatch = !isWeb && isWatchPageWithPlayer();
+                const tilePlayer = !isWeb && Boolean(cfg.miniPlayerActive || cfg.multiviewTileActive);
 
-                // Force www.youtube.com-only flags to false on tv.youtube.com so YouTube TV's guide & controls stay intact.
-                setDatasetFlag(root, 'ytmacHideShorts', !isYTTV && cfg.hideShorts);
-                setDatasetFlag(root, 'ytmacCleanChrome', !isYTTV && cfg.cleanWebChrome);
-                setDatasetFlag(root, 'ytmacHideHeader', !isYTTV && cfg.hideWebHeader);
-                setDatasetFlag(root, 'ytmacHideEndScreens', !isYTTV && cfg.hideEndScreens);
-                setDatasetFlag(root, 'ytmacHideWatchRecs', !isYTTV && cfg.hideWatchRecommendations);
-                setDatasetFlag(root, 'ytmacHideComments', !isYTTV && cfg.hideComments);
-                setDatasetFlag(root, 'ytmacHideHomeFeed', !isYTTV && cfg.hideHomeFeed);
-                setDatasetFlag(root, 'ytmacDisableAmbient', cfg.disableAmbientMode || Boolean(cfg.multiviewTileActive));
-                setDatasetFlag(root, 'ytmacMiniPlayer', cfg.miniPlayerActive);
+                // Force YouTube-only flags to false on tv.youtube.com and third-party Companion web hosts.
+                setDatasetFlag(root, 'ytmacHideShorts', isStdYT && cfg.hideShorts);
+                setDatasetFlag(root, 'ytmacCleanChrome', isStdYT && cfg.cleanWebChrome);
+                setDatasetFlag(root, 'ytmacHideHeader', isStdYT && cfg.hideWebHeader);
+                setDatasetFlag(root, 'ytmacHideEndScreens', isStdYT && cfg.hideEndScreens);
+                setDatasetFlag(root, 'ytmacHideWatchRecs', isStdYT && cfg.hideWatchRecommendations);
+                setDatasetFlag(root, 'ytmacHideComments', isStdYT && cfg.hideComments);
+                setDatasetFlag(root, 'ytmacHideHomeFeed', isStdYT && cfg.hideHomeFeed);
+                setDatasetFlag(root, 'ytmacDisableAmbient', !isWeb && (cfg.disableAmbientMode || Boolean(cfg.multiviewTileActive)));
+                setDatasetFlag(root, 'ytmacMiniPlayer', !isWeb && cfg.miniPlayerActive);
                 setDatasetFlag(root, 'ytmacTilePlayer', tilePlayer);
                 setDatasetFlag(root, 'ytmacOnWatch', onWatch);
-                setDatasetFlag(root, 'ytmacAutoTheater', !isYTTV && cfg.autoTheaterMode);
-                setDatasetFlag(root, 'ytmacRedirectShorts', !isYTTV && cfg.redirectShortsToWatch);
+                setDatasetFlag(root, 'ytmacAutoTheater', isStdYT && cfg.autoTheaterMode);
+                setDatasetFlag(root, 'ytmacRedirectShorts', isStdYT && cfg.redirectShortsToWatch);
 
-                if (!isYTTV) {
+                if (isStdYT) {
                     applyTheme(cfg);
                     if (cfg.autoTheaterMode && !document.cookie.includes('wide=1')) {
                         document.cookie = 'wide=1; path=/; domain=.youtube.com; max-age=31536000; SameSite=Lax';
@@ -345,7 +390,7 @@ public enum EnhancementScript {
             }
 
             function markShortsElements() {
-                if (isYouTubeTVHost()) return;
+                if (!isStandardYouTubeHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.hideShorts) return;
                 const links = document.querySelectorAll('a[href^="/shorts/"]:not([data-ytmac-checked])');
@@ -374,7 +419,7 @@ public enum EnhancementScript {
             }
 
             function detectEmptyHomeFeed() {
-                if (isYouTubeTVHost()) return false;
+                if (!isStandardYouTubeHost()) return false;
                 if (location.pathname !== '/' && location.pathname !== '') return false;
                 const homeBrowse = document.querySelector('ytd-browse[page-subtype="home"]');
                 if (!homeBrowse) return false;
@@ -387,6 +432,9 @@ public enum EnhancementScript {
             }
 
             function currentVideoId() {
+                if (isWebCompanionHost()) {
+                    return '';
+                }
                 if (isYouTubeTVHost()) {
                     const match = location.pathname.match(/^\\/watch\\/([^/?#]+)/);
                     return match && match[1] ? match[1] : '';
@@ -405,7 +453,7 @@ public enum EnhancementScript {
             }
 
             function maybeRedirectShorts() {
-                if (isYouTubeTVHost()) return;
+                if (!isStandardYouTubeHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.redirectShortsToWatch) return;
                 const match = location.pathname.match(/^\\/shorts\\/([^/?#]+)/);
@@ -432,7 +480,7 @@ public enum EnhancementScript {
             }
 
             function maybeEnableTheaterMode() {
-                if (isYouTubeTVHost()) return;
+                if (!isStandardYouTubeHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.autoTheaterMode) return;
                 if (!isWatchPage()) return;
@@ -499,6 +547,7 @@ public enum EnhancementScript {
             }
 
             function maybeApplyPreferredQuality() {
+                if (isWebCompanionHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.preferredQuality) return;
                 if (!isWatchPage()) return;
@@ -566,6 +615,7 @@ public enum EnhancementScript {
             let lastSpeedVideoId = null;
 
             function maybeApplyDefaultSpeed() {
+                if (isWebCompanionHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !isWatchPage()) return;
                 const videoId = currentVideoId();
@@ -642,6 +692,7 @@ public enum EnhancementScript {
             }
 
             function maybeSelectOriginalAudioTrack() {
+                if (isWebCompanionHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.preferOriginalAudio) return;
                 if (!isWatchPage()) return;
@@ -740,6 +791,7 @@ public enum EnhancementScript {
             let continueWatchingTimer = null;
 
             function maybeDismissContinueWatching(video) {
+                if (!isStandardYouTubeHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.autoDismissContinueWatching) return;
                 if (!video || video.ended || isScrubbing || video.seeking) return;
@@ -781,6 +833,7 @@ public enum EnhancementScript {
             let sponsorState = { videoId: '', segments: [], skippedIndices: new Set() };
 
             function checkSponsorSkip(video) {
+                if (!isStandardYouTubeHost()) return;
                 const cfg = window.__ytmacConfig;
                 if (!cfg || !cfg.sponsorBlockEnabled) return;
                 if (!video || video.paused || video.ended || isScrubbing || video.seeking) return;
@@ -830,6 +883,11 @@ public enum EnhancementScript {
             }
 
             function extractMediaMetadata() {
+                if (isWebCompanionHost()) {
+                    const hostLabel = (location.hostname || '').replace(/^www\\./i, '');
+                    const title = (document.title || hostLabel || 'Web').trim();
+                    return { title, channel: hostLabel, channelURL: '' };
+                }
                 const titleNode = document.querySelector('ytd-watch-metadata h1 yt-formatted-string, ytd-watch-metadata h1, h1.ytd-video-primary-info-renderer');
                 const channelNode = document.querySelector('ytd-watch-metadata ytd-channel-name a, #owner #channel-name a');
                 const title = cleanTitle(titleNode ? titleNode.textContent : document.title);
@@ -894,7 +952,8 @@ public enum EnhancementScript {
                 } : (() => {
                     const isPiP = document.pictureInPictureElement === video ||
                         (typeof video.webkitPresentationMode === 'string' && video.webkitPresentationMode === 'picture-in-picture');
-                    const hasVideo = isWatchPage() && Boolean(video.src || video.currentSrc || video.readyState > 0);
+                    const hasVideo = (isWebCompanionHost() || isWatchPage())
+                        && Boolean(video.src || video.currentSrc || video.readyState > 0 || (isWebCompanionHost() && video.querySelector && video.querySelector('source[src]')));
                     let isMuted = Boolean(video.muted || video.volume === 0);
                     try {
                         if (player && typeof player.isMuted === 'function') {
@@ -991,13 +1050,14 @@ public enum EnhancementScript {
                         } else if (evt === 'volumechange') {
                             const player = getPlayer();
                             const nowMuted = resolveMutedState(player, video);
-                            const vid = currentVideoId();
-                            if (isWatchPage()
+                            const mediaKey = isWebCompanionHost() ? location.href : currentVideoId();
+                            const eligiblePage = isWebCompanionHost() || isWatchPage();
+                            if (eligiblePage
                                 && (Date.now() - lastProgrammaticMuteActionAt > 500)
                                 && lastKnownMuted === true
                                 && nowMuted === false
-                                && vid
-                                && vid === lastMutedVideoId) {
+                                && mediaKey
+                                && mediaKey === lastMutedVideoId) {
                                 const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
                                 if (handler) {
                                     handler.postMessage({
@@ -1007,11 +1067,11 @@ public enum EnhancementScript {
                                 }
                             }
                             lastKnownMuted = nowMuted;
-                            lastMutedVideoId = vid;
+                            lastMutedVideoId = mediaKey;
                         } else if (evt === 'loadedmetadata') {
                             const player = getPlayer();
                             lastKnownMuted = resolveMutedState(player, video);
-                            lastMutedVideoId = currentVideoId();
+                            lastMutedVideoId = isWebCompanionHost() ? location.href : currentVideoId();
                             maybeApplyDefaultSpeed();
                             maybeApplyPreferredQuality();
                             maybeSelectOriginalAudioTrack();
@@ -1027,7 +1087,7 @@ public enum EnhancementScript {
                 }, { passive: true });
 
                 lastKnownMuted = resolveMutedState(getPlayer(), video);
-                lastMutedVideoId = currentVideoId();
+                lastMutedVideoId = isWebCompanionHost() ? location.href : currentVideoId();
                 maybeApplyDefaultSpeed();
                 extractAndEmitChapters();
                 emitMediaState(true);
@@ -1065,7 +1125,7 @@ public enum EnhancementScript {
                 const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
                 if (!handler) return;
 
-                if (isYouTubeTVHost() || !isWatchPage()) {
+                if (!isStandardYouTubeHost() || !isWatchPage()) {
                     if (lastEmittedChaptersSig !== 'empty') {
                         lastEmittedChaptersSig = 'empty';
                         handler.postMessage({
@@ -1131,7 +1191,7 @@ public enum EnhancementScript {
                 ensureStyleElement();
                 const cfg = window.__ytmacConfig || initialConfig;
                 applyDatasetConfig(cfg);
-                if (cfg.hideShorts && !isYouTubeTVHost()) {
+                if (cfg.hideShorts && isStandardYouTubeHost()) {
                     markShortsElements();
                 }
                 if (cfg.preferredQuality !== prevConfigQuality) {
@@ -1220,7 +1280,7 @@ public enum EnhancementScript {
                     const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
                     const handleColorSchemeChange = () => {
                         const cfg = window.__ytmacConfig || initialConfig;
-                        if (cfg.appearance === 'system' && !isYouTubeTVHost()) {
+                        if (cfg.appearance === 'system' && isStandardYouTubeHost()) {
                             applyTheme(cfg);
                         }
                     };
@@ -1228,6 +1288,19 @@ public enum EnhancementScript {
                         colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
                     }
                 }
+
+                // Zero-overhead capture-phase detection for dynamically mounted HTML5 <video> elements on React/SPA Companion sites.
+                const handleCapturedVideoEvent = (ev) => {
+                    const target = ev && ev.target;
+                    if (!target || target.tagName !== 'VIDEO') return;
+                    if (isWebCompanionHost() || boundVideo !== target) {
+                        bindVideoListeners();
+                        emitMediaState(true);
+                    }
+                };
+                window.addEventListener('play', handleCapturedVideoEvent, true);
+                window.addEventListener('playing', handleCapturedVideoEvent, true);
+                window.addEventListener('loadedmetadata', handleCapturedVideoEvent, true);
 
                 // Prevent WebKit HTML5 native drag-and-drop from hijacking YouTube / YouTube TV scrubber bars.
                 window.addEventListener('dragstart', (ev) => {
@@ -1247,6 +1320,7 @@ public enum EnhancementScript {
 
                 let lastScrollScan = 0;
                 window.addEventListener('scroll', () => {
+                    if (!isStandardYouTubeHost()) return;
                     const cfg = window.__ytmacConfig;
                     if (!cfg || !cfg.hideShorts) return;
                     const now = Date.now();
@@ -1319,12 +1393,39 @@ public enum EnhancementScript {
     }
 
     private static let resolveMainVideoSnippet = """
-    const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-    const isWatchPath = location.hostname.toLowerCase() === 'tv.youtube.com'
+    const hostLower = location.hostname.toLowerCase();
+    const isYTTVHost = hostLower === 'tv.youtube.com';
+    const isStdYTHost = !isYTTVHost && /(^|\\.)(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)$/i.test(hostLower);
+    const p = (isYTTVHost || isStdYTHost)
+        ? (document.getElementById('movie_player') || document.querySelector('.html5-video-player'))
+        : null;
+    const isWatchPath = isYTTVHost
         ? /^\\/watch\\/[^/?#]+/.test(location.pathname)
-        : (location.pathname.startsWith('/watch') || /^\\/live\\/[^/?#]+/.test(location.pathname));
-    const v = (p && (p.querySelector('video.html5-main-video') || p.querySelector('video')))
-        || (isWatchPath ? (document.querySelector('video.html5-main-video') || document.querySelector('video')) : null);
+        : (isStdYTHost && (location.pathname.startsWith('/watch') || /^\\/live\\/[^/?#]+/.test(location.pathname)));
+    let v = (typeof window.__ytmacGetMainVideo === 'function') ? window.__ytmacGetMainVideo() : null;
+    if (!v) {
+        if (isYTTVHost || isStdYTHost) {
+            v = (p && (p.querySelector('video.html5-main-video') || p.querySelector('video')))
+                || (isWatchPath ? (document.querySelector('video.html5-main-video') || document.querySelector('video')) : null);
+        } else {
+            const vids = document.querySelectorAll('video');
+            let bestPlaying = null, bestPlayingArea = -1, bestVisible = null, bestVisibleArea = -1, firstMedia = null;
+            for (let i = 0; i < vids.length; i += 1) {
+                const cand = vids[i];
+                if (!cand || !(cand.src || cand.currentSrc || cand.readyState > 0 || (cand.querySelector && cand.querySelector('source[src]')))) continue;
+                if (!firstMedia) firstMedia = cand;
+                const r = cand.getBoundingClientRect();
+                const area = Math.max(0, r.width) * Math.max(0, r.height);
+                if (!cand.paused && !cand.ended && cand.readyState >= 2 && area >= bestPlayingArea) {
+                    bestPlaying = cand; bestPlayingArea = area;
+                }
+                if (area >= 160 * 90 && area > bestVisibleArea) {
+                    bestVisible = cand; bestVisibleArea = area;
+                }
+            }
+            v = bestPlaying || bestVisible || firstMedia;
+        }
+    }
     """
 
     public static let togglePlayPauseScript = """

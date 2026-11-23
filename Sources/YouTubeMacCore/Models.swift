@@ -526,18 +526,78 @@ public enum ContinueWatchingStore {
     }
 }
 
-/// User-pinned YouTube channel, playlist, or video shown in the sidebar.
+/// Named collapsible sidebar folder for organizing pinned channels, playlists, and Companion sites.
+public struct PinnedFolder: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public var name: String
+    public var isExpanded: Bool
+    public var createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case isExpanded
+        case createdAt
+    }
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        isExpanded: Bool = true,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.isExpanded = isExpanded
+        self.createdAt = createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        isExpanded = try container.decodeIfPresent(Bool.self, forKey: .isExpanded) ?? true
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
+}
+
+/// User-pinned YouTube channel, playlist, video, or Companion site shown in the sidebar.
 public struct PinnedItem: Identifiable, Codable, Hashable, Sendable {
     public let id: UUID
     public var title: String
     public var urlString: String
     public var addedAt: Date
+    public var folderID: UUID?
 
-    public init(id: UUID = UUID(), title: String, urlString: String, addedAt: Date = Date()) {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case urlString
+        case addedAt
+        case folderID
+    }
+
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        urlString: String,
+        addedAt: Date = Date(),
+        folderID: UUID? = nil
+    ) {
         self.id = id
         self.title = title
         self.urlString = urlString
         self.addedAt = addedAt
+        self.folderID = folderID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        urlString = try container.decode(String.self, forKey: .urlString)
+        addedAt = try container.decodeIfPresent(Date.self, forKey: .addedAt) ?? Date()
+        folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
     }
 
     public var url: URL? {

@@ -1355,4 +1355,267 @@ final class YouTubeMacCoreTests: XCTestCase {
             XCTFail("Expected malformed JSON to fail gracefully")
         }
     }
+
+    // MARK: - Wave A: Draggable Multiview Dividers, Companion Web Tiles & Sidebar Folders
+
+    func testMultiviewSplitRatiosAndDividersGeometryAndPresetCodable() throws {
+        XCTAssertEqual(MultiviewGridLayout.defaultSpacing, 10)
+
+        // Clamping & stacked floor
+        let clamped = MultiviewSplitRatios(columnRatio: 0.05, rowRatio: 0.99, spotlightRatio: 0.95)
+        XCTAssertEqual(clamped.columnRatio, MultiviewSplitRatios.minRatio, accuracy: 0.0001)
+        XCTAssertEqual(clamped.rowRatio, MultiviewSplitRatios.maxRatio, accuracy: 0.0001)
+        XCTAssertEqual(clamped.spotlightRatio ?? 0, MultiviewSplitRatios.maxRatio, accuracy: 0.0001)
+
+        let stacked3 = MultiviewSplitRatios.default.updating(divider: .stacked(0), to: 0.02, tileCount: 3)
+        let weights3 = stacked3.resolvedStackedWeights(for: 3)
+        XCTAssertEqual(weights3.count, 3)
+        XCTAssertGreaterThanOrEqual(weights3[0], MultiviewSplitRatios.minStackedWeight - 0.001)
+        XCTAssertEqual(weights3.reduce(0, +), 1.0, accuracy: 0.001)
+
+        // Reset restores defaults
+        let reset = clamped.resetting(divider: .column, tileCount: 4).resetting(divider: .spotlight, tileCount: 3)
+        XCTAssertEqual(reset.columnRatio, 0.50, accuracy: 0.0001)
+        XCTAssertNil(reset.spotlightRatio)
+
+        // Pixel-exact non-overlapping tiles & 10pt gutter dividers across all layouts & container shapes
+        let customRatios = MultiviewSplitRatios(columnRatio: 0.65, rowRatio: 0.35, spotlightRatio: 0.70)
+        let containers = [CGSize(width: 1281, height: 779), CGSize(width: 640, height: 820)]
+        for size in containers {
+            for mode in MultiviewLayoutMode.allCases {
+                for count in 2...4 {
+                    let frames = MultiviewGridLayout.frames(forCount: count, in: size, mode: mode, ratios: customRatios)
+                    let dividers = MultiviewGridLayout.dividers(forCount: count, in: size, mode: mode, ratios: customRatios)
+                    XCTAssertEqual(frames.count, count)
+                    XCTAssertFalse(dividers.isEmpty, "Expected at least one divider for count \(count), mode \(mode)")
+
+                    for divider in dividers {
+                        XCTAssertEqual(divider.frame.origin.x, divider.frame.origin.x.rounded())
+                        XCTAssertEqual(divider.frame.origin.y, divider.frame.origin.y.rounded())
+                        XCTAssertEqual(divider.frame.width, divider.frame.width.rounded())
+                        XCTAssertEqual(divider.frame.height, divider.frame.height.rounded())
+                        if divider.axis == .vertical {
+                            XCTAssertEqual(divider.frame.width, MultiviewGridLayout.defaultSpacing)
+                        } else {
+                            XCTAssertEqual(divider.frame.height, MultiviewGridLayout.defaultSpacing)
+                        }
+                        for (idx, tile) in frames.enumerated() {
+                            XCTAssertFalse(
+                                divider.frame.intersects(tile),
+                                "Divider \(divider.id) overlapped tile \(idx) in mode \(mode) count \(count)"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Backward-compatible MultiviewPreset decoding when splitRatios key is absent
+        let legacyPresetJSON = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "name": "Legacy Quad",
+          "urlStrings": ["https://www.youtube.com/watch?v=LXb3EKWsInQ", "https://tv.youtube.com/live"],
+          "layoutMode": "auto"
+        }
+        """.data(using: .utf8)!
+        let decodedLegacy = try JSONDecoder().decode(MultiviewPreset.self, from: legacyPresetJSON)
+        XCTAssertEqual(decodedLegacy.name, "Legacy Quad")
+        XCTAssertNil(decodedLegacy.splitRatios)
+
+        // Round-trip with splitRatios persisted
+        let withRatios = MultiviewPreset(
+            name: "70/30 Game + Scores",
+            urlStrings: ["https://tv.youtube.com/live", "https://www.espn.com/scoreboard"],
+            layoutMode: .spotlight,
+            splitRatios: customRatios
+        )
+        let encoded = try JSONEncoder().encode(withRatios)
+        let decodedWithRatios = try JSONDecoder().decode(MultiviewPreset.self, from: encoded)
+        XCTAssertEqual(decodedWithRatios.splitRatios, customRatios)
+    }
+
+    func testCompanionRoutingURLsSessionRestorationAndIcons() throws {
+        // Companion URL resolution & dangerous scheme rejection
+        XCTAssertEqual(
+            YouTubeURLRouter.resolveCompanionURL("twitch.tv/nfl")?.absoluteString,
+            "https://twitch.tv/nfl"
+        )
+        XCTAssertEqual(
+            YouTubeURLRouter.resolveCompanionURL("https://www.espn.com/scoreboard")?.absoluteString,
+            "https://www.espn.com/scoreboard"
+        )
+        XCTAssertNil(YouTubeURLRouter.resolveCompanionURL("javascript:alert(1)"))
+        XCTAssertNil(YouTubeURLRouter.resolveCompanionURL("file:///etc/passwd"))
+        XCTAssertNil(YouTubeURLRouter.resolveCompanionURL("data:text/html,<h1>x</h1>"))
+        XCTAssertNil(YouTubeURLRouter.resolveCompanionURL("nfl live scores"))
+
+        // Host classification
+        XCTAssertTrue(YouTubeURLRouter.isStandardYouTubeHost("www.youtube.com"))
+        XCTAssertFalse(YouTubeURLRouter.isStandardYouTubeHost("tv.youtube.com"))
+        XCTAssertFalse(YouTubeURLRouter.isStandardYouTubeHost("www.twitch.tv"))
+
+        // Navigation routing in .companion vs .youtube mode
+        let twitchChannel = try XCTUnwrap(URL(string: "https://www.twitch.tv/esl_cs"))
+        let espnHome = try XCTUnwrap(URL(string: "https://www.espn.com/scoreboard"))
+        let mailto = try XCTUnwrap(URL(string: "mailto:support@example.com"))
+
+        XCTAssertEqual(
+            YouTubeURLRouter.routeNavigation(
+                url: twitchChannel,
+                currentPageURL: espnHome,
+                isUserLinkClick: true,
+                openExternalLinksInBrowser: true,
+                redirectShortsToWatch: true,
+                routingMode: .companion
+            ),
+            .allowInApp
+        )
+        XCTAssertEqual(
+            YouTubeURLRouter.routeNavigation(
+                url: twitchChannel,
+                currentPageURL: URL(string: "https://www.youtube.com"),
+                isUserLinkClick: true,
+                openExternalLinksInBrowser: true,
+                redirectShortsToWatch: true,
+                routingMode: .youtube
+            ),
+            .openExternal(twitchChannel)
+        )
+        XCTAssertEqual(
+            YouTubeURLRouter.routeNavigation(
+                url: mailto,
+                currentPageURL: espnHome,
+                isUserLinkClick: true,
+                openExternalLinksInBrowser: true,
+                redirectShortsToWatch: true,
+                routingMode: .companion
+            ),
+            .openExternal(mailto)
+        )
+
+        // Companion icon & Session restoration
+        XCTAssertEqual(YouTubeURLRouter.pinnedItemIcon(for: "https://www.espn.com/scoreboard"), "globe")
+        XCTAssertEqual(YouTubeURLRouter.pinnedItemIcon(for: "https://tv.youtube.com/live"), "tv")
+
+        let legacySnapJSON = """
+        {"urlString": "https://www.youtube.com/watch?v=LXb3EKWsInQ", "title": "Costa Rica"}
+        """.data(using: .utf8)!
+        let decodedSnap = try JSONDecoder().decode(SavedTabSnapshot.self, from: legacySnapJSON)
+        XCTAssertEqual(decodedSnap.routingMode, .youtube)
+
+        let mixedSession = SessionRestorationFilter.sanitize(
+            tabs: [
+                SavedTabSnapshot(urlString: "https://www.youtube.com/watch?v=LXb3EKWsInQ", title: "4K HDR", routingMode: .youtube),
+                SavedTabSnapshot(urlString: "https://www.espn.com/scoreboard", title: "ESPN Scores", routingMode: .companion),
+                SavedTabSnapshot(urlString: "https://accounts.google.com/ServiceLogin", title: "Sign in", routingMode: .companion),
+                SavedTabSnapshot(urlString: "https://example.com/rogue", title: "Rogue", routingMode: .youtube)
+            ],
+            selectedIndex: 1
+        )
+        XCTAssertEqual(mixedSession?.tabs.count, 2)
+        XCTAssertEqual(mixedSession?.tabs[1].urlString, "https://www.espn.com/scoreboard")
+        XCTAssertEqual(mixedSession?.tabs[1].routingMode, .companion)
+        XCTAssertEqual(mixedSession?.selectedIndex, 1)
+    }
+
+    func testPinnedFoldersBackwardCompatibilityAndCommandPalette() throws {
+        // Legacy PinnedItem without folderID decodes cleanly
+        let legacyPinJSON = """
+        {
+          "id": "22222222-2222-2222-2222-222222222222",
+          "title": "MKBHD",
+          "urlString": "https://www.youtube.com/@mkbhd",
+          "addedAt": 0
+        }
+        """.data(using: .utf8)!
+        let decodedLegacyPin = try JSONDecoder().decode(PinnedItem.self, from: legacyPinJSON)
+        XCTAssertNil(decodedLegacyPin.folderID)
+
+        let sportsFolder = PinnedFolder(name: "Sports", isExpanded: true)
+        let espnPin = PinnedItem(title: "ESPN Scores", urlString: "https://www.espn.com/scoreboard", folderID: sportsFolder.id)
+        let yttvPin = PinnedItem(title: "YouTube TV", urlString: "https://tv.youtube.com/live", folderID: sportsFolder.id)
+
+        // Folder search & grouped pin subtitle in Command Palette
+        let folderResults = CommandPaletteEngine.rank(
+            query: "Sports",
+            openTabs: [],
+            presets: [],
+            continueWatching: [],
+            pinnedItems: [espnPin, yttvPin],
+            pinnedFolders: [sportsFolder],
+            watchedChannels: [],
+            actions: [],
+            suggestions: []
+        )
+        XCTAssertTrue(folderResults.contains(where: { $0.payload == .openPinnedFolder(sportsFolder.id) }))
+        XCTAssertTrue(folderResults.contains(where: { $0.title == "ESPN Scores" && $0.subtitle == "Pinned • Sports" }))
+
+        // Companion URL detection in Command Palette without leaking to autocomplete suggestions
+        XCTAssertFalse(CommandPaletteEngine.shouldFetchSuggestions(for: "espn.com/scoreboard"))
+        let urlResults = CommandPaletteEngine.rank(
+            query: "espn.com/scoreboard",
+            openTabs: [],
+            presets: [],
+            continueWatching: [],
+            pinnedItems: [],
+            pinnedFolders: [],
+            watchedChannels: [],
+            actions: [],
+            suggestions: []
+        )
+        XCTAssertEqual(
+            urlResults.first?.payload,
+            .openCompanionURL(try XCTUnwrap(URL(string: "https://espn.com/scoreboard")))
+        )
+
+        // Quick-site Companion search ("Twitch")
+        let twitchResults = CommandPaletteEngine.rank(
+            query: "Twitch",
+            openTabs: [],
+            presets: [],
+            continueWatching: [],
+            pinnedItems: [],
+            pinnedFolders: [],
+            watchedChannels: [],
+            actions: [],
+            suggestions: []
+        )
+        XCTAssertTrue(twitchResults.contains(where: {
+            if case .openCompanionURL(let url) = $0.payload {
+                return url.host?.contains("twitch.tv") == true
+            }
+            return false
+        }))
+    }
+
+    func testEnhancementScriptWebCompanionIsolationAndUniversalVideoFallback() {
+        let boot = EnhancementScript.bootstrapScript(config: DistractionFreeConfig(multiviewTileActive: true))
+        XCTAssertTrue(boot.contains("isWebCompanionHost()"))
+        XCTAssertTrue(boot.contains("if (isWebCompanionHost() || !document.head || document.getElementById('ytmac-style')) return;"))
+        XCTAssertTrue(boot.contains("source[src]"))
+        XCTAssertTrue(boot.contains("isStdYT ? 'youtube' : 'web'"))
+        XCTAssertTrue(boot.contains("window.__ytmacGetMainVideo = getMainVideo"))
+        XCTAssertTrue(boot.contains("window.addEventListener('play', handleCapturedVideoEvent, true)"))
+        XCTAssertTrue(boot.contains("window.addEventListener('playing', handleCapturedVideoEvent, true)"))
+        XCTAssertTrue(boot.contains("window.addEventListener('loadedmetadata', handleCapturedVideoEvent, true)"))
+
+        // Standalone playback scripts include universal non-YouTube <video> & <source src> fallback
+        for script in [
+            EnhancementScript.setMutedScript(muted: true),
+            EnhancementScript.setAudioLevelScript(muted: false, volumePercent: 15),
+            EnhancementScript.pauseScript,
+            EnhancementScript.togglePlayPauseScript
+        ] {
+            XCTAssertTrue(script.contains("__ytmacGetMainVideo"))
+            XCTAssertTrue(script.contains("document.querySelectorAll('video')"))
+            XCTAssertTrue(script.contains("source[src]"))
+        }
+
+        // Hard engineering invariants preserved
+        XCTAssertFalse(boot.contains(":has("))
+        XCTAssertFalse(boot.contains("MutationObserver"))
+        XCTAssertFalse(boot.contains("AudioContext"))
+        XCTAssertFalse(boot.contains("ytInitialPlayerResponse"))
+    }
 }

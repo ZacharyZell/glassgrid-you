@@ -4,10 +4,25 @@ import Foundation
 public struct SavedTabSnapshot: Codable, Equatable, Sendable {
     public let urlString: String
     public let title: String
+    public let routingMode: TabRoutingMode
 
-    public init(urlString: String, title: String) {
+    enum CodingKeys: String, CodingKey {
+        case urlString
+        case title
+        case routingMode
+    }
+
+    public init(urlString: String, title: String, routingMode: TabRoutingMode = .youtube) {
         self.urlString = urlString
         self.title = title
+        self.routingMode = routingMode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        urlString = try container.decode(String.self, forKey: .urlString)
+        title = try container.decode(String.self, forKey: .title)
+        routingMode = try container.decodeIfPresent(TabRoutingMode.self, forKey: .routingMode) ?? .youtube
     }
 
     public var url: URL? {
@@ -40,13 +55,22 @@ public enum SessionRestorationFilter {
 
         for (originalIndex, snapshot) in tabs.enumerated() {
             guard sanitized.count < maxRestoredTabs else { break }
-            guard isRestorableURLString(snapshot.urlString) else { continue }
+            guard isRestorableURLString(snapshot.urlString, routingMode: snapshot.routingMode) else { continue }
             let cleanTitle = YouTubeTitleFormatter.clean(snapshot.title)
-            let resolvedTitle = cleanTitle.isEmpty ? "YouTube" : cleanTitle
+            let fallbackTitle = snapshot.routingMode == .companion
+                ? (URL(string: snapshot.urlString)?.host ?? "Web")
+                : "YouTube"
+            let resolvedTitle = cleanTitle.isEmpty ? fallbackTitle : cleanTitle
             if originalIndex == selectedIndex {
                 mappedSelectedIndex = sanitized.count
             }
-            sanitized.append(SavedTabSnapshot(urlString: snapshot.urlString, title: resolvedTitle))
+            sanitized.append(
+                SavedTabSnapshot(
+                    urlString: snapshot.urlString,
+                    title: resolvedTitle,
+                    routingMode: snapshot.routingMode
+                )
+            )
         }
 
         guard !sanitized.isEmpty else {
@@ -62,7 +86,10 @@ public enum SessionRestorationFilter {
         return SavedSession(tabs: sanitized, selectedIndex: finalIndex)
     }
 
-    public static func isRestorableURLString(_ urlString: String) -> Bool {
+    public static func isRestorableURLString(
+        _ urlString: String,
+        routingMode: TabRoutingMode = .youtube
+    ) -> Bool {
         guard let url = URL(string: urlString),
               let scheme = url.scheme?.lowercased(),
               scheme == "https" || scheme == "http",
@@ -72,6 +99,9 @@ public enum SessionRestorationFilter {
         }
         if YouTubeURLRouter.isGoogleAuthHost(host) {
             return false
+        }
+        if routingMode == .companion {
+            return true
         }
         return YouTubeURLRouter.isYouTubeHost(host)
     }

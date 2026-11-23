@@ -51,6 +51,8 @@ public enum CommandPalettePayload: Equatable, Sendable {
     case selectTab(UUID)
     case seekToChapter(Double)
     case launchPreset(UUID)
+    case openPinnedFolder(UUID)
+    case openCompanionURL(URL)
     case openURL(URL)
     case searchYouTube(String)
     case runAction(CommandPaletteAction)
@@ -245,6 +247,7 @@ public enum CommandPaletteEngine {
         presets: [MultiviewPreset],
         continueWatching: [ContinueWatchingItem],
         pinnedItems: [PinnedItem],
+        pinnedFolders: [PinnedFolder] = [],
         watchedChannels: [WatchedChannelStat],
         actions: [CommandPaletteActionDescriptor],
         suggestions: [String]
@@ -264,7 +267,9 @@ public enum CommandPaletteEngine {
 
         // 1. Direct YouTube / YouTube TV URL detection goes straight to #1
         let detectedYouTubeURL = YouTubeURLRouter.extractYouTubeURLFromString(trimmed)
+        let detectedCompanionURL: URL?
         if let url = detectedYouTubeURL {
+            detectedCompanionURL = nil
             results.append(
                 CommandPaletteItem(
                     id: "direct-url-\(url.absoluteString)",
@@ -276,6 +281,22 @@ public enum CommandPaletteEngine {
                     payload: .openURL(url)
                 )
             )
+        } else if let companionURL = YouTubeURLRouter.resolveCompanionURL(trimmed) {
+            detectedCompanionURL = companionURL
+            results.append(
+                CommandPaletteItem(
+                    id: "direct-companion-\(companionURL.absoluteString)",
+                    section: .directSearch,
+                    title: "Open Companion Tile",
+                    subtitle: companionURL.absoluteString,
+                    systemImage: "globe",
+                    shortcutHint: "↩",
+                    badgeText: "Web",
+                    payload: .openCompanionURL(companionURL)
+                )
+            )
+        } else {
+            detectedCompanionURL = nil
         }
 
         // 2. Open Tabs
@@ -336,21 +357,56 @@ public enum CommandPaletteEngine {
         .sorted { $0.score > $1.score }
         results.append(contentsOf: rankedContinue.prefix(4).map(\.item))
 
-        // 5. Pinned Items & Most Watched Channels
+        // 5. Pinned Folders, Pinned Items & Most Watched Channels
+        let folderNameByID = Dictionary(uniqueKeysWithValues: pinnedFolders.map { ($0.id, $0.name) })
+        let pinCountByFolderID = Dictionary(grouping: pinnedItems.compactMap(\.folderID), by: { $0 }).mapValues(\.count)
+
         var channelEntries: [(score: Int, item: CommandPaletteItem)] = []
         var seenChannelURLs = Set<String>()
+
+        for folder in pinnedFolders {
+            guard let score = fuzzyScore(query: trimmed, in: folder.name) else { continue }
+            let count = pinCountByFolderID[folder.id] ?? 0
+            let subtitle: String
+            if (2...MultiviewGridLayout.maxTiles).contains(count) {
+                subtitle = "Folder · Open \(count) pins in Multiview"
+            } else if count > 0 {
+                subtitle = "Folder · Open \(count) \(count == 1 ? "pin" : "pins")"
+            } else {
+                subtitle = "Empty Folder"
+            }
+            channelEntries.append((
+                score + 30,
+                CommandPaletteItem(
+                    id: "folder-\(folder.id.uuidString)",
+                    section: .channelsAndPins,
+                    title: folder.name,
+                    subtitle: subtitle,
+                    systemImage: "folder.fill",
+                    badgeText: count > 0 ? "\(count) \(count == 1 ? "pin" : "pins")" : nil,
+                    payload: .openPinnedFolder(folder.id)
+                )
+            ))
+        }
+
         for pin in pinnedItems {
             guard let url = pin.url, seenChannelURLs.insert(pin.urlString).inserted else { continue }
-            guard let score = fuzzyScore(query: trimmed, in: pin.title) else { continue }
+            let titleScore = fuzzyScore(query: trimmed, in: pin.title) ?? 0
+            let folderName = pin.folderID.flatMap { folderNameByID[$0] }
+            let folderScore = folderName.flatMap { fuzzyScore(query: trimmed, in: $0).map { $0 - 140 } } ?? 0
+            let best = max(titleScore, folderScore)
+            guard best > 0 else { continue }
+            let subtitle = folderName.map { "Pinned • \($0)" } ?? "Pinned"
+            let isCompanion = YouTubeURLRouter.preferredRoutingMode(for: url) == .companion
             channelEntries.append((
-                score + 20,
+                best + 20,
                 CommandPaletteItem(
                     id: "pin-\(pin.id.uuidString)",
                     section: .channelsAndPins,
                     title: pin.title,
-                    subtitle: "Pinned",
-                    systemImage: "pin.fill",
-                    payload: .openURL(url)
+                    subtitle: subtitle,
+                    systemImage: YouTubeURLRouter.pinnedItemIcon(for: pin.urlString),
+                    payload: isCompanion ? .openCompanionURL(url) : .openURL(url)
                 )
             ))
         }
@@ -370,7 +426,7 @@ public enum CommandPaletteEngine {
             ))
         }
         channelEntries.sort { $0.score > $1.score }
-        results.append(contentsOf: channelEntries.prefix(4).map(\.item))
+        results.append(contentsOf: channelEntries.prefix(5).map(\.item))
 
         // 6. App Actions
         let rankedActions: [(score: Int, item: CommandPaletteItem)] = actions.compactMap { desc in
@@ -382,6 +438,33 @@ public enum CommandPaletteEngine {
         }
         .sorted { $0.score > $1.score }
         results.append(contentsOf: rankedActions.prefix(5).map(\.item))
+
+        // 6b. Quick-launch Companion streaming/sports site matching (e.g. "Twitch", "ESPN", "Peacock")
+        if detectedYouTubeURL == nil && detectedCompanionURL == nil {
+            let matchingSites: [(score: Int, site: CompanionQuickSite)] = CompanionQuickSite.catalog.compactMap { site in
+                guard site.routingMode == .companion else { return nil }
+                let nameScore = fuzzyScore(query: trimmed, in: site.name) ?? 0
+                let subScore = fuzzyScore(query: trimmed, in: site.subtitle).map { $0 - 150 } ?? 0
+                let best = max(nameScore, subScore)
+                guard best >= 450 else { return nil }
+                return (best, site)
+            }
+            .sorted { $0.score > $1.score }
+
+            for match in matchingSites.prefix(2) {
+                results.append(
+                    CommandPaletteItem(
+                        id: "quick-companion-\(match.site.id)",
+                        section: .directSearch,
+                        title: "Open \(match.site.name) Companion Tile",
+                        subtitle: match.site.urlString,
+                        systemImage: match.site.systemImage,
+                        badgeText: "Web",
+                        payload: .openCompanionURL(match.site.url)
+                    )
+                )
+            }
+        }
 
         // 7. Live YouTube Search Suggestions (deduplicated against raw query)
         let normalizedQuery = trimmed.lowercased()

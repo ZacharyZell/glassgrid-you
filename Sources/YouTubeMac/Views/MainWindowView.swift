@@ -57,8 +57,8 @@ struct MainWindowView: View {
     }
 
     private var isSelectedTabOnHome: Bool {
-        guard let url = controller.selectedTab?.url else { return false }
-        return SidebarDestination.matching(url: url) == .home
+        guard let tab = controller.selectedTab, !tab.isCompanionTab else { return false }
+        return SidebarDestination.matching(url: tab.url) == .home
     }
 
     private var shouldShowCompactHomeShelf: Bool {
@@ -147,8 +147,21 @@ struct MainWindowView: View {
                         anyTabInFullscreen: controller.anyTabInFullscreen,
                         multiviewTabIDs: controller.multiviewTabIDs,
                         multiviewLayoutMode: controller.multiviewLayoutMode,
+                        multiviewSplitRatios: controller.multiviewSplitRatios,
                         onHoveredTileChanged: { tileID in
                             controller.setHoveredMultiviewTile(tileID)
+                        },
+                        onSplitRatiosChanged: { ratios in
+                            controller.updateMultiviewSplitRatios(ratios)
+                        },
+                        onDividerHoverChanged: { dividerID in
+                            controller.hoveredMultiviewDividerID = dividerID
+                        },
+                        onDividerDragStateChanged: { dividerID in
+                            controller.activeMultiviewDividerDragID = dividerID
+                        },
+                        onDividerDoubleClickReset: { dividerID in
+                            controller.handleMultiviewDividerDoubleClickReset(dividerID)
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

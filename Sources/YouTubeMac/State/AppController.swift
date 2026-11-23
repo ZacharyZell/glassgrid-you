@@ -29,7 +29,10 @@ public final class AppController {
     public var multiviewTabIDs: [UUID] = []
     public var multiviewAudioTabID: UUID?
     public var multiviewLayoutMode: MultiviewLayoutMode = .auto
+    public var multiviewSplitRatios: MultiviewSplitRatios = .default
     public var hoveredMultiviewTileID: UUID?
+    public var hoveredMultiviewDividerID: MultiviewDividerID?
+    public var activeMultiviewDividerDragID: MultiviewDividerID?
 
     public var omniboxText: String = ""
     public var omniboxFocusTrigger: Int = 0
@@ -141,6 +144,7 @@ public final class AppController {
                 let tab = makeTab(
                     url: tabURL,
                     initialTitle: snap.title,
+                    routingMode: snap.routingMode,
                     deferInitialLoad: isSelected,
                     lazyLoad: !isSelected
                 )
@@ -352,7 +356,11 @@ public final class AppController {
     // MARK: - Tab Management
 
     @discardableResult
-    public func createTab(url: URL? = nil, select: Bool = true) -> BrowserTab {
+    public func createTab(
+        url: URL? = nil,
+        select: Bool = true,
+        routingMode: TabRoutingMode? = nil
+    ) -> BrowserTab {
         let targetURL = url ?? settings.startupDestination.url
         let targetIsWatch = YouTubeURLRouter.isWatchURL(targetURL)
 
@@ -368,7 +376,11 @@ public final class AppController {
         }
 
         let pendingSync = initialThemeCookieSyncTask
-        let tab = makeTab(url: targetURL, deferInitialLoad: pendingSync != nil)
+        let tab = makeTab(
+            url: targetURL,
+            routingMode: routingMode,
+            deferInitialLoad: pendingSync != nil
+        )
         tab.setBackForwardGesturesEnabled(!isMultiviewActive)
         tabs.append(tab)
 
@@ -551,7 +563,14 @@ public final class AppController {
 
         if isMultiviewActive {
             if multiviewTabIDs.contains(id) {
-                focusMultiviewAudio(tabID: id, showFeedback: false)
+                if targetTab.isCompanionTab && !targetTab.mediaStatus.hasVideo {
+                    if selectedTabID != id {
+                        selectedTabID = id
+                        syncOmniboxToSelectedTab()
+                    }
+                } else {
+                    focusMultiviewAudio(tabID: id, showFeedback: false)
+                }
             } else {
                 exitMultiview(focusTabID: id, showFeedback: false)
             }
@@ -769,9 +788,193 @@ public final class AppController {
 
     public func movePin(id: UUID, by delta: Int) {
         guard let idx = settings.pinnedItems.firstIndex(where: { $0.id == id }) else { return }
-        let target = idx + delta
-        guard settings.pinnedItems.indices.contains(target), target != idx else { return }
-        settings.pinnedItems.swapAt(idx, target)
+        let folderID = settings.pinnedItems[idx].folderID
+        let siblingIndices = settings.pinnedItems.indices.filter { settings.pinnedItems[$0].folderID == folderID }
+        guard let pos = siblingIndices.firstIndex(of: idx) else { return }
+        let targetPos = pos + delta
+        guard siblingIndices.indices.contains(targetPos), targetPos != pos else { return }
+        settings.pinnedItems.swapAt(idx, siblingIndices[targetPos])
+    }
+
+    // MARK: - Sidebar Channel Folders
+
+    @discardableResult
+    public func createPinnedFolder(name: String) -> PinnedFolder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let folder = PinnedFolder(name: trimmed, isExpanded: true)
+        settings.pinnedFolders.append(folder)
+        showHUD(icon: "folder.badge.plus", message: "Created Folder \"\(trimmed)\"")
+        return folder
+    }
+
+    public func renamePinnedFolder(id: UUID, newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let idx = settings.pinnedFolders.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        settings.pinnedFolders[idx].name = trimmed
+        showHUD(icon: "pencil", message: "Renamed Folder")
+    }
+
+    public func togglePinnedFolderExpanded(id: UUID) {
+        guard let idx = settings.pinnedFolders.firstIndex(where: { $0.id == id }) else { return }
+        settings.pinnedFolders[idx].isExpanded.toggle()
+    }
+
+    /// Safe non-destructive folder deletion: keeps all child pins by moving them back to the ungrouped top level.
+    public func deletePinnedFolder(id: UUID) {
+        guard settings.pinnedFolders.contains(where: { $0.id == id }) else { return }
+        var updatedPins = settings.pinnedItems
+        var movedAny = false
+        for i in updatedPins.indices where updatedPins[i].folderID == id {
+            updatedPins[i].folderID = nil
+            movedAny = true
+        }
+        if movedAny {
+            settings.pinnedItems = updatedPins
+        }
+        settings.pinnedFolders.removeAll { $0.id == id }
+        showHUD(icon: "folder.badge.minus", message: "Folder deleted — pins kept")
+    }
+
+    public func movePinToFolder(pinID: UUID, folderID: UUID?) {
+        guard let idx = settings.pinnedItems.firstIndex(where: { $0.id == pinID }) else { return }
+        if let folderID, !settings.pinnedFolders.contains(where: { $0.id == folderID }) {
+            return
+        }
+        settings.pinnedItems[idx].folderID = folderID
+        if let folderID,
+           let folderIdx = settings.pinnedFolders.firstIndex(where: { $0.id == folderID }) {
+            settings.pinnedFolders[folderIdx].isExpanded = true
+            showHUD(icon: "folder.fill", message: "Moved to \"\(settings.pinnedFolders[folderIdx].name)\"")
+        } else {
+            showHUD(icon: "pin.fill", message: "Moved to Ungrouped")
+        }
+    }
+
+    public func pins(inFolder folderID: UUID?) -> [PinnedItem] {
+        if let folderID {
+            return settings.pinnedItems.filter { $0.folderID == folderID }
+        }
+        let validFolderIDs = Set(settings.pinnedFolders.map(\.id))
+        return settings.pinnedItems.filter { item in
+            guard let fid = item.folderID else { return true }
+            return !validFolderIDs.contains(fid)
+        }
+    }
+
+    public func openPinnedItem(_ item: PinnedItem) {
+        guard let url = item.url else { return }
+        let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
+        if mode == .companion {
+            if let current = selectedTab, current.routingMode == .companion, !isMultiviewActive {
+                navigateSelectedTab(to: url)
+            } else {
+                createTab(url: url, select: true, routingMode: .companion)
+            }
+        } else {
+            navigateSelectedTab(to: url)
+        }
+    }
+
+    public func openFolderInMultiview(id: UUID) {
+        guard !anyTabInFullscreen,
+              let folder = settings.pinnedFolders.first(where: { $0.id == id }) else {
+            return
+        }
+        let folderPins = pins(inFolder: id)
+        let validURLs: [URL] = folderPins.prefix(MultiviewGridLayout.maxTiles).compactMap { pin in
+            guard let url = pin.url else { return nil }
+            let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
+            return SessionRestorationFilter.isRestorableURLString(url.absoluteString, routingMode: mode) ? url : nil
+        }
+        guard validURLs.count >= 2 else {
+            openFolderInTabs(id: id)
+            return
+        }
+
+        var usedTabIDs = Set<UUID>()
+        var targetTabIDs: [UUID] = []
+        targetTabIDs.reserveCapacity(validURLs.count)
+
+        for targetURL in validURLs {
+            let mode = YouTubeURLRouter.preferredRoutingMode(for: targetURL)
+            if let existing = tabs.first(where: {
+                !usedTabIDs.contains($0.id)
+                    && $0.routingMode == mode
+                    && ($0.pendingLazyURL ?? $0.url).absoluteString == targetURL.absoluteString
+            }) {
+                usedTabIDs.insert(existing.id)
+                ensureTabLoaded(existing)
+                targetTabIDs.append(existing.id)
+            } else {
+                let pendingSync = initialThemeCookieSyncTask
+                let newTab = makeTab(url: targetURL, routingMode: mode, deferInitialLoad: pendingSync != nil)
+                tabs.append(newTab)
+                if let pendingSync {
+                    Task { @MainActor [weak newTab] in
+                        await pendingSync.value
+                        newTab?.load(targetURL)
+                    }
+                }
+                refreshSponsorSegmentsIfNeeded(for: newTab, url: targetURL)
+                usedTabIDs.insert(newTab.id)
+                targetTabIDs.append(newTab.id)
+            }
+        }
+
+        enterMultiview(with: targetTabIDs)
+        scheduleSessionSave()
+        showHUD(icon: "square.grid.2x2.fill", message: "Opened \"\(folder.name)\" in Multiview")
+    }
+
+    public func openFolderInTabs(id: UUID) {
+        guard !anyTabInFullscreen,
+              let folder = settings.pinnedFolders.first(where: { $0.id == id }) else {
+            return
+        }
+        let folderPins = pins(inFolder: id)
+        let validURLs: [URL] = folderPins.prefix(6).compactMap { pin in
+            guard let url = pin.url else { return nil }
+            let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
+            return SessionRestorationFilter.isRestorableURLString(url.absoluteString, routingMode: mode) ? url : nil
+        }
+        guard !validURLs.isEmpty else {
+            showHUD(icon: "folder", message: "Folder is Empty")
+            return
+        }
+
+        if isMultiviewActive {
+            exitMultiview(focusTabID: selectedTabID, showFeedback: false)
+        }
+
+        var usedTabIDs = Set<UUID>()
+        var firstTabID: UUID?
+
+        for targetURL in validURLs {
+            let mode = YouTubeURLRouter.preferredRoutingMode(for: targetURL)
+            if let existing = tabs.first(where: {
+                !usedTabIDs.contains($0.id)
+                    && $0.routingMode == mode
+                    && ($0.pendingLazyURL ?? $0.url).absoluteString == targetURL.absoluteString
+            }) {
+                usedTabIDs.insert(existing.id)
+                ensureTabLoaded(existing)
+                if firstTabID == nil { firstTabID = existing.id }
+            } else {
+                let created = createTab(url: targetURL, select: false, routingMode: mode)
+                usedTabIDs.insert(created.id)
+                if firstTabID == nil { firstTabID = created.id }
+            }
+        }
+
+        if let firstTabID {
+            selectTab(id: firstTabID)
+        }
+        scheduleSessionSave()
+        showHUD(icon: "folder.fill", message: "Opened \(validURLs.count) \(validURLs.count == 1 ? "pin" : "pins") from \"\(folder.name)\"")
     }
 
     public func moveTab(fromID: UUID, toID: UUID) {
@@ -827,7 +1030,7 @@ public final class AppController {
     public func flushWatchProgress(for tab: BrowserTab?) {
         guard let tab,
               tab.mediaStatus.hasVideo,
-              !YouTubeURLRouter.isYouTubeTVHost(tab.url.host),
+              YouTubeURLRouter.isStandardYouTubeHost(tab.url.host),
               let videoID = YouTubeURLRouter.extractVideoID(from: tab.url) else {
             return
         }
@@ -996,13 +1199,26 @@ public final class AppController {
         setMultiviewLayoutMode(multiviewLayoutMode.nextMode, showFeedback: true)
     }
 
-    public func addTileToMultiview(url: URL? = nil) {
+    public func updateMultiviewSplitRatios(_ ratios: MultiviewSplitRatios) {
+        guard multiviewSplitRatios != ratios else { return }
+        multiviewSplitRatios = ratios
+    }
+
+    public func handleMultiviewDividerDoubleClickReset(_ dividerID: MultiviewDividerID) {
+        let count = multiviewTabs.count
+        guard count >= 2 else { return }
+        multiviewSplitRatios = multiviewSplitRatios.resetting(divider: dividerID, tileCount: count)
+        showHUD(icon: "arrow.counterclockwise", message: "Layout Proportions Reset")
+    }
+
+    public func addTileToMultiview(url: URL? = nil, routingMode: TabRoutingMode? = nil) {
         guard !anyTabInFullscreen else { return }
         let targetURL = url ?? settings.startupDestination.url
+        let resolvedMode = routingMode ?? YouTubeURLRouter.preferredRoutingMode(for: targetURL)
 
         if !isMultiviewActive {
             let pendingSync = initialThemeCookieSyncTask
-            let newTab = makeTab(url: targetURL, deferInitialLoad: pendingSync != nil)
+            let newTab = makeTab(url: targetURL, routingMode: resolvedMode, deferInitialLoad: pendingSync != nil)
             tabs.append(newTab)
             if let pendingSync {
                 Task { @MainActor [weak newTab] in
@@ -1021,7 +1237,7 @@ public final class AppController {
         }
 
         let pendingSync = initialThemeCookieSyncTask
-        let newTab = makeTab(url: targetURL, deferInitialLoad: pendingSync != nil)
+        let newTab = makeTab(url: targetURL, routingMode: resolvedMode, deferInitialLoad: pendingSync != nil)
         newTab.setBackForwardGesturesEnabled(false)
         tabs.append(newTab)
         if let pendingSync {
@@ -1040,7 +1256,38 @@ public final class AppController {
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: false)
         scheduleSessionSave()
-        showHUD(icon: "plus.square.on.square", message: "Added Stream (\(multiviewTabIDs.count)/\(MultiviewGridLayout.maxTiles))")
+        let label = resolvedMode == .companion ? "Added Companion Tile" : "Added Stream"
+        showHUD(
+            icon: resolvedMode == .companion ? "globe" : "plus.square.on.square",
+            message: "\(label) (\(multiviewTabIDs.count)/\(MultiviewGridLayout.maxTiles))"
+        )
+    }
+
+    public func openCompanionTile(url: URL) {
+        guard !anyTabInFullscreen else { return }
+        let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
+        if isMultiviewActive && !canAddMultiviewTile {
+            createTab(url: url, select: true, routingMode: mode)
+            return
+        }
+        addTileToMultiview(url: url, routingMode: mode)
+    }
+
+    @discardableResult
+    public func openCompanionTile(rawInput: String) -> Bool {
+        if let ytURL = YouTubeURLRouter.extractYouTubeURLFromString(rawInput) {
+            let target = settings.redirectShortsToWatch
+                ? (YouTubeURLRouter.rewriteShortsURL(ytURL) ?? ytURL)
+                : ytURL
+            openCompanionTile(url: target)
+            return true
+        }
+        guard let webURL = YouTubeURLRouter.resolveCompanionURL(rawInput) else {
+            showHUD(icon: "exclamationmark.triangle", message: "Enter a Valid Website or HTTPS URL")
+            return false
+        }
+        openCompanionTile(url: webURL)
+        return true
     }
 
     public func openYouTubeTVInMultiview() {
@@ -1049,14 +1296,22 @@ public final class AppController {
     }
 
     public func addClipboardURLToMultiview() {
-        guard let clipURL = clipboardYouTubeURL() else {
-            showHUD(icon: "link.badge.plus", message: "No YouTube Link in Clipboard")
+        guard let clip = NSPasteboard.general.string(forType: .string) else {
+            showHUD(icon: "link.badge.plus", message: "No Link in Clipboard")
             return
         }
-        let target = settings.redirectShortsToWatch
-            ? (YouTubeURLRouter.rewriteShortsURL(clipURL) ?? clipURL)
-            : clipURL
-        addTileToMultiview(url: target)
+        if let ytURL = YouTubeURLRouter.extractYouTubeURLFromString(clip) {
+            let target = settings.redirectShortsToWatch
+                ? (YouTubeURLRouter.rewriteShortsURL(ytURL) ?? ytURL)
+                : ytURL
+            addTileToMultiview(url: target, routingMode: .youtube)
+            return
+        }
+        if let webURL = YouTubeURLRouter.resolveCompanionURL(clip) {
+            addTileToMultiview(url: webURL, routingMode: .companion)
+            return
+        }
+        showHUD(icon: "link.badge.plus", message: "No Valid Link in Clipboard")
     }
 
     public func addExistingTabToMultiview(id: UUID) {
@@ -1239,6 +1494,11 @@ public final class AppController {
         if selectedTabID != tabID {
             selectedTabID = tabID
             syncOmniboxToSelectedTab()
+        }
+        // Silent Companion web tiles (e.g. ESPN scoreboards without <video>) never steal audio focus from an active stream.
+        if let clickedTab = tabs.first(where: { $0.id == tabID }),
+           clickedTab.isCompanionTab && !clickedTab.mediaStatus.hasVideo {
+            return
         }
         if tabID != multiviewAudioTabID {
             focusMultiviewAudio(tabID: tabID, showFeedback: false)
@@ -2033,6 +2293,7 @@ public final class AppController {
             presets: settings.savedMultiviewPresets,
             continueWatching: settings.continueWatching,
             pinnedItems: settings.pinnedItems,
+            pinnedFolders: settings.pinnedFolders,
             watchedChannels: settings.watchedChannels,
             actions: actions,
             suggestions: commandPaletteSuggestions
@@ -2055,6 +2316,23 @@ public final class AppController {
         case .launchPreset(let presetID):
             if let preset = settings.savedMultiviewPresets.first(where: { $0.id == presetID }) {
                 launchMultiviewPreset(preset)
+            }
+            focusActiveWebView()
+
+        case .openPinnedFolder(let folderID):
+            let count = pins(inFolder: folderID).count
+            if (2...MultiviewGridLayout.maxTiles).contains(count) && !anyTabInFullscreen {
+                openFolderInMultiview(id: folderID)
+            } else {
+                openFolderInTabs(id: folderID)
+            }
+            focusActiveWebView()
+
+        case .openCompanionURL(let url):
+            if isMultiviewActive && canAddMultiviewTile {
+                addTileToMultiview(url: url, routingMode: .companion)
+            } else {
+                createTab(url: url, select: true, routingMode: .companion)
             }
             focusActiveWebView()
 
@@ -2242,11 +2520,13 @@ public final class AppController {
     public func saveCurrentMultiviewAsPreset(name: String) {
         guard isMultiviewActive else { return }
         let validURLStrings = multiviewTabs.compactMap { tab -> String? in
-            let urlString = (tab.pendingLazyURL ?? tab.url).absoluteString
-            return SessionRestorationFilter.isRestorableURLString(urlString) ? urlString : nil
+            let url = tab.pendingLazyURL ?? tab.url
+            let urlString = url.absoluteString
+            let mode = tab.isCompanionTab ? TabRoutingMode.companion : tab.routingMode
+            return SessionRestorationFilter.isRestorableURLString(urlString, routingMode: mode) ? urlString : nil
         }
         guard validURLStrings.count >= 2 else {
-            showHUD(icon: "exclamationmark.triangle", message: "Need at Least 2 YouTube Streams to Save")
+            showHUD(icon: "exclamationmark.triangle", message: "Need at Least 2 Streams to Save")
             return
         }
 
@@ -2255,7 +2535,8 @@ public final class AppController {
         let preset = MultiviewPreset(
             name: finalName,
             urlStrings: validURLStrings,
-            layoutMode: multiviewLayoutMode
+            layoutMode: multiviewLayoutMode,
+            splitRatios: multiviewSplitRatios
         )
         settings.savedMultiviewPresets.append(preset)
         showHUD(icon: "bookmark.fill", message: "Saved \"\(finalName)\"")
@@ -2264,45 +2545,50 @@ public final class AppController {
     public func launchMultiviewPreset(_ preset: MultiviewPreset) {
         guard !anyTabInFullscreen else { return }
 
-        let validURLs: [URL] = preset.urlStrings.prefix(MultiviewGridLayout.maxTiles).compactMap { raw in
-            guard SessionRestorationFilter.isRestorableURLString(raw), let url = URL(string: raw) else {
+        let validEntries: [(url: URL, mode: TabRoutingMode)] = preset.urlStrings.prefix(MultiviewGridLayout.maxTiles).compactMap { raw in
+            guard let url = URL(string: raw) else { return nil }
+            let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
+            guard SessionRestorationFilter.isRestorableURLString(raw, routingMode: mode) else {
                 return nil
             }
-            return url
+            return (url, mode)
         }
-        guard validURLs.count >= 2 else {
+        guard validEntries.count >= 2 else {
             showHUD(icon: "exclamationmark.triangle", message: "Preset Needs at Least 2 Valid Streams")
             return
         }
 
         var usedTabIDs = Set<UUID>()
         var targetTabIDs: [UUID] = []
-        targetTabIDs.reserveCapacity(validURLs.count)
+        targetTabIDs.reserveCapacity(validEntries.count)
 
-        for targetURL in validURLs {
+        for entry in validEntries {
             if let existing = tabs.first(where: {
-                !usedTabIDs.contains($0.id) && ($0.pendingLazyURL ?? $0.url).absoluteString == targetURL.absoluteString
+                !usedTabIDs.contains($0.id)
+                    && $0.routingMode == entry.mode
+                    && ($0.pendingLazyURL ?? $0.url).absoluteString == entry.url.absoluteString
             }) {
                 usedTabIDs.insert(existing.id)
                 ensureTabLoaded(existing)
                 targetTabIDs.append(existing.id)
             } else {
                 let pendingSync = initialThemeCookieSyncTask
-                let newTab = makeTab(url: targetURL, deferInitialLoad: pendingSync != nil)
+                let newTab = makeTab(url: entry.url, routingMode: entry.mode, deferInitialLoad: pendingSync != nil)
                 tabs.append(newTab)
                 if let pendingSync {
                     Task { @MainActor [weak newTab] in
                         await pendingSync.value
-                        newTab?.load(targetURL)
+                        newTab?.load(entry.url)
                     }
                 }
-                refreshSponsorSegmentsIfNeeded(for: newTab, url: targetURL)
+                refreshSponsorSegmentsIfNeeded(for: newTab, url: entry.url)
                 usedTabIDs.insert(newTab.id)
                 targetTabIDs.append(newTab.id)
             }
         }
 
         multiviewLayoutMode = preset.layoutMode
+        multiviewSplitRatios = preset.splitRatios ?? .default
         enterMultiview(with: targetTabIDs)
         scheduleSessionSave()
         showHUD(icon: "square.grid.2x2.fill", message: "Launched \"\(preset.name)\"")
@@ -2332,6 +2618,15 @@ public final class AppController {
             addTileToMultiview(url: normalized)
         } else {
             createTab(url: normalized, select: true)
+        }
+    }
+
+    public func handleDroppedCompanionURL(_ url: URL) {
+        focusMainWindow()
+        if isMultiviewActive && canAddMultiviewTile {
+            addTileToMultiview(url: url, routingMode: .companion)
+        } else {
+            createTab(url: url, select: true, routingMode: .companion)
         }
     }
 
@@ -2378,7 +2673,8 @@ public final class AppController {
         let snapshots = tabs.map { tab in
             SavedTabSnapshot(
                 urlString: (tab.pendingLazyURL ?? tab.url).absoluteString,
-                title: tab.displayTitle
+                title: tab.displayTitle,
+                routingMode: tab.routingMode
             )
         }
         let selectedIdx = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
@@ -2624,7 +2920,7 @@ public final class AppController {
         sponsorFetchTasks.removeValue(forKey: tabID)
 
         guard settings.sponsorBlockEnabled,
-              !YouTubeURLRouter.isYouTubeTVHost(url.host),
+              YouTubeURLRouter.isStandardYouTubeHost(url.host),
               let videoID = YouTubeURLRouter.extractVideoID(from: url) else {
             return
         }
@@ -2726,6 +3022,7 @@ public final class AppController {
     private func makeTab(
         url: URL,
         initialTitle: String? = nil,
+        routingMode: TabRoutingMode? = nil,
         deferInitialLoad: Bool = false,
         lazyLoad: Bool = false
     ) -> BrowserTab {
@@ -2736,6 +3033,7 @@ public final class AppController {
         let tab = BrowserTab(
             initialURL: url,
             initialTitle: initialTitle,
+            routingMode: routingMode,
             initialConfig: initialConfig,
             deferInitialLoad: deferInitialLoad,
             lazyLoad: lazyLoad,

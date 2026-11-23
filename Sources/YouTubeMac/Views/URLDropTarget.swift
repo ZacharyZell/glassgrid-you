@@ -2,11 +2,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 import YouTubeMacCore
 
-/// Chrome-only drag-and-drop modifier accepting YouTube / YouTube TV URLs and plain-text links.
+/// Chrome-only drag-and-drop modifier accepting YouTube / YouTube TV URLs (and optionally Companion HTTPS URLs
+/// when `allowCompanionURLs` is true, e.g. on `MultiviewControlBar`).
 /// Attached strictly to native chrome bars (`topHeaderBar`, `TabStripView`, `SidebarView`, `MultiviewControlBar`),
 /// NEVER over `TabWebViewHost` or video player scrubbers.
 private struct YouTubeURLDropTargetModifier: ViewModifier {
     let controller: AppController
+    let allowCompanionURLs: Bool
     @State private var isTargeted = false
 
     func body(content: Content) -> some View {
@@ -23,6 +25,7 @@ private struct YouTubeURLDropTargetModifier: ViewModifier {
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
         let controllerRef = controller
+        let acceptCompanion = allowCompanionURLs
         var accepted = false
 
         for provider in providers {
@@ -30,12 +33,17 @@ private struct YouTubeURLDropTargetModifier: ViewModifier {
                 accepted = true
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.url.identifier) { data, _ in
                     guard let data,
-                          let raw = String(data: data, encoding: .utf8),
-                          let url = YouTubeURLRouter.extractYouTubeURLFromString(raw) else {
+                          let raw = String(data: data, encoding: .utf8) else {
                         return
                     }
-                    Task { @MainActor in
-                        controllerRef.handleDroppedURL(url)
+                    if let ytURL = YouTubeURLRouter.extractYouTubeURLFromString(raw) {
+                        Task { @MainActor in
+                            controllerRef.handleDroppedURL(ytURL)
+                        }
+                    } else if acceptCompanion, let webURL = YouTubeURLRouter.resolveCompanionURL(raw) {
+                        Task { @MainActor in
+                            controllerRef.handleDroppedCompanionURL(webURL)
+                        }
                     }
                 }
                 break
@@ -43,12 +51,17 @@ private struct YouTubeURLDropTargetModifier: ViewModifier {
                 accepted = true
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.plainText.identifier) { data, _ in
                     guard let data,
-                          let raw = String(data: data, encoding: .utf8),
-                          let url = YouTubeURLRouter.extractYouTubeURLFromString(raw) else {
+                          let raw = String(data: data, encoding: .utf8) else {
                         return
                     }
-                    Task { @MainActor in
-                        controllerRef.handleDroppedURL(url)
+                    if let ytURL = YouTubeURLRouter.extractYouTubeURLFromString(raw) {
+                        Task { @MainActor in
+                            controllerRef.handleDroppedURL(ytURL)
+                        }
+                    } else if acceptCompanion, let webURL = YouTubeURLRouter.resolveCompanionURL(raw) {
+                        Task { @MainActor in
+                            controllerRef.handleDroppedCompanionURL(webURL)
+                        }
                     }
                 }
                 break
@@ -59,7 +72,7 @@ private struct YouTubeURLDropTargetModifier: ViewModifier {
 }
 
 extension View {
-    func youtubeURLDropTarget(controller: AppController) -> some View {
-        modifier(YouTubeURLDropTargetModifier(controller: controller))
+    func youtubeURLDropTarget(controller: AppController, allowCompanionURLs: Bool = false) -> some View {
+        modifier(YouTubeURLDropTargetModifier(controller: controller, allowCompanionURLs: allowCompanionURLs))
     }
 }

@@ -9,12 +9,19 @@ struct SidebarView: View {
     @Environment(\.controlActiveState) private var controlActiveState
     @State private var hoveredDestination: SidebarDestination?
     @State private var hoveredPinID: UUID?
+    @State private var hoveredFolderID: UUID?
     @State private var hoveredPresetID: UUID?
     @State private var isPresetsExpanded = true
     @State private var renamingPresetID: UUID?
     @State private var renamePresetDraft = ""
     @State private var renamingPinID: UUID?
     @State private var renamePinDraft = ""
+    @State private var isNewFolderPopoverPresented = false
+    @State private var newFolderNameDraft = ""
+    @State private var movePinAfterFolderCreateID: UUID?
+    @State private var renamingFolderID: UUID?
+    @State private var renameFolderDraft = ""
+    @State private var isNewFolderButtonHovered = false
     @State private var isAccountHovered = false
     @State private var isPinActionHovered = false
     @State private var isThemeHovered = false
@@ -162,16 +169,47 @@ struct SidebarView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            sectionHeader("Pinned")
+                            HStack(spacing: 4) {
+                                sectionHeader("Pinned")
+                                Spacer()
+                                Button {
+                                    movePinAfterFolderCreateID = nil
+                                    newFolderNameDraft = ""
+                                    isNewFolderPopoverPresented = true
+                                } label: {
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(isNewFolderButtonHovered ? Color.primary : .secondary.opacity(0.82))
+                                        .frame(width: 20, height: 20)
+                                        .background(
+                                            Circle()
+                                                .fill(isNewFolderButtonHovered ? Color.primary.opacity(0.09) : .clear)
+                                        )
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.trailing, 6)
+                                .padding(.bottom, 2)
+                                .onHover { isNewFolderButtonHovered = $0 }
+                                .help("New Folder")
+                                .popover(isPresented: $isNewFolderPopoverPresented, arrowEdge: .trailing) {
+                                    newFolderPopover
+                                }
+                            }
 
-                            if controller.settings.pinnedItems.isEmpty {
+                            let ungroupedPins = controller.pins(inFolder: nil)
+                            if controller.settings.pinnedFolders.isEmpty && controller.settings.pinnedItems.isEmpty {
                                 Text("Press ⌘D to pin channels or playlists")
                                     .font(.system(size: 11.5))
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                             } else {
-                                ForEach(controller.settings.pinnedItems) { item in
+                                ForEach(controller.settings.pinnedFolders) { folder in
+                                    pinnedFolderSection(for: folder)
+                                }
+
+                                ForEach(ungroupedPins) { item in
                                     pinnedRow(for: item)
                                 }
                             }
@@ -354,25 +392,184 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
+    private var newFolderPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(movePinAfterFolderCreateID == nil ? "New Channel Folder" : "Move Pin to New Folder")
+                .font(.system(size: 12.5, weight: .semibold))
+            TextField("e.g. Sports, Tech, News", text: $newFolderNameDraft)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 210)
+                .onSubmit {
+                    commitCreateFolder()
+                }
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    movePinAfterFolderCreateID = nil
+                    isNewFolderPopoverPresented = false
+                }
+                Button("Create") {
+                    commitCreateFolder()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(newFolderNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(12)
+    }
+
+    private func commitCreateFolder() {
+        let pinToMove = movePinAfterFolderCreateID
+        if let folder = controller.createPinnedFolder(name: newFolderNameDraft) {
+            if let pinToMove {
+                controller.movePinToFolder(pinID: pinToMove, folderID: folder.id)
+            }
+            movePinAfterFolderCreateID = nil
+            newFolderNameDraft = ""
+            isNewFolderPopoverPresented = false
+        }
+    }
+
+    @ViewBuilder
+    private func pinnedFolderSection(for folder: PinnedFolder) -> some View {
+        let childPins = controller.pins(inFolder: folder.id)
+        let isHovered = hoveredFolderID == folder.id
+        let isRenaming = Binding<Bool>(
+            get: { renamingFolderID == folder.id },
+            set: { if !$0 && renamingFolderID == folder.id { renamingFolderID = nil } }
+        )
+
+        VStack(alignment: .leading, spacing: 1) {
+            Button {
+                withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
+                    controller.togglePinnedFolderExpanded(id: folder.id)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: folder.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(.secondary.opacity(0.75))
+                        .frame(width: 10, alignment: .center)
+
+                    Image(systemName: folder.isExpanded ? "folder.fill" : "folder")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(AppleTheme.accent.opacity(controlActiveState == .inactive ? 0.58 : 0.88))
+                        .frame(width: 16, alignment: .center)
+
+                    Text(folder.name)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Color.primary.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer()
+
+                    if !folder.isExpanded && !childPins.isEmpty {
+                        Text("\(childPins.count)")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                hoveredFolderID = hovering ? folder.id : (hoveredFolderID == folder.id ? nil : hoveredFolderID)
+            }
+            .contextMenu {
+                if (2...MultiviewGridLayout.maxTiles).contains(childPins.count) {
+                    Button("Open in Multiview") {
+                        controller.openFolderInMultiview(id: folder.id)
+                    }
+                    .disabled(controller.anyTabInFullscreen)
+                }
+                if !childPins.isEmpty {
+                    Button("Open All in Tabs") {
+                        controller.openFolderInTabs(id: folder.id)
+                    }
+                    .disabled(controller.anyTabInFullscreen)
+                    Divider()
+                }
+                Button("Rename Folder…") {
+                    renameFolderDraft = folder.name
+                    renamingFolderID = folder.id
+                }
+                Divider()
+                Button("Delete Folder", role: .destructive) {
+                    controller.deletePinnedFolder(id: folder.id)
+                }
+            }
+            .popover(isPresented: isRenaming, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Rename Folder")
+                        .font(.system(size: 12.5, weight: .semibold))
+                    TextField("Folder Name", text: $renameFolderDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                        .onSubmit {
+                            controller.renamePinnedFolder(id: folder.id, newName: renameFolderDraft)
+                            renamingFolderID = nil
+                        }
+                    HStack {
+                        Spacer()
+                        Button("Cancel") {
+                            renamingFolderID = nil
+                        }
+                        Button("Save") {
+                            controller.renamePinnedFolder(id: folder.id, newName: renameFolderDraft)
+                            renamingFolderID = nil
+                        }
+                        .keyboardShortcut(.defaultAction)
+                    }
+                }
+                .padding(12)
+            }
+
+            if folder.isExpanded {
+                if childPins.isEmpty {
+                    Text("Right-click a pin to move here")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary.opacity(0.75))
+                        .padding(.leading, 26)
+                        .padding(.vertical, 3)
+                } else {
+                    ForEach(childPins) { pin in
+                        pinnedRow(for: pin)
+                            .padding(.leading, 14)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func pinnedRow(for item: PinnedItem) -> some View {
         let isHovered = hoveredPinID == item.id
         let isSelected = controller.selectedTab?.url.absoluteString == item.urlString
-        let pinIndex = controller.settings.pinnedItems.firstIndex(where: { $0.id == item.id })
-        let pinCount = controller.settings.pinnedItems.count
+        let siblings = controller.pins(inFolder: item.folderID)
+        let pinIndex = siblings.firstIndex(where: { $0.id == item.id })
+        let pinCount = siblings.count
         let isRenaming = Binding<Bool>(
             get: { renamingPinID == item.id },
             set: { if !$0 && renamingPinID == item.id { renamingPinID = nil } }
         )
 
         Button {
-            if let url = item.url {
-                controller.navigateSelectedTab(to: url)
-            }
+            controller.openPinnedItem(item)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: YouTubeURLRouter.pinnedItemIcon(for: item.urlString))
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(AppleTheme.accent.opacity(0.85))
+                    .foregroundStyle(AppleTheme.accent.opacity(controlActiveState == .inactive ? 0.58 : 0.85))
                     .frame(width: 18, alignment: .center)
 
                 Text(item.title)
@@ -402,13 +599,52 @@ struct SidebarView: View {
         .contextMenu {
             if let url = item.url {
                 Button("Open in New Tab") {
-                    controller.createTab(url: url, select: true)
+                    controller.createTab(
+                        url: url,
+                        select: true,
+                        routingMode: YouTubeURLRouter.preferredRoutingMode(for: url)
+                    )
                 }
             }
             Button("Rename…") {
                 renamePinDraft = item.title
                 renamingPinID = item.id
             }
+
+            Menu("Move to Folder") {
+                Button {
+                    controller.movePinToFolder(pinID: item.id, folderID: nil)
+                } label: {
+                    if item.folderID == nil {
+                        Label("Ungrouped", systemImage: "checkmark")
+                    } else {
+                        Text("Ungrouped")
+                    }
+                }
+
+                if !controller.settings.pinnedFolders.isEmpty {
+                    Divider()
+                    ForEach(controller.settings.pinnedFolders) { folder in
+                        Button {
+                            controller.movePinToFolder(pinID: item.id, folderID: folder.id)
+                        } label: {
+                            if item.folderID == folder.id {
+                                Label(folder.name, systemImage: "checkmark")
+                            } else {
+                                Text(folder.name)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+                Button("New Folder…") {
+                    movePinAfterFolderCreateID = item.id
+                    newFolderNameDraft = ""
+                    isNewFolderPopoverPresented = true
+                }
+            }
+
             if let idx = pinIndex, pinCount > 1 {
                 Divider()
                 if idx > 0 {

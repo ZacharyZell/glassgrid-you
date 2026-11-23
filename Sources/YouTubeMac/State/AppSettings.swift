@@ -35,6 +35,7 @@ public final class AppSettings {
         static let startupDestination = "ytmac.startupDestination"
         static let appearance = "ytmac.appearance"
         static let pinnedItems = "ytmac.pinnedItems"
+        static let pinnedFolders = "ytmac.pinnedFolders"
         static let continueWatching = "ytmac.continueWatching"
         static let watchedChannels = "ytmac.watchedChannels"
         static let restoreTabsOnLaunch = "ytmac.restoreTabsOnLaunch"
@@ -324,6 +325,13 @@ public final class AppSettings {
         }
     }
 
+    public var pinnedFolders: [PinnedFolder] {
+        didSet {
+            guard pinnedFolders != oldValue else { return }
+            savePinnedFolders()
+        }
+    }
+
     public var continueWatching: [ContinueWatchingItem] {
         didSet {
             guard continueWatching != oldValue else { return }
@@ -427,6 +435,13 @@ public final class AppSettings {
             self.pinnedItems = []
         }
 
+        if let data = defaults.data(forKey: Keys.pinnedFolders),
+           let decoded = try? JSONDecoder().decode([PinnedFolder].self, from: data) {
+            self.pinnedFolders = decoded
+        } else {
+            self.pinnedFolders = []
+        }
+
         if let data = defaults.data(forKey: Keys.continueWatching),
            let decoded = try? JSONDecoder().decode([ContinueWatchingItem].self, from: data) {
             self.continueWatching = decoded
@@ -525,6 +540,12 @@ public final class AppSettings {
     private func savePinnedItems() {
         if let data = try? JSONEncoder().encode(pinnedItems) {
             defaults.set(data, forKey: Keys.pinnedItems)
+        }
+    }
+
+    private func savePinnedFolders() {
+        if let data = try? JSONEncoder().encode(pinnedFolders) {
+            defaults.set(data, forKey: Keys.pinnedFolders)
         }
     }
 

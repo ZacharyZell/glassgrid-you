@@ -271,7 +271,7 @@ struct TabStripView: View {
                 .controlSize(.mini)
                 .scaleEffect(0.65)
         } else {
-            Image(systemName: "play.rectangle")
+            Image(systemName: tab.isCompanionTab ? "globe" : "play.rectangle")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
         }

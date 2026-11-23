@@ -1,5 +1,49 @@
 import Foundation
 
+/// Controls whether a tab applies strict YouTube routing or allows general HTTPS Companion sites in-app.
+public enum TabRoutingMode: String, Codable, Equatable, Hashable, Sendable {
+    case youtube
+    case companion
+}
+
+/// Curated quick-launch streaming & live-score sites for Companion / Mixed-Stream Multiview tiles.
+public struct CompanionQuickSite: Identifiable, Equatable, Hashable, Sendable {
+    public let id: String
+    public let name: String
+    public let subtitle: String
+    public let urlString: String
+    public let systemImage: String
+
+    public init(id: String, name: String, subtitle: String, urlString: String, systemImage: String) {
+        self.id = id
+        self.name = name
+        self.subtitle = subtitle
+        self.urlString = urlString
+        self.systemImage = systemImage
+    }
+
+    public var url: URL {
+        URL(string: urlString)!
+    }
+
+    public var routingMode: TabRoutingMode {
+        if let host = url.host, YouTubeURLRouter.isYouTubeHost(host) {
+            return .youtube
+        }
+        return .companion
+    }
+
+    public static let catalog: [CompanionQuickSite] = [
+        CompanionQuickSite(id: "twitch", name: "Twitch", subtitle: "Live Streams", urlString: "https://www.twitch.tv", systemImage: "gamecontroller"),
+        CompanionQuickSite(id: "espn", name: "ESPN Scores", subtitle: "Live Scoreboard", urlString: "https://www.espn.com/scoreboard", systemImage: "sportscourt"),
+        CompanionQuickSite(id: "nfl", name: "NFL.com", subtitle: "Live Scores", urlString: "https://www.nfl.com/scores/", systemImage: "football"),
+        CompanionQuickSite(id: "yttv", name: "YouTube TV", subtitle: "Live TV", urlString: "https://tv.youtube.com", systemImage: "tv"),
+        CompanionQuickSite(id: "peacock", name: "Peacock", subtitle: "Live & Sports", urlString: "https://www.peacocktv.com", systemImage: "play.tv"),
+        CompanionQuickSite(id: "paramount", name: "Paramount+", subtitle: "CBS & Sports", urlString: "https://www.paramountplus.com", systemImage: "sparkles.tv"),
+        CompanionQuickSite(id: "primevideo", name: "Prime Video", subtitle: "Live & TNF", urlString: "https://www.amazon.com/gp/video/storefront", systemImage: "film")
+    ]
+}
+
 /// Outcome for deciding how WebKit should handle a navigation request.
 public enum URLRouteDecision: Equatable, Sendable {
     case allowInApp
@@ -37,11 +81,81 @@ public enum YouTubeURLRouter {
         return normalizedHost(host) == "tv.youtube.com"
     }
 
-    /// Returns a semantic SF Symbol name for a pinned YouTube / YouTube TV destination URL.
+    /// Returns true for standard YouTube (`youtube.com`, `youtu.be`, `youtube-nocookie.com`) excluding `tv.youtube.com`.
+    public static func isStandardYouTubeHost(_ host: String?) -> Bool {
+        guard let host else { return false }
+        return isYouTubeHost(host) && !isYouTubeTVHost(host)
+    }
+
+    /// Infers the appropriate `TabRoutingMode` for a destination URL.
+    public static func preferredRoutingMode(for url: URL) -> TabRoutingMode {
+        if let host = url.host, isYouTubeHost(host) || isGoogleAuthHost(host) {
+            return .youtube
+        }
+        return .companion
+    }
+
+    /// Resolves a user-entered website or URL (e.g. `twitch.tv/nfl`, `https://espn.com/scoreboard`) into a safe `http(s)` URL.
+    /// Rejects dangerous or non-web schemes (`javascript:`, `file:`, `data:`, etc.).
+    public static func resolveCompanionURL(_ rawInput: String) -> URL? {
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains(" "),
+              !trimmed.contains("\n"),
+              !trimmed.contains("\t") else {
+            return nil
+        }
+
+        let candidateString: String
+        if trimmed.contains("://") {
+            candidateString = trimmed
+        } else {
+            // Reject explicit non-HTTP schemes like `javascript:alert(1)`, `file:/etc/passwd`, `mailto:a@b.com`.
+            if let colonIndex = trimmed.firstIndex(of: ":") {
+                let beforeColon = trimmed[..<colonIndex]
+                let afterColon = trimmed[trimmed.index(after: colonIndex)...]
+                let isPortNumber = !afterColon.isEmpty && afterColon.prefix(while: { $0 != "/" }).allSatisfy(\.isNumber)
+                if !isPortNumber && !beforeColon.contains(".") && !beforeColon.contains("/") {
+                    return nil
+                }
+            }
+            candidateString = "https://" + trimmed
+        }
+
+        guard let parsed = URL(string: candidateString),
+              let scheme = parsed.scheme?.lowercased(),
+              (scheme == "https" || scheme == "http"),
+              let host = parsed.host?.lowercased(),
+              !host.isEmpty else {
+            return nil
+        }
+
+        // Require a valid public-looking domain (dot-separated labels) or localhost.
+        if host != "localhost" {
+            let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+            guard labels.count >= 2,
+                  labels.allSatisfy({ !$0.isEmpty }),
+                  let tld = labels.last,
+                  tld.count >= 2,
+                  tld.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else {
+                return nil
+            }
+        }
+
+        return parsed
+    }
+
+    /// Returns a semantic SF Symbol name for a pinned YouTube, YouTube TV, or Companion destination URL.
     public static func pinnedItemIcon(for urlString: String) -> String {
         guard let url = URL(string: urlString) else { return "pin.fill" }
         if isYouTubeTVHost(url.host) {
             return "tv"
+        }
+        if let host = url.host, !isYouTubeHost(host) {
+            let scheme = url.scheme?.lowercased() ?? ""
+            if scheme == "http" || scheme == "https" {
+                return "globe"
+            }
         }
         let path = url.path.lowercased()
         if path.hasPrefix("/playlist") {
@@ -147,7 +261,8 @@ public enum YouTubeURLRouter {
         currentPageURL: URL?,
         isUserLinkClick: Bool,
         openExternalLinksInBrowser: Bool,
-        redirectShortsToWatch: Bool
+        redirectShortsToWatch: Bool,
+        routingMode: TabRoutingMode = .youtube
     ) -> URLRouteDecision {
         let scheme = url.scheme?.lowercased() ?? ""
         if inAppSchemes.contains(scheme) {
@@ -156,6 +271,14 @@ public enum YouTubeURLRouter {
 
         if scheme != "http" && scheme != "https" {
             return .openExternal(url)
+        }
+
+        // Companion web tabs allow all HTTP/HTTPS navigations (same-site browsing & third-party OAuth/SSO) in-app.
+        if routingMode == .companion {
+            if redirectShortsToWatch, let rewritten = rewriteShortsURL(url) {
+                return .redirectInApp(rewritten)
+            }
+            return .allowInApp
         }
 
         if redirectShortsToWatch, let rewritten = rewriteShortsURL(url) {
