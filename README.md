@@ -10,6 +10,16 @@
 > **Disclaimer:** GlassGrid You is an unofficial, independent, open-source macOS application for YouTube and YouTube TV. It is not affiliated with, endorsed by, or sponsored by Google LLC or YouTube.
 
 <p align="center">
+  <a href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb">
+    <img src="https://img.shields.io/badge/Download%20Signed%20%26%20Notarized%20.dmg-%2412%20One--Time-D71920?style=for-the-badge&logo=apple&logoColor=white" alt="Download Signed & Apple-Notarized macOS .dmg ($12 One-Time)" />
+  </a>
+  &nbsp;
+  <a href="#build--install">
+    <img src="https://img.shields.io/badge/Build%20from%20Source-Free%20(MIT)-24292F?style=for-the-badge&logo=github&logoColor=white" alt="Build Free from Source (MIT)" />
+  </a>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/hero-4k-hdr-night.png" alt="GlassGrid You playing 4K 60fps HDR10 video in Night Mode with Liquid Glass sidebar" width="100%" />
 </p>
 
@@ -143,11 +153,11 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 
 ## Download & Support
 
-GlassGrid You is **100% free and open-source under the MIT License** — with zero paywalls, zero telemetry, and zero update nags.
+GlassGrid You's source code is **100% open-source under the MIT License** — with zero telemetry, zero subscriptions, and zero paywalls.
 
+- **Signed & Apple-Notarized `.dmg` ($12 One-Time):** [Download GlassGrid You for macOS on Polar](https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb) — instant Gatekeeper-trusted macOS installer (`v1.1.1`, macOS 14.0+) with no Xcode or build steps required, directly supporting ongoing macOS & WebKit maintenance.
 - **Build Free from Source (MIT):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below).
-- **Signed & Notarized `.dmg` Releases:** Check [GitHub Releases](https://github.com/ZacharyZell/glassgrid-you/releases) for pre-built macOS disk images, or run **GlassGrid You → Check for Updates…** anytime inside the app. Maintainers can package signed & notarized releases with `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
-- **Support Development:** If GlassGrid You makes your Mac feel better every day, you can optionally support ongoing macOS & WebKit maintenance via [GitHub Sponsors](https://github.com/sponsors/ZacharyZell).
+- **Support Development:** You can also support ongoing development via [GitHub Sponsors](https://github.com/sponsors/ZacharyZell). Maintainers packaging signed & notarized releases can run `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
 
 ---
 
