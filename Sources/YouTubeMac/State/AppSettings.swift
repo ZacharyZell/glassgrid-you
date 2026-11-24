@@ -46,6 +46,10 @@ public final class AppSettings {
         static let multiviewQualityCeiling = "ytmac.multiviewQualityCeiling"
         static let multiviewAudioDuckingEnabled = "ytmac.multiviewAudioDuckingEnabled"
         static let automaticallyChecksForUpdates = "ytmac.automaticallyChecksForUpdates"
+        static let hasCompletedStreamingOnboarding = "ytmac.hasCompletedStreamingOnboarding"
+        static let enabledStreamingServiceIDs = "ytmac.enabledStreamingServiceIDs"
+        static let signedInStreamingServiceIDs = "ytmac.signedInStreamingServiceIDs"
+        static let miniPlayerOpacity = "ytmac.miniPlayerOpacity"
     }
 
     @ObservationIgnored
@@ -68,6 +72,9 @@ public final class AppSettings {
 
     @ObservationIgnored
     var onMultiviewAudioDuckingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
+    var onMiniPlayerOpacityDidChange: ((Double) -> Void)?
 
     public var hideShorts: Bool {
         didSet {
@@ -333,6 +340,75 @@ public final class AppSettings {
         }
     }
 
+    public var hasCompletedStreamingOnboarding: Bool {
+        didSet {
+            guard hasCompletedStreamingOnboarding != oldValue else { return }
+            defaults.set(hasCompletedStreamingOnboarding, forKey: Keys.hasCompletedStreamingOnboarding)
+        }
+    }
+
+    public var enabledStreamingServiceIDs: [String] {
+        didSet {
+            guard enabledStreamingServiceIDs != oldValue else { return }
+            defaults.set(enabledStreamingServiceIDs, forKey: Keys.enabledStreamingServiceIDs)
+        }
+    }
+
+    public var signedInStreamingServiceIDs: [String] {
+        didSet {
+            guard signedInStreamingServiceIDs != oldValue else { return }
+            defaults.set(signedInStreamingServiceIDs, forKey: Keys.signedInStreamingServiceIDs)
+        }
+    }
+
+    public var miniPlayerOpacity: Double {
+        didSet {
+            let clamped = min(max(miniPlayerOpacity.isFinite ? miniPlayerOpacity : 1.0, 0.40), 1.0)
+            if abs(miniPlayerOpacity - clamped) > 0.0001 {
+                miniPlayerOpacity = clamped
+                return
+            }
+            guard abs(miniPlayerOpacity - oldValue) > 0.0001 else { return }
+            defaults.set(miniPlayerOpacity, forKey: Keys.miniPlayerOpacity)
+            onMiniPlayerOpacityDidChange?(miniPlayerOpacity)
+        }
+    }
+
+    public var enabledStreamingServices: [StreamingService] {
+        StreamingServiceCatalog.resolvedEnabledServices(from: enabledStreamingServiceIDs)
+    }
+
+    public func isServiceEnabled(_ serviceID: String) -> Bool {
+        enabledStreamingServiceIDs.contains(serviceID)
+    }
+
+    public func toggleStreamingService(_ serviceID: String) {
+        if let idx = enabledStreamingServiceIDs.firstIndex(of: serviceID) {
+            if enabledStreamingServiceIDs.count > 1 {
+                enabledStreamingServiceIDs.remove(at: idx)
+            }
+        } else if StreamingServiceCatalog.service(id: serviceID) != nil {
+            let nextSet = Set(enabledStreamingServiceIDs + [serviceID])
+            enabledStreamingServiceIDs = StreamingServiceCatalog.all
+                .map(\.id)
+                .filter { nextSet.contains($0) }
+        }
+    }
+
+    public func isServiceSignedIn(_ serviceID: String) -> Bool {
+        signedInStreamingServiceIDs.contains(serviceID)
+    }
+
+    public func setServiceSignedIn(_ serviceID: String, signedIn: Bool) {
+        if signedIn {
+            if !signedInStreamingServiceIDs.contains(serviceID) {
+                signedInStreamingServiceIDs.append(serviceID)
+            }
+        } else {
+            signedInStreamingServiceIDs.removeAll { $0 == serviceID }
+        }
+    }
+
     public var pinnedFolders: [PinnedFolder] {
         didSet {
             guard pinnedFolders != oldValue else { return }
@@ -401,6 +477,28 @@ public final class AppSettings {
         self.searchAutocompleteEnabled = defaults.object(forKey: Keys.searchAutocompleteEnabled) as? Bool ?? true
         self.multiviewAudioDuckingEnabled = defaults.object(forKey: Keys.multiviewAudioDuckingEnabled) as? Bool ?? false
         self.automaticallyChecksForUpdates = defaults.object(forKey: Keys.automaticallyChecksForUpdates) as? Bool ?? true
+        self.hasCompletedStreamingOnboarding = defaults.object(forKey: Keys.hasCompletedStreamingOnboarding) as? Bool ?? false
+
+        if let savedServices = defaults.stringArray(forKey: Keys.enabledStreamingServiceIDs), !savedServices.isEmpty {
+            let validSet = Set(StreamingServiceCatalog.all.map(\.id))
+            let filtered = savedServices.filter { validSet.contains($0) }
+            self.enabledStreamingServiceIDs = filtered.isEmpty ? StreamingServiceCatalog.defaultEnabledServiceIDs : filtered
+        } else {
+            self.enabledStreamingServiceIDs = StreamingServiceCatalog.defaultEnabledServiceIDs
+        }
+
+        if let savedSignedIn = defaults.stringArray(forKey: Keys.signedInStreamingServiceIDs) {
+            self.signedInStreamingServiceIDs = savedSignedIn
+        } else {
+            self.signedInStreamingServiceIDs = []
+        }
+
+        if let savedOpacity = defaults.object(forKey: Keys.miniPlayerOpacity) as? Double,
+           savedOpacity.isFinite {
+            self.miniPlayerOpacity = min(max(savedOpacity, 0.40), 1.0)
+        } else {
+            self.miniPlayerOpacity = 1.0
+        }
 
         if let rawCeiling = defaults.string(forKey: Keys.multiviewQualityCeiling),
            let parsedCeiling = MultiviewQualityCeiling(rawValue: rawCeiling) {

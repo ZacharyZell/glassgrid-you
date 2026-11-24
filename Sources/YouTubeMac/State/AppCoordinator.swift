@@ -23,6 +23,15 @@ public final class AppCoordinator {
     public private(set) var windowOrder: [UUID] = []
     public var activeWindowID: UUID?
     public var floatingMiniPlayerOwnerWindowID: UUID?
+    public var currentAudioOutputName: String = "System Output"
+    public var isAirPlayAudioActive: Bool = false
+    public var connectedDisplays: [ConnectedDisplayDescriptor] = []
+
+    @ObservationIgnored
+    public var hasAutoPresentedOnboardingThisSession: Bool = false
+
+    @ObservationIgnored
+    private var screenParametersObserver: (any NSObjectProtocol)?
 
     @ObservationIgnored
     private var controllersByID: [UUID: AppController] = [:]
@@ -54,10 +63,24 @@ public final class AppCoordinator {
     public init(settings: AppSettings = AppSettings()) {
         self.settings = settings
         self.updater = SparkleUpdaterManager(settings: settings)
-        self.floatingMiniPlayer = FloatingMiniPlayerController(initialSavedFrame: settings.savedMiniPlayerFrame)
+        self.floatingMiniPlayer = FloatingMiniPlayerController(
+            initialSavedFrame: settings.savedMiniPlayerFrame,
+            initialOpacity: settings.miniPlayerOpacity
+        )
 
         bindSharedSettingsObservers()
         bindSharedFloatingMiniPlayerCallbacks()
+        refreshAudioOutputStatus()
+        refreshConnectedDisplays()
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshConnectedDisplays()
+            }
+        }
         updateSystemPlaybackGuard(enabled: settings.autoPauseOnSystemEvents)
 
         // Sync YouTube's PREF cookie once before the first window sends its initial HTTP request.
@@ -388,6 +411,94 @@ public final class AppCoordinator {
         }
     }
 
+    /// Clears WebKit site data and in-memory HTTP cookies strictly matching `service.dataDomains`
+    /// without touching unrelated streaming services, then reloads matching open tabs across all windows.
+    public func resetServiceData(for service: StreamingService) async {
+        let store = WKWebsiteDataStore.default()
+        let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
+
+        let records = await store.dataRecords(ofTypes: allTypes)
+        let matchingRecords = records.filter { record in
+            StreamingServiceCatalog.matchesDataRecord(displayName: record.displayName, for: service)
+        }
+        if !matchingRecords.isEmpty {
+            await store.removeData(ofTypes: allTypes, for: matchingRecords)
+        }
+
+        // Also purge in-memory session cookies that can survive record removal until relaunch.
+        let cookieStore = store.httpCookieStore
+        let cookies = await cookieStore.allCookies()
+        for cookie in cookies where StreamingServiceCatalog.matchesCookieDomain(cookie.domain, for: service) {
+            await cookieStore.deleteCookie(cookie)
+        }
+
+        settings.setServiceSignedIn(service.id, signedIn: false)
+
+        // Reload any open tabs belonging to the reset service across all open windows.
+        for controller in openWindows {
+            for tab in controller.tabs {
+                if StreamingServiceCatalog.service(matchingURL: tab.url)?.id == service.id {
+                    tab.reloadOrStop()
+                }
+            }
+        }
+        commandTarget?.showHUD(icon: "arrow.counterclockwise", message: "Reset \(service.name) Login & Data")
+    }
+
+    // MARK: - AirPlay Audio Output & Connected Displays
+
+    public func refreshAudioOutputStatus() {
+        let status = SystemPlaybackGuard.readCurrentAudioOutputStatus()
+        currentAudioOutputName = status.name
+        isAirPlayAudioActive = status.isAirPlay
+    }
+
+    public func refreshConnectedDisplays() {
+        let screens = NSScreen.screens
+        let primaryID = screens.first.flatMap(Self.displayID(for:))
+        connectedDisplays = screens.compactMap { screen in
+            guard let id = Self.displayID(for: screen) else { return nil }
+            let scale = screen.backingScaleFactor
+            let pixelW = Int((screen.frame.width * scale).rounded())
+            let pixelH = Int((screen.frame.height * scale).rounded())
+            return ConnectedDisplayDescriptor(
+                id: id,
+                name: screen.localizedName,
+                visibleFrame: screen.visibleFrame,
+                pixelWidth: pixelW,
+                pixelHeight: pixelH,
+                isPrimary: id == primaryID
+            )
+        }
+    }
+
+    public static func displayID(for screen: NSScreen) -> UInt32? {
+        guard let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        return num.uint32Value
+    }
+
+    public func openSoundOutputSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension"),
+           NSWorkspace.shared.open(url) {
+            return
+        }
+        if let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.sound") {
+            NSWorkspace.shared.open(fallback)
+        }
+    }
+
+    public func openDisplaysSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Displays-Settings.extension"),
+           NSWorkspace.shared.open(url) {
+            return
+        }
+        if let fallback = URL(string: "x-apple.systempreferences:com.apple.preference.displays") {
+            NSWorkspace.shared.open(fallback)
+        }
+    }
+
     // MARK: - Shared Observers & Theme Cookie Sync
 
     private func bindSharedSettingsObservers() {
@@ -422,11 +533,17 @@ public final class AppCoordinator {
                 controller.refreshMultiviewAudioDuckingIfActive()
             }
         }
+        settings.onMiniPlayerOpacityDidChange = { [weak self] opacity in
+            self?.floatingMiniPlayer.updateOpacity(opacity)
+        }
     }
 
     private func bindSharedFloatingMiniPlayerCallbacks() {
         floatingMiniPlayer.onFrameChanged = { [weak self] frame in
             self?.settings.savedMiniPlayerFrame = frame
+        }
+        floatingMiniPlayer.onOpacityChanged = { [weak self] opacity in
+            self?.settings.miniPlayerOpacity = opacity
         }
         floatingMiniPlayer.onWindowClosedExternally = { [weak self] in
             guard let self,
@@ -440,11 +557,18 @@ public final class AppCoordinator {
 
     private func updateSystemPlaybackGuard(enabled: Bool) {
         if enabled {
-            systemPlaybackGuard.start { [weak self] reason in
-                self?.pauseAllWindows(reason: reason)
-            }
+            systemPlaybackGuard.start(
+                onAutoPause: { [weak self] reason in
+                    self?.pauseAllWindows(reason: reason)
+                },
+                onAudioRouteChanged: { [weak self] name, isAirPlay in
+                    self?.currentAudioOutputName = name
+                    self?.isAirPlayAudioActive = isAirPlay
+                }
+            )
         } else {
             systemPlaybackGuard.stop()
+            refreshAudioOutputStatus()
         }
     }
 

@@ -148,6 +148,7 @@ struct MainWindowView: View {
                         poppedOutTabID: controller.poppedOutTabID,
                         anyTabInFullscreen: controller.anyTabInFullscreen,
                         multiviewTabIDs: controller.multiviewTabIDs,
+                        soloMultiviewTabID: controller.soloMultiviewTabID,
                         multiviewLayoutMode: controller.multiviewLayoutMode,
                         multiviewSplitRatios: controller.multiviewSplitRatios,
                         onHoveredTileChanged: { tileID in
@@ -225,6 +226,31 @@ struct MainWindowView: View {
             }
         }
         .animation(.easeOut(duration: 0.14), value: controller.isCommandPalettePresented)
+        .sheet(isPresented: $controller.isOnboardingPresented) {
+            StreamingOnboardingView(controller: controller)
+                .preferredColorScheme(controller.settings.preferredColorScheme)
+                .tint(AppleTheme.accent)
+        }
+        .onAppear {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350))
+                controller.presentStreamingOnboardingIfNeeded()
+            }
+        }
+        .onExitCommand {
+            guard controller.isMultiviewSoloActive,
+                  !isOmniboxFocused,
+                  !controller.isFindBarPresented,
+                  !controller.isCommandPalettePresented,
+                  !controller.isOnboardingPresented,
+                  !controller.anyTabInFullscreen else {
+                return
+            }
+            if let responder = controller.mainWindow?.firstResponder, responder is NSTextView {
+                return
+            }
+            controller.exitMultiviewSolo()
+        }
         .background(
             WindowAccessor { window in
                 controller.attachMainWindow(window)
@@ -362,6 +388,21 @@ struct MainWindowView: View {
                                 controller.toggleMiniPlayer()
                             }
 
+                            AppleIconButton(
+                                systemImage: "airplayvideo",
+                                isActive: controller.isAirPlayActive || controller.isAirPlayPopoverPresented,
+                                isDisabled: controller.anyTabInFullscreen,
+                                helpText: "AirPlay & TV Displays"
+                            ) {
+                                controller.openAirPlayPopover()
+                            }
+                            .popover(isPresented: $controller.isAirPlayPopoverPresented, arrowEdge: .bottom) {
+                                AirPlayPopoverView(
+                                    controller: controller,
+                                    onDismiss: { controller.isAirPlayPopoverPresented = false }
+                                )
+                            }
+
                             controlsMenu
                         }
                         .padding(.horizontal, 4)
@@ -459,7 +500,7 @@ struct MainWindowView: View {
                 }
                 .padding(.horizontal, 13)
                 .frame(height: 32)
-                .frame(minWidth: 110, idealWidth: 380, maxWidth: 480)
+                .frame(minWidth: 136, idealWidth: 380, maxWidth: 480)
                 .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accent.opacity(0.08), interactive: true)
                 .overlay(
                     Capsule(style: .continuous)
@@ -508,7 +549,7 @@ struct MainWindowView: View {
                     }
                     .padding(.horizontal, 14)
                     .frame(height: 32)
-                    .frame(minWidth: 110, idealWidth: 360, maxWidth: 450)
+                    .frame(minWidth: 120, idealWidth: 360, maxWidth: 450)
                     .appleGlass(in: Capsule(style: .continuous), interactive: true)
                     .contentShape(Capsule(style: .continuous))
                 }

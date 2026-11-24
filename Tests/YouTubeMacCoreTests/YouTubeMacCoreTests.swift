@@ -1608,7 +1608,8 @@ final class YouTubeMacCoreTests: XCTestCase {
             EnhancementScript.togglePlayPauseScript
         ] {
             XCTAssertTrue(script.contains("__ytmacGetMainVideo"))
-            XCTAssertTrue(script.contains("document.querySelectorAll('video')"))
+            XCTAssertTrue(script.contains("root.querySelectorAll('video')"))
+            XCTAssertTrue(script.contains("collectVids(document, 0)"))
             XCTAssertTrue(script.contains("source[src]"))
         }
 
@@ -1737,5 +1738,168 @@ final class YouTubeMacCoreTests: XCTestCase {
         )
         XCTAssertTrue(degenerateClearance.isFinite)
         XCTAssertLessThan(degenerateClearance, 0.0)
+    }
+
+    // MARK: - v1.2.0: Streaming Services, Solo Multiview, Live Sync, Shadow DOM & AirPlay
+
+    func testStreamingServiceCatalogIntegrityDomainIsolationAndSignInDetection() {
+        let services = StreamingServiceCatalog.all
+        XCTAssertEqual(services.count, 17)
+        XCTAssertEqual(Set(services.map(\.id)).count, 17)
+
+        let tier1Count = services.filter { !$0.requiresStrictDRM }.count
+        let tier2Count = services.filter { $0.requiresStrictDRM }.count
+        XCTAssertEqual(tier1Count, 11)
+        XCTAssertEqual(tier2Count, 6)
+
+        for service in services {
+            XCTAssertEqual(service.homeURL.scheme, "https", "Invalid home URL for \(service.id)")
+            XCTAssertEqual(service.signInURL.scheme, "https", "Invalid sign-in URL for \(service.id)")
+            XCTAssertFalse(service.dataDomains.isEmpty, "Missing dataDomains for \(service.id)")
+            if service.id == "youtube" || service.id == "yttv" {
+                XCTAssertEqual(service.routingMode, .youtube)
+            } else {
+                XCTAssertEqual(service.routingMode, .companion)
+            }
+        }
+
+        // Strict per-service domain isolation (never matches sibling or substring lookalike domains)
+        let twitch = StreamingServiceCatalog.service(id: "twitch")!
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "twitch.tv", for: twitch))
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "passport.twitch.tv", for: twitch))
+        XCTAssertTrue(StreamingServiceCatalog.matchesCookieDomain(".ttvnw.net", for: twitch))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "not-twitch.tv", for: twitch))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "youtube.com", for: twitch))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "espn.com", for: twitch))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "disneyplus.com", for: twitch))
+
+        // Honest shared-SSO warnings
+        XCTAssertNotNil(StreamingServiceCatalog.sharedSSOWarning(for: StreamingServiceCatalog.service(id: "youtube")!))
+        XCTAssertNotNil(StreamingServiceCatalog.sharedSSOWarning(for: StreamingServiceCatalog.service(id: "disneyplus")!))
+        XCTAssertNil(StreamingServiceCatalog.sharedSSOWarning(for: twitch))
+
+        // Conservative passive sign-in detection
+        let netflix = StreamingServiceCatalog.service(id: "netflix")!
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.netflix.com/login"), for: netflix))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.netflix.com/browse"), for: netflix))
+        let youtube = StreamingServiceCatalog.service(id: "youtube")!
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://accounts.google.com/ServiceLogin?service=youtube"), for: youtube))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.youtube.com/"), for: youtube))
+    }
+
+    func testMultiviewReducerSoloToggleAndAutoClear() {
+        let a = UUID()
+        let b = UUID()
+        let c = UUID()
+        let initial = MultiviewState(tabIDs: [a, b, c], audioTabID: a, layoutMode: .auto)
+
+        // Enter solo on tile B -> transfers audio focus to B while preserving tile order
+        let soloed = MultiviewReducer.toggleSolo(b, in: initial)
+        XCTAssertEqual(soloed.soloTabID, b)
+        XCTAssertEqual(soloed.audioTabID, b)
+        XCTAssertEqual(soloed.tabIDs, [a, b, c])
+
+        // Toggling B again exits solo cleanly
+        let unsoloed = MultiviewReducer.toggleSolo(b, in: soloed)
+        XCTAssertNil(unsoloed.soloTabID)
+        XCTAssertEqual(unsoloed.audioTabID, b)
+
+        // Removing the currently soloed tile clears soloTabID cleanly
+        let afterRemoveSolo = MultiviewReducer.removeTile(b, from: soloed)
+        XCTAssertNil(afterRemoveSolo.state.soloTabID)
+        XCTAssertEqual(afterRemoveSolo.state.tabIDs, [a, c])
+
+        // Removing down to 1 tile exits Multiview and clears soloTabID
+        let soloA = MultiviewReducer.toggleSolo(a, in: afterRemoveSolo.state)
+        let afterExit = MultiviewReducer.removeTile(c, from: soloA)
+        XCTAssertFalse(afterExit.state.isActive)
+        XCTAssertNil(afterExit.state.soloTabID)
+        XCTAssertEqual(afterExit.remainingSingleTabID, a)
+    }
+
+    func testEnhancementScriptV120ShadowDOMLiveSyncSoloAndAirPlayInvariants() {
+        let boot = EnhancementScript.bootstrapScript(config: DistractionFreeConfig())
+        XCTAssertTrue(boot.contains("collectVideos(document, 0)"))
+        XCTAssertTrue(boot.contains("ev.composedPath"))
+        XCTAssertTrue(boot.contains("x-webkit-airplay"))
+        XCTAssertTrue(boot.contains("webkitplaybacktargetavailabilitychanged"))
+        XCTAssertTrue(boot.contains("webkitcurrentplaybacktargetiswirelesschanged"))
+
+        let seekScript = EnhancementScript.seekByScript(seconds: 1.0)
+        XCTAssertTrue(seekScript.contains("v.seekable"))
+        XCTAssertTrue(seekScript.contains("maxT - 0.25"))
+
+        let liveScript = EnhancementScript.seekToLiveEdgeScript
+        XCTAssertTrue(liveScript.contains("v.seekable"))
+        XCTAssertTrue(liveScript.contains("maxT - 0.5"))
+
+        let syncScript = EnhancementScript.syncPlayerSizeScript
+        XCTAssertTrue(syncScript.contains("document.fullscreenElement"))
+        XCTAssertTrue(syncScript.contains("requestAnimationFrame"))
+
+        let airPlayScript = EnhancementScript.showAirPlayPickerScript
+        XCTAssertTrue(airPlayScript.contains("webkitShowPlaybackTargetPicker"))
+        XCTAssertTrue(airPlayScript.contains("mse_unsupported"))
+
+        let speedScript = EnhancementScript.setPlaybackRateScript(rate: 1.5)
+        XCTAssertTrue(speedScript.contains("v.playbackRate = 1.5"))
+
+        for script in [boot, seekScript, liveScript, syncScript, airPlayScript, speedScript] {
+            XCTAssertFalse(script.contains(":has("))
+            XCTAssertFalse(script.contains("MutationObserver"))
+            XCTAssertFalse(script.contains("AudioContext"))
+            XCTAssertFalse(script.contains("ytInitialPlayerResponse"))
+        }
+    }
+
+    func testCommandPaletteEngineV120EnabledServicesAndMultiviewAddScreen() {
+        let enabled = [
+            StreamingServiceCatalog.service(id: "youtube")!,
+            StreamingServiceCatalog.service(id: "espn")!,
+            StreamingServiceCatalog.service(id: "netflix")!
+        ]
+
+        let items = CommandPaletteEngine.rank(
+            query: "espn",
+            openTabs: [],
+            presets: [],
+            continueWatching: [],
+            pinnedItems: [],
+            watchedChannels: [],
+            enabledServices: enabled,
+            isMultiviewActive: true,
+            canAddMultiviewTile: true,
+            actions: [],
+            suggestions: []
+        )
+
+        XCTAssertTrue(items.contains { $0.payload == .addStreamingServiceToMultiview("espn") && $0.title == "Add ESPN / ESPN+ Screen" })
+        XCTAssertTrue(items.contains { $0.payload == .openStreamingService("espn") && $0.title == "Open ESPN / ESPN+" })
+    }
+
+    func testWindowDisplayRouterTargetFrameAndNegativeOriginDisplays() {
+        // Maximize onto secondary TV display with negative X origin (left of built-in screen)
+        let tvVisible = CGRect(x: -1920, y: 0, width: 1920, height: 1055)
+        let current = CGRect(x: 100, y: 100, width: 1280, height: 800)
+        let tvFrame = WindowDisplayRouter.targetFrame(
+            currentFrame: current,
+            targetVisibleFrame: tvVisible,
+            maximizeForTV: true
+        )
+        XCTAssertEqual(tvFrame, tvVisible)
+
+        // Preserved-size move clamps cleanly inside smaller display bounds
+        let smallVisible = CGRect(x: 1920, y: 25, width: 1024, height: 743)
+        let clampedFrame = WindowDisplayRouter.targetFrame(
+            currentFrame: current,
+            targetVisibleFrame: smallVisible,
+            maximizeForTV: false
+        )
+        XCTAssertEqual(clampedFrame.width, 1024)
+        XCTAssertEqual(clampedFrame.height, 743)
+        XCTAssertGreaterThanOrEqual(clampedFrame.minX, smallVisible.minX)
+        XCTAssertLessThanOrEqual(clampedFrame.maxX, smallVisible.maxX)
+        XCTAssertGreaterThanOrEqual(clampedFrame.minY, smallVisible.minY)
+        XCTAssertLessThanOrEqual(clampedFrame.maxY, smallVisible.maxY)
     }
 }

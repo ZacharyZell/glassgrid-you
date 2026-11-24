@@ -886,3 +886,11 @@ kbd {
     padding: 26px 20px;
   }
 }
+
+@media (max-width: 400px) {
+  .eyebrow {
+    font-size: 11.5px;
+    padding: 5px 11px;
+    white-space: nowrap;
+  }
+}

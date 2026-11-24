@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; Live Streams</title>
-  <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, and live streams. Watch up to 4 simultaneous streams with 120Hz draggable dividers, 4K 60fps HDR10, FairPlay DRM, Spotlight Command Palette, and zero Electron overhead.">
+  <title>GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 17+ Streaming Services</title>
+  <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, Twitch, live sports, and 17+ streaming services. Watch 4 simultaneous streams with Solo mode, Live Sync micro-nudge, native AirPlay, Floating Mini-Player opacity, and zero Electron overhead.">
   <meta name="theme-color" content="#0A0A0B">
   <link rel="canonical" href="https://glassgridyou.com/">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -13,15 +13,15 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="GlassGrid You">
   <meta property="og:url" content="https://glassgridyou.com/">
-  <meta property="og:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; Live Streams">
-  <meta property="og:description" content="Zero Electron. Built with Swift 6, SwiftUI, AppKit, and WebKit. Watch up to 4 simultaneous YouTube, YouTube TV, and Companion Web streams in authentic macOS Liquid Glass.">
+  <meta property="og:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 17+ Streaming Services">
+  <meta property="og:description" content="Zero Electron. Built with Swift 6, SwiftUI, AppKit, and WebKit. Watch up to 4 simultaneous YouTube, YouTube TV, Twitch, and live sports streams with Solo mode, Live Sync, native AirPlay, and Liquid Glass.">
   <meta property="og:image" content="https://glassgridyou.com/screenshots/hero-4k-hdr-night.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1640">
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="GlassGrid You — Native macOS Multiview for YouTube &amp; YouTube TV">
-  <meta name="twitter:description" content="Native Swift 6 &amp; macOS Liquid Glass client with 4-stream Quad-Box Multiview, 120Hz draggable dividers, 4K HDR10, FairPlay DRM, and zero Electron.">
+  <meta name="twitter:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; Live Sports">
+  <meta name="twitter:description" content="Native Swift 6 &amp; macOS Liquid Glass client with 4-stream Quad-Box Multiview, 17-service Hub, Solo mode, Live Sync, native AirPlay, Mini-Player opacity, and zero Electron.">
   <meta name="twitter:image" content="https://glassgridyou.com/screenshots/hero-4k-hdr-night.png">
 
   <link rel="stylesheet" href="styles.css">
@@ -52,13 +52,13 @@
         <img class="hero-icon" src="assets/app-icon.png" alt="GlassGrid You macOS App Icon" width="76" height="76" decoding="async">
         <div class="eyebrow">
           <span class="eyebrow-dot" aria-hidden="true"></span>
-          <span>macOS 14+ · Native Swift 6 &amp; Liquid Glass</span>
+          <span>macOS 14+ · Native Swift 6 &amp; Liquid Glass · v1.2</span>
         </div>
 
         <h1>Native macOS Multiview for YouTube, YouTube TV &amp; Live Streams</h1>
 
         <p class="hero-sub">
-          Zero Electron. Built from the ground up with Swift 6, SwiftUI, AppKit, and WebKit for 4K 60fps HDR10 playback, FairPlay DRM, and effortless desktop focus.
+          Zero Electron. Built from the ground up with Swift 6, SwiftUI, AppKit, and WebKit for 4K 60fps HDR10 playback, 17+ streaming services, native AirPlay, and effortless desktop focus.
         </p>
 
         <div class="hero-actions">
@@ -97,13 +97,13 @@
         <div class="showcase-list">
           <article class="showcase">
             <div class="showcase-copy">
-              <span class="section-label">Multiview &amp; Companion Streams</span>
-              <h3>Quad-Box Multiview with 120Hz draggable dividers.</h3>
-              <p>Watch up to four simultaneous streams in Grid, Spotlight, or Stacked layouts—mixing YouTube, YouTube TV (FairPlay DRM), and live companion web tiles side by side.</p>
+              <span class="section-label">Multiview &amp; Live Sports</span>
+              <h3>Quad-Box Multiview with Zero-Latency Solo &amp; Live Sync.</h3>
+              <p>Watch up to four simultaneous streams in Grid, Spotlight, or Stacked layouts—mixing YouTube, YouTube TV (FairPlay DRM), Twitch, ESPN, NFL+, Peacock, and any HTTPS stream side by side.</p>
               <ul class="feature-bullets">
-                <li><strong>120Hz Custom Tile Dividers:</strong> Drag any split line smoothly to resize tiles; double-click to reset proportions.</li>
-                <li><strong>Companion Web Tiles:</strong> Pin Twitch, ESPN Scores, NFL.com, Peacock, Paramount+, Prime Video, or any HTTPS stream into a tile.</li>
-                <li><strong>Instant Audio Focus:</strong> Click any tile or press <kbd>⌘⌥1–4</kbd> for exclusive audio, or enable 15% background ducking.</li>
+                <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>):</strong> Expand any tile full-window while keeping the other 3 streams live in the background; press <kbd>Esc</kbd> to snap back instantaneously with your split ratios intact.</li>
+                <li><strong>Live Stream Sync Micro-Nudge:</strong> Fine-tune broadcast delay per tile with <strong>−5s</strong>, <strong>−1s</strong>, <strong>+1s</strong>, or <strong>Jump to Live</strong> so games and watchalongs stay aligned.</li>
+                <li><strong>120Hz Draggable Dividers &amp; Audio Focus:</strong> Drag any split line smoothly (double-click to reset), press <kbd>⌘⌥1–4</kbd> for exclusive audio, or enable 15% background ducking.</li>
                 <li><strong>Saved Multiview Presets:</strong> Relaunch your favorite Sunday Quad or news wall with custom split ratios in one click.</li>
               </ul>
             </div>
@@ -120,15 +120,39 @@
             </div>
           </article>
 
-          <article class="showcase showcase--reverse" id="features">
+          <article class="showcase showcase--reverse" id="services">
+            <div class="showcase-copy">
+              <span class="section-label">New in v1.2 · Streaming Hub &amp; AirPlay</span>
+              <h3>17 Streaming Services, Sign-In Hub &amp; Native macOS AirPlay.</h3>
+              <p>Pick your favorite streaming services once and launch them from the Sidebar, <strong>Add Screen</strong> Multiview picker, or <kbd>⌘K</kbd> Command Palette—then cast to AirPlay TVs and displays effortlessly.</p>
+              <ul class="feature-bullets">
+                <li><strong>Guided Onboarding &amp; Sign-In Hub:</strong> Select from 17 services across Video &amp; Live TV, Movies &amp; Shows, and Live Sports, and sign in cleanly with native OAuth popup support and per-service site-data reset.</li>
+                <li><strong>Honest Safari DRM Fallback:</strong> Native WebKit playback for YouTube, YouTube TV, Twitch, ESPN, NFL+, MLB, NBA, Peacock, Paramount+, Fubo, and Sling—plus 1-click <strong>Open in Safari</strong> for strict Safari-only DRM SVODs.</li>
+                <li><strong>Native AirPlay Video, Audio &amp; TV Displays:</strong> Trigger native macOS AirPlay Video casting, monitor live CoreAudio AirPlay audio output, or send your entire Multiview window to an AirPlay TV or external monitor in one click.</li>
+              </ul>
+            </div>
+            <div class="showcase-media">
+              <div class="screenshot-bezel">
+                <img
+                  src="screenshots/services-onboarding-night.png"
+                  alt="GlassGrid You Streaming Service Onboarding sheet showing 17 curated services in Night Mode Liquid Glass"
+                  width="2560"
+                  height="1640"
+                  loading="lazy"
+                  decoding="async">
+              </div>
+            </div>
+          </article>
+
+          <article class="showcase" id="features">
             <div class="showcase-copy">
               <span class="section-label">Liquid Glass &amp; Productivity</span>
-              <h3>Spotlight Command Palette, Channel Folders &amp; Multi-Window.</h3>
-              <p>Navigate your entire YouTube library without touching the mouse, in synchronized Day and Night Liquid Glass chrome designed specifically for macOS.</p>
+              <h3>Spotlight Command Palette, Services Sidebar &amp; Multi-Window.</h3>
+              <p>Navigate your entire streaming library without touching the mouse, in synchronized Day and Night Liquid Glass chrome designed specifically for macOS.</p>
               <ul class="feature-bullets">
-                <li><strong>Spotlight Command Palette (<kbd>⌘K</kbd>):</strong> Jump across open tabs, Continue Watching, saved presets, channel folders, actions, and cookieless search suggestions.</li>
+                <li><strong>Spotlight Command Palette (<kbd>⌘K</kbd>):</strong> Jump across open tabs, enabled Streaming Services, Add-to-Multiview actions, Continue Watching, saved presets, channel folders, and cookieless search suggestions.</li>
                 <li><strong>Synchronized Day &amp; Night Mode:</strong> Crisp macOS 26+ Liquid Glass with a refined translucent fallback on macOS 14–15.</li>
-                <li><strong>Sidebar Channel Folders:</strong> Organize favorite creators, live channels, and playlists into collapsible custom folders.</li>
+                <li><strong>Sidebar Services &amp; Channel Folders:</strong> Launch enabled services directly into Multiview or organize favorite creators and playlists into collapsible custom folders.</li>
                 <li><strong>Independent Multi-Window (<kbd>⌘N</kbd>):</strong> Run separate Multiview walls or dedicated watch windows across multiple displays.</li>
               </ul>
             </div>
@@ -145,15 +169,15 @@
             </div>
           </article>
 
-          <article class="showcase">
+          <article class="showcase showcase--reverse">
             <div class="showcase-copy">
               <span class="section-label">Floating Mini-Player &amp; Media Controls</span>
-              <h3>Always-on-top Mini-Player that knows when you switch apps.</h3>
-              <p>Keep a borderless 16:9 video pinned to any corner while you work—smart enough to stay docked during macOS Split Screen and pop out only when fully covered.</p>
+              <h3>Always-on-top Mini-Player with Opacity Control &amp; Universal Companion Support.</h3>
+              <p>Keep a borderless 16:9 video pinned to any corner—now for YouTube, YouTube TV, Twitch, ESPN, and open Shadow DOM HTML5 streams alike—smart enough to stay docked during macOS Split Screen.</p>
               <ul class="feature-bullets">
+                <li><strong>Adjustable Transparency (40%–100%) &amp; Speed:</strong> Dial window opacity, playback speed (0.5×–2.0×), size presets, or AirPlay directly from the Mini-Player's unobtrusive top hover controls.</li>
                 <li><strong>Split Screen–Aware Auto Pop-Out:</strong> Pops out automatically when another app covers GlassGrid You, and docks back the moment you return.</li>
-                <li><strong>Control Center Menu Bar:</strong> Scrub timelines, play/pause, switch Multiview audio focus, or set a Sleep Timer directly from the menu bar.</li>
-                <li><strong>Pro Playback Polish:</strong> True 4K 60fps HDR10, AirPods/Bluetooth disconnect auto-pause, screen-lock auto-pause, and opt-in SponsorBlock.</li>
+                <li><strong>Control Center Menu Bar &amp; System Guards:</strong> Scrub timelines, switch Multiview audio focus, set a Sleep Timer, and auto-pause on AirPods disconnect or screen lock.</li>
               </ul>
             </div>
             <div class="showcase-media">
@@ -169,7 +193,7 @@
                 </div>
                 <div class="pedestal-caption" aria-hidden="true">
                   <span class="pedestal-pill">Borderless 16:9</span>
-                  <span class="pedestal-pill">Magnetic Corner Snap</span>
+                  <span class="pedestal-pill">40–100% Opacity</span>
                   <span class="pedestal-pill">Toggle with ⌘⇧M</span>
                 </div>
               </div>
@@ -195,9 +219,9 @@
           </div>
 
           <div class="glass-card">
-            <span class="bento-badge">Apple Silicon &amp; HDR</span>
-            <h3>FairPlay DRM &amp; 4K HDR10</h3>
-            <p>Preserves macOS Safari desktop compatibility for smooth 4K 60fps HDR10 YouTube playback, YouTube Premium, Google Sign-In, and YouTube TV FairPlay DRM.</p>
+            <span class="bento-badge">AirPlay &amp; 4K HDR</span>
+            <h3>Native AirPlay, FairPlay &amp; HDR10</h3>
+            <p>Preserves macOS Safari desktop compatibility for 4K 60fps HDR10, YouTube TV FairPlay DRM, element-level AirPlay Video, live AirPlay Audio awareness, and 1-click AirPlay TV display routing.</p>
           </div>
 
           <div class="glass-card">
@@ -215,7 +239,7 @@
           <div class="glass-card">
             <span class="bento-badge">Keyboard-First</span>
             <h3>Native Mac Shortcuts</h3>
-            <p>First-class shortcuts throughout: <kbd>⌘K</kbd> Command Palette, <kbd>⌘⇧G</kbd> Multiview, <kbd>⌘⇧M</kbd> Mini-Player, <kbd>⌘⇧F</kbd> Focus Mode, and <kbd>⌘N</kbd> New Window.</p>
+            <p>First-class shortcuts throughout: <kbd>⌘K</kbd> Command Palette, <kbd>⌘⇧G</kbd> Multiview, <kbd>⌘⌥Z</kbd> Solo Tile, <kbd>⌘⇧M</kbd> Mini-Player, <kbd>⌘⇧F</kbd> Focus Mode, and <kbd>⌘N</kbd> New Window.</p>
           </div>
 
           <div class="glass-card">
@@ -290,9 +314,16 @@
           </details>
 
           <details class="faq-item">
-            <summary>Does YouTube TV, FairPlay DRM, and YouTube Premium work?</summary>
+            <summary>Which streaming services &amp; DRM platforms work natively?</summary>
             <div class="faq-answer">
-              <p>Yes. Because GlassGrid You is powered by Apple's native WebKit engine rather than Electron/Chromium, it supports Safari desktop User-Agent compatibility, Google Sign-In, YouTube Premium, 4K 60fps HDR10 playback, and YouTube TV FairPlay DRM streams—including inside Multiview tiles.</p>
+              <p>Because GlassGrid You is powered by Apple's native WebKit engine rather than Electron/Chromium, it supports Safari desktop User-Agent compatibility, 4K 60fps HDR10, YouTube Premium, YouTube TV FairPlay DRM, Twitch, ESPN, NFL+, MLB.tv, NBA, Peacock, Paramount+, Fubo, and Sling directly inside Multiview tiles. Six subscription services that enforce strict Safari-only CDM checks on macOS (Prime Video, Disney+, Hulu, Max, Apple TV+, and Netflix) are clearly labeled <strong>Safari DRM</strong> in the service picker and include 1-click <strong>Open in Safari</strong> fallback if playback requires full Safari.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>Does GlassGrid You support AirPlay and streaming to an Apple TV or AirPlay TV?</summary>
+            <div class="faq-answer">
+              <p>Yes. Click the <strong>AirPlay</strong> button in the toolbar or Mini-Player to cast supported HTML5/HLS videos directly via macOS AirPlay Video, check or switch your live macOS AirPlay audio output, or send your entire 4-stream Multiview window to any connected Apple TV / AirPlay 2 TV (via macOS Extended Display) or external monitor in one click.</p>
             </div>
           </details>
 

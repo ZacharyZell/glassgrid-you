@@ -253,17 +253,20 @@ public struct MultiviewState: Equatable, Sendable {
     public var tabIDs: [UUID]
     public var audioTabID: UUID?
     public var layoutMode: MultiviewLayoutMode
+    public var soloTabID: UUID?
 
-    public static let inactive = MultiviewState(tabIDs: [], audioTabID: nil, layoutMode: .auto)
+    public static let inactive = MultiviewState(tabIDs: [], audioTabID: nil, layoutMode: .auto, soloTabID: nil)
 
     public init(
         tabIDs: [UUID] = [],
         audioTabID: UUID? = nil,
-        layoutMode: MultiviewLayoutMode = .auto
+        layoutMode: MultiviewLayoutMode = .auto,
+        soloTabID: UUID? = nil
     ) {
         self.tabIDs = tabIDs
         self.audioTabID = audioTabID
         self.layoutMode = layoutMode
+        self.soloTabID = soloTabID
     }
 
     public var isActive: Bool {
@@ -326,7 +329,7 @@ public enum MultiviewReducer {
 
         if remaining.count < 2 {
             return (
-                MultiviewState(tabIDs: [], audioTabID: nil, layoutMode: state.layoutMode),
+                MultiviewState(tabIDs: [], audioTabID: nil, layoutMode: state.layoutMode, soloTabID: nil),
                 remaining.first
             )
         }
@@ -336,10 +339,28 @@ public enum MultiviewReducer {
             let fallbackIndex = min(removedIndex, remaining.count - 1)
             nextAudio = remaining[fallbackIndex]
         }
+        let nextSolo = (state.soloTabID == tabID || state.soloTabID.map({ !remaining.contains($0) }) == true)
+            ? nil
+            : state.soloTabID
         return (
-            MultiviewState(tabIDs: remaining, audioTabID: nextAudio, layoutMode: state.layoutMode),
+            MultiviewState(tabIDs: remaining, audioTabID: nextAudio, layoutMode: state.layoutMode, soloTabID: nextSolo),
             nil
         )
+    }
+
+    /// Toggles zero-latency Solo expansion for `tabID` within Multiview, transferring exclusive audio focus on enter.
+    public static func toggleSolo(_ tabID: UUID, in state: MultiviewState) -> MultiviewState {
+        guard state.isActive, state.tabIDs.contains(tabID) else {
+            return state
+        }
+        var next = state
+        if next.soloTabID == tabID {
+            next.soloTabID = nil
+        } else {
+            next.soloTabID = tabID
+            next.audioTabID = tabID
+        }
+        return next
     }
 
     /// Promotes a tile to slot 0 (primary position in Grid/Spotlight) and optionally gives it audio focus.

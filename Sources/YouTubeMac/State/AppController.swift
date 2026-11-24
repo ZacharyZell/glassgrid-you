@@ -30,6 +30,7 @@ public final class AppController {
 
     public var multiviewTabIDs: [UUID] = []
     public var multiviewAudioTabID: UUID?
+    public var soloMultiviewTabID: UUID?
     public var multiviewLayoutMode: MultiviewLayoutMode = .auto
     public var multiviewSplitRatios: MultiviewSplitRatios = .default
     public var hoveredMultiviewTileID: UUID?
@@ -59,6 +60,12 @@ public final class AppController {
     public var commandPaletteQuery: String = ""
     public var commandPaletteSuggestions: [String] = []
     public var commandPaletteFocusTrigger: Int = 0
+
+    public var isOnboardingPresented: Bool = false
+    public var onboardingInitialStep: Int = 1
+    public var onboardingFocusServiceID: String?
+    public var isAirPlayPopoverPresented: Bool = false
+    public var airPlayVideoHint: String?
 
     @ObservationIgnored
     public weak var coordinator: AppCoordinator?
@@ -119,6 +126,9 @@ public final class AppController {
 
     @ObservationIgnored
     private var workspaceObservers: [NSObjectProtocol] = []
+
+    @ObservationIgnored
+    private var soloEscapeMonitor: Any?
 
     private var floatingMiniPlayer: FloatingMiniPlayerController {
         coordinator?.floatingMiniPlayer ?? fallbackFloatingMiniPlayer!
@@ -514,6 +524,7 @@ public final class AppController {
             if let survivingID = result.remainingSingleTabID {
                 multiviewTabIDs = []
                 multiviewAudioTabID = nil
+                soloMultiviewTabID = nil
                 hoveredMultiviewTileID = nil
                 restoreSidebarAfterMultiviewIfNeeded()
                 syncBackForwardGestures()
@@ -532,6 +543,7 @@ public final class AppController {
             } else {
                 multiviewTabIDs = result.state.tabIDs
                 multiviewAudioTabID = result.state.audioTabID
+                soloMultiviewTabID = result.state.soloTabID
                 if hoveredMultiviewTileID == id {
                     hoveredMultiviewTileID = nil
                 }
@@ -562,6 +574,7 @@ public final class AppController {
         if isMultiviewActive {
             multiviewTabIDs = []
             multiviewAudioTabID = nil
+            soloMultiviewTabID = nil
             hoveredMultiviewTileID = nil
             restoreSidebarAfterMultiviewIfNeeded()
             syncBackForwardGestures()
@@ -1099,8 +1112,19 @@ public final class AppController {
         MultiviewState(
             tabIDs: multiviewTabIDs,
             audioTabID: multiviewAudioTabID,
-            layoutMode: multiviewLayoutMode
+            layoutMode: multiviewLayoutMode,
+            soloTabID: soloMultiviewTabID
         )
+    }
+
+    public var isMultiviewSoloActive: Bool {
+        guard isMultiviewActive, let soloID = soloMultiviewTabID else { return false }
+        return multiviewTabIDs.contains(soloID)
+    }
+
+    public var soloMultiviewTab: BrowserTab? {
+        guard isMultiviewSoloActive, let soloID = soloMultiviewTabID else { return nil }
+        return tabs.first(where: { $0.id == soloID })
     }
 
     public func toggleMultiview() {
@@ -1167,6 +1191,7 @@ public final class AppController {
 
         multiviewTabIDs = next.tabIDs
         multiviewAudioTabID = next.audioTabID
+        soloMultiviewTabID = nil
         hoveredMultiviewTileID = nil
         if let activeID = next.audioTabID ?? next.tabIDs.first {
             selectedTabID = activeID
@@ -1203,6 +1228,7 @@ public final class AppController {
         let previousTileIDs = multiviewTabIDs
         multiviewTabIDs = []
         multiviewAudioTabID = nil
+        soloMultiviewTabID = nil
         hoveredMultiviewTileID = nil
         selectedTabID = targetID
         syncOmniboxToSelectedTab()
@@ -1422,6 +1448,7 @@ public final class AppController {
 
         multiviewTabIDs = result.state.tabIDs
         multiviewAudioTabID = result.state.audioTabID
+        soloMultiviewTabID = result.state.soloTabID
         if hoveredMultiviewTileID == id {
             hoveredMultiviewTileID = nil
         }
@@ -1431,6 +1458,224 @@ public final class AppController {
         }
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: true)
+    }
+
+    // MARK: - Zero-Latency Multiview Solo & Live Stream Sync
+
+    public func toggleMultiviewSolo(tabID: UUID? = nil) {
+        guard isMultiviewActive, !anyTabInFullscreen else { return }
+        let targetID = tabID ?? soloMultiviewTabID ?? multiviewAudioTabID ?? selectedTabID
+        guard multiviewTabIDs.contains(targetID) else { return }
+
+        let next = MultiviewReducer.toggleSolo(targetID, in: multiviewState)
+        soloMultiviewTabID = next.soloTabID
+        multiviewAudioTabID = next.audioTabID
+        if let soloID = next.soloTabID {
+            selectedTabID = soloID
+            syncOmniboxToSelectedTab()
+        }
+        applyConfigToAllTabs()
+        applyMultiviewAudioFocus(unmuteAudioTab: next.soloTabID != nil)
+
+        // Fire one-shot player viewport resize sync after layout updates so YouTube scrubbers match width.
+        let tabsToSync: [BrowserTab] = {
+            if let soloID = next.soloTabID, let tab = tabs.first(where: { $0.id == soloID }) {
+                return [tab]
+            }
+            return multiviewTabs
+        }()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+            for tab in tabsToSync {
+                tab.syncPlayerSize()
+            }
+        }
+
+        if let soloID = next.soloTabID, let tab = tabs.first(where: { $0.id == soloID }) {
+            showHUD(icon: "arrow.up.left.and.arrow.down.right", message: "Solo · \(tab.displayTitle)")
+        } else {
+            showHUD(icon: "square.grid.2x2", message: "Back to Multiview Grid")
+        }
+    }
+
+    public func exitMultiviewSolo(showFeedback: Bool = true) {
+        guard isMultiviewSoloActive, !anyTabInFullscreen else { return }
+        soloMultiviewTabID = nil
+        applyConfigToAllTabs()
+        let currentTiles = multiviewTabs
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+            for tab in currentTiles {
+                tab.syncPlayerSize()
+            }
+        }
+        if showFeedback {
+            showHUD(icon: "square.grid.2x2", message: "Back to Multiview Grid")
+        }
+    }
+
+    public func nudgeMultiviewTile(id: UUID, seconds: Double) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        tab.evaluate(EnhancementScript.seekByScript(seconds: seconds))
+        let sign = seconds >= 0 ? "+" : ""
+        let formatted = seconds.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(seconds))" : String(format: "%.1f", seconds)
+        showHUD(icon: "clock.arrow.2.circlepath", message: "Sync \(sign)\(formatted)s")
+    }
+
+    public func jumpMultiviewTileToLive(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        tab.seekToLiveEdge()
+        showHUD(icon: "dot.radiowaves.left.and.right", message: "Jumped to Live Edge")
+    }
+
+    // MARK: - Streaming Service Onboarding, Launcher & Per-Service Reset
+
+    public func presentStreamingOnboardingIfNeeded() {
+        guard isPrimaryWindow,
+              !settings.hasCompletedStreamingOnboarding,
+              !anyTabInFullscreen,
+              !isMiniPlayer,
+              coordinator?.hasAutoPresentedOnboardingThisSession == false else {
+            return
+        }
+        coordinator?.hasAutoPresentedOnboardingThisSession = true
+        onboardingInitialStep = 1
+        onboardingFocusServiceID = nil
+        isOnboardingPresented = true
+    }
+
+    public func openStreamingServicesSetup(step: Int = 1, focusServiceID: String? = nil) {
+        guard !anyTabInFullscreen else { return }
+        onboardingInitialStep = min(max(step, 1), 2)
+        onboardingFocusServiceID = focusServiceID
+        isOnboardingPresented = true
+    }
+
+    public func completeStreamingOnboarding() {
+        settings.hasCompletedStreamingOnboarding = true
+        isOnboardingPresented = false
+        onboardingFocusServiceID = nil
+    }
+
+    public func skipStreamingOnboarding() {
+        settings.hasCompletedStreamingOnboarding = true
+        isOnboardingPresented = false
+        onboardingFocusServiceID = nil
+    }
+
+    public func openStreamingService(_ service: StreamingService, inNewTab: Bool = false) {
+        guard !anyTabInFullscreen else { return }
+        if isMultiviewActive {
+            if canAddMultiviewTile {
+                addStreamingServiceToMultiview(service)
+            } else {
+                createTab(url: service.homeURL, select: true, routingMode: service.routingMode)
+            }
+            return
+        }
+        if inNewTab {
+            createTab(url: service.homeURL, select: true, routingMode: service.routingMode)
+        } else if let tab = selectedTab, tab.routingMode == service.routingMode {
+            tab.load(service.homeURL)
+            syncOmniboxToSelectedTab()
+        } else {
+            createTab(url: service.homeURL, select: true, routingMode: service.routingMode)
+        }
+    }
+
+    public func addStreamingServiceToMultiview(_ service: StreamingService) {
+        guard !anyTabInFullscreen else { return }
+        if isMultiviewSoloActive {
+            soloMultiviewTabID = nil
+        }
+        addTileToMultiview(url: service.homeURL, routingMode: service.routingMode)
+    }
+
+    public func openURLInSafari(_ url: URL?) {
+        guard let url else { return }
+        let safariURL = URL(fileURLWithPath: "/Applications/Safari.app")
+        if FileManager.default.fileExists(atPath: safariURL.path) {
+            let config = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open([url], withApplicationAt: safariURL, configuration: config)
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    public func resetStreamingServiceData(_ service: StreamingService) {
+        Task { @MainActor [weak self] in
+            await self?.coordinator?.resetServiceData(for: service)
+        }
+    }
+
+    // MARK: - Native macOS AirPlay Video, Audio & TV Display Routing
+
+    public var isAirPlayActive: Bool {
+        nowPlayingStatus.isAirPlayActive || (coordinator?.isAirPlayAudioActive ?? false)
+    }
+
+    public var currentDisplayID: UInt32? {
+        guard let screen = mainWindow?.screen ?? NSScreen.main else { return nil }
+        return AppCoordinator.displayID(for: screen)
+    }
+
+    public func openAirPlayPopover() {
+        guard !anyTabInFullscreen else { return }
+        airPlayVideoHint = nil
+        coordinator?.refreshConnectedDisplays()
+        coordinator?.refreshAudioOutputStatus()
+        isAirPlayPopoverPresented = true
+    }
+
+    public func triggerAirPlayVideo() {
+        guard !isMultiviewActive else {
+            airPlayVideoHint = "Multiview streams cast best via Send Window to Display below."
+            showHUD(icon: "airplayvideo", message: "Use AirPlay Display below for Multiview")
+            return
+        }
+        guard let tab = activeMediaTab, tab.mediaStatus.hasVideo else {
+            airPlayVideoHint = nil
+            showHUD(icon: "airplayvideo", message: "Start a video to stream via AirPlay")
+            return
+        }
+
+        Task { @MainActor [weak self, weak tab] in
+            guard let self, let tab else { return }
+            let result = await tab.showAirPlayPicker()
+            self.handleAirPlayPickerResult(result)
+        }
+    }
+
+    public func handleAirPlayPickerResult(_ result: AirPlayPickerResult) {
+        switch result {
+        case .ok:
+            airPlayVideoHint = nil
+        case .mseUnsupported:
+            airPlayVideoHint = "YouTube MSE streams cast best via AirPlay Display below."
+            showHUD(icon: "airplayvideo", message: "YouTube MSE casts best via AirPlay Display")
+        case .unavailable:
+            airPlayVideoHint = "Direct video AirPlay unavailable on this stream — use AirPlay Display below."
+            showHUD(icon: "airplayvideo", message: "Use AirPlay Display below to cast to TV")
+        case .noVideo:
+            airPlayVideoHint = nil
+            showHUD(icon: "airplayvideo", message: "Start a video to stream via AirPlay")
+        }
+    }
+
+    public func moveWindowToDisplay(id: UInt32) {
+        // Hard invariant: never move or resize the NSWindow while any tab is in WebKit fullscreen.
+        guard !anyTabInFullscreen, let window = mainWindow else { return }
+        coordinator?.refreshConnectedDisplays()
+        guard let display = coordinator?.connectedDisplays.first(where: { $0.id == id }) else { return }
+
+        let targetFrame = WindowDisplayRouter.targetFrame(
+            currentFrame: window.frame,
+            targetVisibleFrame: display.visibleFrame,
+            maximizeForTV: true
+        )
+        window.setFrame(targetFrame, display: true, animate: true)
+        window.makeKeyAndOrderFront(nil)
+        showHUD(icon: "appletv", message: "Moved to \(display.name)")
     }
 
     public func promoteMultiviewTileToPrimary(id: UUID) {
@@ -1701,7 +1946,7 @@ public final class AppController {
 
     public func canPopOut(tab: BrowserTab) -> Bool {
         guard tab.mediaStatus.hasVideo else { return false }
-        guard YouTubeURLRouter.isWatchURL(tab.url) else { return false }
+        guard YouTubeURLRouter.isWatchURL(tab.url) || tab.isCompanionTab else { return false }
         guard !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen else { return false }
         return true
     }
@@ -1744,6 +1989,7 @@ public final class AppController {
         floatingMiniPlayer.show(
             tab: tab,
             allSpaces: settings.miniPlayerAllSpaces,
+            opacity: settings.miniPlayerOpacity,
             onSeek: { [weak tab] seconds in
                 tab?.evaluate(EnhancementScript.seekByScript(seconds: seconds))
             },
@@ -1752,6 +1998,15 @@ public final class AppController {
             },
             onToggleMute: { [weak tab] in
                 tab?.toggleMute()
+            },
+            onSetPlaybackRate: { [weak tab] rate in
+                tab?.evaluate(EnhancementScript.setPlaybackRateScript(rate: rate))
+            },
+            onAirPlayResult: { [weak self] result in
+                self?.handleAirPlayPickerResult(result)
+            },
+            onOpenDisplaysSettings: { [weak self] in
+                self?.coordinator?.openDisplaysSettings()
             },
             onDock: { [weak self] in
                 self?.dockMiniPlayer(selectTab: true, focusMain: true)
@@ -2131,6 +2386,7 @@ public final class AppController {
         tabs.removeAll()
         multiviewTabIDs.removeAll()
         multiviewAudioTabID = nil
+        soloMultiviewTabID = nil
         mainWindow = nil
         isMainWindowVisible = false
     }
@@ -2384,6 +2640,25 @@ public final class AppController {
             )
         }
 
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .manageStreamingServices,
+                title: "Manage Streaming Services & Sign-In Hub…",
+                keywords: "services onboarding login sign in netflix hulu disney espn twitch peacock paramount",
+                systemImage: "square.grid.3x3.square",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .openAirPlayPopover,
+                title: "Stream to AirPlay & TV Displays…",
+                keywords: "airplay cast tv apple tv homepod display mirror screen",
+                systemImage: "airplayvideo",
+                isFeaturedWhenEmpty: false
+            )
+        )
+
         return CommandPaletteEngine.rank(
             query: commandPaletteQuery,
             openTabs: tabSnapshots,
@@ -2393,6 +2668,9 @@ public final class AppController {
             pinnedItems: settings.pinnedItems,
             pinnedFolders: settings.pinnedFolders,
             watchedChannels: settings.watchedChannels,
+            enabledServices: settings.enabledStreamingServices,
+            isMultiviewActive: isMultiviewActive,
+            canAddMultiviewTile: canAddMultiviewTile,
             actions: actions,
             suggestions: commandPaletteSuggestions
         )
@@ -2423,6 +2701,18 @@ public final class AppController {
                 openFolderInMultiview(id: folderID)
             } else {
                 openFolderInTabs(id: folderID)
+            }
+            focusActiveWebView()
+
+        case .openStreamingService(let serviceID):
+            if let service = StreamingServiceCatalog.service(id: serviceID) {
+                openStreamingService(service, inNewTab: false)
+            }
+            focusActiveWebView()
+
+        case .addStreamingServiceToMultiview(let serviceID):
+            if let service = StreamingServiceCatalog.service(id: serviceID) {
+                addStreamingServiceToMultiview(service)
             }
             focusActiveWebView()
 
@@ -2487,6 +2777,12 @@ public final class AppController {
                 setSleepTimer(nil)
             case .toggleAlwaysOnTop:
                 toggleAlwaysOnTop()
+            case .manageStreamingServices:
+                openStreamingServicesSetup(step: 1)
+                return
+            case .openAirPlayPopover:
+                openAirPlayPopover()
+                return
             }
             focusActiveWebView()
         }
@@ -2690,6 +2986,7 @@ public final class AppController {
 
         multiviewLayoutMode = preset.layoutMode
         multiviewSplitRatios = preset.splitRatios ?? .default
+        soloMultiviewTabID = nil
         enterMultiview(with: targetTabIDs)
         scheduleSessionSave()
         showHUD(icon: "square.grid.2x2.fill", message: "Launched \"\(preset.name)\"")
@@ -2941,6 +3238,32 @@ public final class AppController {
         isWindowInNativeFullScreen = inNativeFullScreen
 
         let center = NotificationCenter.default
+        // Window-scoped local key monitor so pressing Esc exits Multiview Solo even when
+        // the soloed WKWebView holds first responder focus (SwiftUI .onExitCommand does not fire there).
+        soloEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53,
+                  event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
+                return event
+            }
+            let targetWindowNumber = event.windowNumber
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard let self,
+                      let win = self.mainWindow,
+                      win.windowNumber == targetWindowNumber,
+                      self.isMultiviewSoloActive,
+                      !self.isFindBarPresented,
+                      !self.isCommandPalettePresented,
+                      !self.isOnboardingPresented,
+                      !self.isAirPlayPopoverPresented,
+                      !self.anyTabInFullscreen,
+                      !(win.firstResponder is NSTextView) else {
+                    return false
+                }
+                self.exitMultiviewSolo()
+                return true
+            }
+            return consumed ? nil : event
+        }
         windowObservers = [
             center.addObserver(
                 forName: NSWindow.didBecomeKeyNotification,
@@ -3214,20 +3537,23 @@ public final class AppController {
 
     private func configForTab(id: UUID) -> DistractionFreeConfig {
         if isMultiviewActive, let slotIndex = multiviewTabIDs.firstIndex(of: id) {
-            let isPrimary = MultiviewGridLayout.isPrimarySlot(
+            let isSoloed = (soloMultiviewTabID == id)
+            let isPrimary = isSoloed || MultiviewGridLayout.isPrimarySlot(
                 index: slotIndex,
                 count: multiviewTabIDs.count,
                 mode: multiviewLayoutMode
             )
-            let clampedQuality = PreferredVideoQuality.clampedForMultiview(
-                userPreference: settings.preferredQuality,
-                isPrimaryOrTwoUp: isPrimary,
-                ceilingOverride: settings.multiviewQualityCeiling
-            )
+            let clampedQuality = isSoloed
+                ? settings.preferredQuality
+                : PreferredVideoQuality.clampedForMultiview(
+                    userPreference: settings.preferredQuality,
+                    isPrimaryOrTwoUp: isPrimary,
+                    ceilingOverride: settings.multiviewQualityCeiling
+                )
             return settings.distractionFreeConfig(
                 focusMode: focusModeActive,
                 miniPlayer: poppedOutTabID == id,
-                multiviewTile: true,
+                multiviewTile: !isSoloed,
                 qualityOverride: clampedQuality
             )
         }
@@ -3394,6 +3720,11 @@ public final class AppController {
     }
 
     private func clearWindowObservers() {
+        if let monitor = soloEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            soloEscapeMonitor = nil
+        }
+
         let center = NotificationCenter.default
         for token in windowObservers {
             center.removeObserver(token)

@@ -45,14 +45,14 @@
         <h2>1. Data Stored Locally on Your Mac</h2>
         <p>All application state stays exclusively on your device inside standard macOS storage:</p>
         <ul>
-          <li><strong>WebKit Session Storage:</strong> Cookies, login sessions, and site data for YouTube, YouTube TV, and any Companion Web Tiles you open are stored locally in Apple's <code>WKWebsiteDataStore</code>. You can clear them anytime from GlassGrid You Settings.</li>
-          <li><strong>App Preferences:</strong> Appearance, Multiview presets, pinned channels, folders, Continue Watching resume points, and window layout preferences are stored locally in macOS <code>UserDefaults</code>.</li>
+          <li><strong>WebKit Session Storage:</strong> Cookies, login sessions, and site data for YouTube, YouTube TV, and any enabled streaming services or Companion Web Tiles are stored locally in Apple's <code>WKWebsiteDataStore</code>. You can clear all site data or reset an individual service's cookies &amp; site data anytime from the Sidebar or GlassGrid You Settings (with clear notices where providers share single sign-on, such as Google or MyDisney).</li>
+          <li><strong>App Preferences:</strong> Appearance, enabled streaming services, Multiview presets, pinned channels, folders, Mini-Player opacity, Continue Watching resume points, and window layout preferences are stored locally in macOS <code>UserDefaults</code>.</li>
         </ul>
 
         <h2>2. Direct Third-Party Network Connections</h2>
         <p>When you use GlassGrid You, your Mac connects directly to the services you choose to visit or enable—never proxied through us:</p>
         <ul>
-          <li><strong>YouTube, YouTube TV &amp; Companion Sites:</strong> Loaded directly inside Apple's native WebKit engine subject to each service's own privacy policy.</li>
+          <li><strong>Streaming Services &amp; Sign-In Hub:</strong> YouTube, YouTube TV, Twitch, live sports, and other selected streaming sites load directly inside Apple's native WebKit engine subject to each provider's own privacy policy. GlassGrid You never intercepts, inspects, or stores your passwords.</li>
           <li><strong>SponsorBlock (Optional, Off by Default):</strong> When explicitly enabled in Settings, GlassGrid You queries the public SponsorBlock API using a k-anonymous 4-character SHA-256 hash prefix of the video ID so the full video ID is never sent.</li>
           <li><strong>Search Autocomplete (Cookieless &amp; Toggleable):</strong> When enabled, Command Palette search suggestions use cookieless requests and can be disabled anytime in Settings.</li>
           <li><strong>App Updates:</strong> Update checks fetch the public release metadata at <code>https://glassgridyou.com/appcast.xml</code> (Sparkle 2) or public GitHub Releases without transmitting personal identifiers.</li>

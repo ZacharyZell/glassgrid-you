@@ -45,6 +45,8 @@ public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case sleepTimerEndOfVideo
     case cancelSleepTimer
     case toggleAlwaysOnTop
+    case manageStreamingServices
+    case openAirPlayPopover
 }
 
 /// Action payload executed when a Command Palette row is selected.
@@ -53,6 +55,8 @@ public enum CommandPalettePayload: Equatable, Sendable {
     case seekToChapter(Double)
     case launchPreset(UUID)
     case openPinnedFolder(UUID)
+    case openStreamingService(String)
+    case addStreamingServiceToMultiview(String)
     case openCompanionURL(URL)
     case openURL(URL)
     case searchYouTube(String)
@@ -250,6 +254,9 @@ public enum CommandPaletteEngine {
         pinnedItems: [PinnedItem],
         pinnedFolders: [PinnedFolder] = [],
         watchedChannels: [WatchedChannelStat],
+        enabledServices: [StreamingService] = [],
+        isMultiviewActive: Bool = false,
+        canAddMultiviewTile: Bool = false,
         actions: [CommandPaletteActionDescriptor],
         suggestions: [String]
     ) -> [CommandPaletteItem] {
@@ -440,10 +447,48 @@ public enum CommandPaletteEngine {
         .sorted { $0.score > $1.score }
         results.append(contentsOf: rankedActions.prefix(5).map(\.item))
 
-        // 6b. Quick-launch Companion streaming/sports site matching (e.g. "Twitch", "ESPN", "Peacock")
+        // 6b. Enabled Streaming Services & quick-launch Companion site matching (e.g. "Twitch", "ESPN", "Netflix")
         if detectedYouTubeURL == nil && detectedCompanionURL == nil {
+            var matchedServiceIDs = Set<String>()
+            let rankedEnabledServices: [(score: Int, service: StreamingService)] = enabledServices.compactMap { svc in
+                let nameScore = fuzzyScore(query: trimmed, in: svc.name) ?? 0
+                let subScore = fuzzyScore(query: trimmed, in: svc.subtitle).map { $0 - 150 } ?? 0
+                let best = max(nameScore, subScore)
+                guard best >= 450 else { return nil }
+                return (best, svc)
+            }
+            .sorted { $0.score > $1.score }
+
+            for match in rankedEnabledServices.prefix(3) {
+                matchedServiceIDs.insert(match.service.id)
+                if isMultiviewActive && canAddMultiviewTile {
+                    results.append(
+                        CommandPaletteItem(
+                            id: "service-mv-\(match.service.id)",
+                            section: .directSearch,
+                            title: "Add \(match.service.name) Screen",
+                            subtitle: "Add to Multiview · \(match.service.subtitle)",
+                            systemImage: match.service.symbolName,
+                            badgeText: "Multiview",
+                            payload: .addStreamingServiceToMultiview(match.service.id)
+                        )
+                    )
+                }
+                results.append(
+                    CommandPaletteItem(
+                        id: "service-open-\(match.service.id)",
+                        section: .directSearch,
+                        title: "Open \(match.service.name)",
+                        subtitle: match.service.homeURLString,
+                        systemImage: match.service.symbolName,
+                        badgeText: match.service.requiresStrictDRM ? "Safari DRM" : "Service",
+                        payload: .openStreamingService(match.service.id)
+                    )
+                )
+            }
+
             let matchingSites: [(score: Int, site: CompanionQuickSite)] = CompanionQuickSite.catalog.compactMap { site in
-                guard site.routingMode == .companion else { return nil }
+                guard site.routingMode == .companion, !matchedServiceIDs.contains(site.id) else { return nil }
                 let nameScore = fuzzyScore(query: trimmed, in: site.name) ?? 0
                 let subScore = fuzzyScore(query: trimmed, in: site.subtitle).map { $0 - 150 } ?? 0
                 let best = max(nameScore, subScore)

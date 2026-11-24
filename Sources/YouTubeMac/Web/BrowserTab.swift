@@ -162,7 +162,16 @@ public final class BrowserTab: NSObject, Identifiable {
     @ObservationIgnored
     private var lastRecordedChannelVideoID: String = ""
 
-    private static let safariUserAgentSuffix: String = {
+    @ObservationIgnored
+    private var oauthPopupWindows: [ObjectIdentifier: NSWindow] = [:]
+
+    @ObservationIgnored
+    private var oauthPopupWebViews: [ObjectIdentifier: WKWebView] = [:]
+
+    @ObservationIgnored
+    private var oauthPopupObservers: [ObjectIdentifier: any NSObjectProtocol] = [:]
+
+    internal static let safariUserAgentSuffix: String = {
         let safariPlistPath = "/Applications/Safari.app/Contents/Info.plist"
         if let plist = NSDictionary(contentsOfFile: safariPlistPath),
            let version = plist["CFBundleShortVersionString"] as? String,
@@ -424,6 +433,121 @@ public final class BrowserTab: NSObject, Identifiable {
         evaluate(EnhancementScript.setAudioLevelScript(muted: muted, volumePercent: volumePercent))
     }
 
+    public func seekToLiveEdge() {
+        evaluate(EnhancementScript.seekToLiveEdgeScript)
+    }
+
+    public func syncPlayerSize() {
+        guard !isInFullscreen, webView.fullscreenState == .notInFullscreen else { return }
+        evaluate(EnhancementScript.syncPlayerSizeScript)
+    }
+
+    public func showAirPlayPicker() async -> AirPlayPickerResult {
+        guard !isTornDown else { return .noVideo }
+        do {
+            let raw = try await webView.evaluateJavaScript(EnhancementScript.showAirPlayPickerScript) as? String
+            return raw.flatMap(AirPlayPickerResult.init(rawValue:)) ?? .unavailable
+        } catch {
+            return .unavailable
+        }
+    }
+
+    public func closeAllOAuthPopups() {
+        let windows = Array(oauthPopupWindows.values)
+        let webViews = Array(oauthPopupWebViews.values)
+        let observers = Array(oauthPopupObservers.values)
+        oauthPopupWindows.removeAll()
+        oauthPopupWebViews.removeAll()
+        oauthPopupObservers.removeAll()
+
+        for obs in observers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        for childWV in webViews {
+            childWV.uiDelegate = nil
+            childWV.navigationDelegate = nil
+            childWV.stopLoading()
+        }
+        for win in windows {
+            win.close()
+        }
+    }
+
+    private func cleanupOAuthPopup(for popupWebView: WKWebView) {
+        let key = ObjectIdentifier(popupWebView)
+        if let obs = oauthPopupObservers.removeValue(forKey: key) {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        oauthPopupWebViews.removeValue(forKey: key)
+        popupWebView.uiDelegate = nil
+        popupWebView.navigationDelegate = nil
+        popupWebView.stopLoading()
+        if let win = oauthPopupWindows.removeValue(forKey: key) {
+            win.close()
+        }
+    }
+
+    private func presentOAuthPopup(with configuration: WKWebViewConfiguration, title: String) -> WKWebView {
+        let popupSize = NSSize(width: 520, height: 680)
+        let popupWebView = WKWebView(frame: NSRect(origin: .zero, size: popupSize), configuration: configuration)
+        popupWebView.customUserAgent = webView.customUserAgent
+        popupWebView.uiDelegate = self
+
+        let popupWindow = NSWindow(
+            contentRect: NSRect(origin: .zero, size: popupSize),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        // Mandatory Gate 1 safety: retain popupWindow cleanly and never double-release on close.
+        popupWindow.isReleasedWhenClosed = false
+        popupWindow.title = title
+        popupWindow.contentView = popupWebView
+        popupWindow.center()
+
+        let key = ObjectIdentifier(popupWebView)
+        oauthPopupWindows[key] = popupWindow
+        oauthPopupWebViews[key] = popupWebView
+        oauthPopupObservers[key] = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: popupWindow,
+            queue: .main
+        ) { [weak self, weak popupWebView] _ in
+            MainActor.assumeIsolated {
+                guard let self, let popupWebView else { return }
+                let k = ObjectIdentifier(popupWebView)
+                if let obs = self.oauthPopupObservers.removeValue(forKey: k) {
+                    NotificationCenter.default.removeObserver(obs)
+                }
+                self.oauthPopupWebViews.removeValue(forKey: k)
+                self.oauthPopupWindows.removeValue(forKey: k)
+                popupWebView.uiDelegate = nil
+                popupWebView.navigationDelegate = nil
+                popupWebView.stopLoading()
+            }
+        }
+
+        popupWindow.makeKeyAndOrderFront(nil)
+        return popupWebView
+    }
+
+    private static func isOAuthPopupURL(_ url: URL) -> Bool {
+        let host = (url.host ?? "").lowercased()
+        let path = url.path.lowercased()
+        let authHosts = [
+            "accounts.google.com", "accounts.youtube.com",
+            "idmsa.apple.com", "appleid.apple.com",
+            "sp.auth.adobe.com", "registerdisney.go.com",
+            "passport.twitch.tv", "id.twitch.tv",
+            "identity.sling.com", "identity.nba.com", "ids.mlb.com", "id.nfl.com",
+            "auth.hulu.com", "auth.max.com"
+        ]
+        if authHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
+            return true
+        }
+        return path.contains("oauth") || path.contains("/login") || path.contains("/signin") || path.contains("/sign-in") || path.contains("/auth")
+    }
+
     public func applySponsorSegments(videoID: String, segments: [SponsorSegment]) {
         guard !isTornDown else { return }
         if let last = lastAppliedSponsorPayload, last.videoID == videoID && last.segments == segments {
@@ -442,6 +566,7 @@ public final class BrowserTab: NSObject, Identifiable {
     public func teardown() {
         guard !isTornDown else { return }
         // Pause active video & WebKit media BEFORE setting isTornDown so evaluate() executes cleanly.
+        closeAllOAuthPopups()
         cancelPostAttachResize()
         pauseMedia()
         webView.pauseAllMediaPlayback(completionHandler: nil)
@@ -679,6 +804,11 @@ extension BrowserTab: WKUIDelegate {
             return nil
         }
 
+        // Preserve `window.opener` for OAuth/SSO/MVPD popups (Apple ID, Google OAuth, MyDisney, Adobe Pass).
+        if navigationAction.targetFrame == nil && Self.isOAuthPopupURL(targetURL) {
+            return presentOAuthPopup(with: configuration, title: "Sign In — GlassGrid You")
+        }
+
         let prefs = routingPreferencesProvider()
         let decision = YouTubeURLRouter.routeNavigation(
             url: targetURL,
@@ -706,6 +836,12 @@ extension BrowserTab: WKUIDelegate {
             NSWorkspace.shared.open(externalURL)
         }
         return nil
+    }
+
+    public func webViewDidClose(_ webView: WKWebView) {
+        if oauthPopupWebViews[ObjectIdentifier(webView)] != nil {
+            cleanupOAuthPopup(for: webView)
+        }
     }
 
     public func webView(
@@ -787,7 +923,9 @@ extension BrowserTab: WKScriptMessageHandler {
             isTheater: body["isTheater"] as? Bool ?? false,
             isHDR: body["isHDR"] as? Bool ?? false,
             playbackRate: body["playbackRate"] as? Double ?? 1.0,
-            isHomeFeedEmpty: body["isHomeFeedEmpty"] as? Bool ?? false
+            isHomeFeedEmpty: body["isHomeFeedEmpty"] as? Bool ?? false,
+            airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
+            isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false
         )
         let wasPlaying = mediaStatus.isPlaying
         if mediaStatus != newStatus {

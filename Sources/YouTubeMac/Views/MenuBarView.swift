@@ -684,6 +684,15 @@ private struct MenuBarActiveControllerView: View {
             }
 
             MenuBarActionRow(
+                title: controller.isAirPlayActive ? "AirPlay Active — Manage…" : "Stream to AirPlay & TV Displays…",
+                systemImage: "airplayvideo",
+                isActive: controller.isAirPlayActive
+            ) {
+                controller.focusMainWindow()
+                controller.openAirPlayPopover()
+            }
+
+            MenuBarActionRow(
                 title: isResolvedDark ? "Night Mode (Switch to Day)" : "Day Mode (Switch to Night)",
                 systemImage: isResolvedDark ? "moon.fill" : "sun.max.fill"
             ) {

@@ -22,14 +22,22 @@ private final class CoreAudioOutputListener: @unchecked Sendable {
     private var dataSourceBlock: AudioObjectPropertyListenerBlock?
     private var lastSnapshot: AudioRouteSnapshot?
     private var onDisconnect: (@Sendable () -> Void)?
+    private var onRouteChanged: (@Sendable (_ deviceName: String, _ isAirPlay: Bool) -> Void)?
 
-    func start(onDisconnect: @escaping @Sendable () -> Void) {
+    func start(
+        onDisconnect: @escaping @Sendable () -> Void,
+        onRouteChanged: (@Sendable (_ deviceName: String, _ isAirPlay: Bool) -> Void)? = nil
+    ) {
         queue.sync {
+            self.onDisconnect = onDisconnect
+            self.onRouteChanged = onRouteChanged
+            let initial = Self.readCurrentSnapshot()
+            let initialName = initial.map { Self.readDeviceName(for: $0.deviceID) } ?? "System Output"
+            let initialAirPlay = initial?.transportType == AudioRouteSnapshot.transportAirPlay
+            onRouteChanged?(initialName, initialAirPlay)
+
             guard !isStarted else { return }
             isStarted = true
-            self.onDisconnect = onDisconnect
-
-            let initial = Self.readCurrentSnapshot()
             self.lastSnapshot = initial
 
             var defaultAddr = AudioObjectPropertyAddress(
@@ -140,9 +148,40 @@ private final class CoreAudioOutputListener: @unchecked Sendable {
 
         let shouldPause = AudioOutputDisconnectDetector.shouldAutoPause(from: lastSnapshot, to: current)
         lastSnapshot = current
+        let deviceName = Self.readDeviceName(for: current.deviceID)
+        let isAirPlay = current.transportType == AudioRouteSnapshot.transportAirPlay
+        onRouteChanged?(deviceName, isAirPlay)
         if shouldPause {
             onDisconnect?()
         }
+    }
+
+    static func currentOutputStatus() -> (name: String, isAirPlay: Bool) {
+        guard let snap = readCurrentSnapshot() else {
+            return ("System Output", false)
+        }
+        return (readDeviceName(for: snap.deviceID), snap.transportType == AudioRouteSnapshot.transportAirPlay)
+    }
+
+    private static func readDeviceName(for deviceID: AudioDeviceID) -> String {
+        guard deviceID != AudioDeviceID(kAudioObjectUnknown) else {
+            return "System Output"
+        }
+        var nameRef: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        var nameAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let status = AudioObjectGetPropertyData(deviceID, &nameAddr, 0, nil, &size, &nameRef)
+        if status == noErr, let cfStr = nameRef?.takeRetainedValue() {
+            let trimmed = (cfStr as String).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return "System Output"
     }
 
     private static func readCurrentSnapshot() -> AudioRouteSnapshot? {
@@ -204,7 +243,10 @@ final class SystemPlaybackGuard {
     private let audioListener = CoreAudioOutputListener()
     private var isRunning = false
 
-    func start(onAutoPause: @escaping @MainActor (SystemAutoPauseReason) -> Void) {
+    func start(
+        onAutoPause: @escaping @MainActor (SystemAutoPauseReason) -> Void,
+        onAudioRouteChanged: (@MainActor (_ name: String, _ isAirPlay: Bool) -> Void)? = nil
+    ) {
         guard !isRunning else { return }
         isRunning = true
 
@@ -240,11 +282,22 @@ final class SystemPlaybackGuard {
             }
         }
 
-        audioListener.start {
-            Task { @MainActor in
-                onAutoPause(.audioDisconnected)
+        audioListener.start(
+            onDisconnect: {
+                Task { @MainActor in
+                    onAutoPause(.audioDisconnected)
+                }
+            },
+            onRouteChanged: { name, isAirPlay in
+                Task { @MainActor in
+                    onAudioRouteChanged?(name, isAirPlay)
+                }
             }
-        }
+        )
+    }
+
+    static func readCurrentAudioOutputStatus() -> (name: String, isAirPlay: Bool) {
+        CoreAudioOutputListener.currentOutputStatus()
     }
 
     func stop() {

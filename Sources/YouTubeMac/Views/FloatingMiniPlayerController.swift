@@ -4,12 +4,13 @@ import SwiftUI
 import WebKit
 import YouTubeMacCore
 
-/// Observable hover & size-preset state bridged from the floating Mini-Player panel.
+/// Observable hover, opacity & size-preset state bridged from the floating Mini-Player panel.
 @MainActor
 @Observable
 private final class MiniPlayerHoverState {
     var isHovered: Bool = false
     var currentSizePreset: MiniPlayerSizePreset = .standard
+    var opacity: Double = 1.0
 }
 
 /// `NSPanel` subclass supporting `Esc` (`cancelOperation`) to dock cleanly when not in WebKit fullscreen.
@@ -94,10 +95,18 @@ private struct FloatingMiniPlayerOverlayView: View {
     let onSeek: (Double) -> Void
     let onTogglePlay: () -> Void
     let onToggleMute: () -> Void
+    let onSetPlaybackRate: (Double) -> Void
+    let onSetOpacity: (Double) -> Void
     let onSelectSizePreset: (MiniPlayerSizePreset) -> Void
+    let onAirPlayResult: (AirPlayPickerResult) -> Void
+    let onOpenDisplaysSettings: () -> Void
     let onDragEnded: () -> Void
     let onDock: () -> Void
     let onClose: () -> Void
+
+    @State private var isDisplayOptionsPresented = false
+    @State private var airPlayFeedbackMessage: String?
+    private let speedPresets: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -185,27 +194,144 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     .fill(.white.opacity(0.28))
                                     .frame(width: 1, height: 12)
 
-                                Menu {
-                                    ForEach(MiniPlayerSizePreset.allCases) { preset in
-                                        Button {
-                                            onSelectSizePreset(preset)
-                                        } label: {
-                                            if hoverState.currentSizePreset == preset {
-                                                Label(preset.title, systemImage: "checkmark")
-                                            } else {
-                                                Text(preset.title)
-                                            }
+                                Button {
+                                    Task { @MainActor in
+                                        let result = await tab.showAirPlayPicker()
+                                        onAirPlayResult(result)
+                                        switch result {
+                                        case .ok:
+                                            airPlayFeedbackMessage = nil
+                                        case .mseUnsupported:
+                                            airPlayFeedbackMessage = "YouTube MSE streams cast best via AirPlay Display in macOS Displays."
+                                        case .unavailable:
+                                            airPlayFeedbackMessage = "Direct video AirPlay unavailable on this stream — use AirPlay Display."
+                                        case .noVideo:
+                                            airPlayFeedbackMessage = "Start a video to stream via AirPlay."
                                         }
                                     }
                                 } label: {
-                                    Image(systemName: "aspectratio")
+                                    Image(systemName: "airplayvideo")
                                         .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(tab.mediaStatus.isAirPlayActive ? AppleTheme.accent : .white)
                                 }
-                                .menuStyle(.borderlessButton)
-                                .menuIndicator(.hidden)
-                                .fixedSize()
-                                .help("Mini-Player Size Preset")
+                                .help("AirPlay Video")
+                                .popover(
+                                    isPresented: Binding(
+                                        get: { airPlayFeedbackMessage != nil },
+                                        set: { if !$0 { airPlayFeedbackMessage = nil } }
+                                    ),
+                                    arrowEdge: .bottom
+                                ) {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "airplayvideo")
+                                                .foregroundStyle(AppleTheme.accent)
+                                            Text("AirPlay Video")
+                                                .font(.system(size: 12, weight: .semibold))
+                                        }
+                                        Text(airPlayFeedbackMessage ?? "")
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        Button("Open Displays Settings…") {
+                                            airPlayFeedbackMessage = nil
+                                            onOpenDisplaysSettings()
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                    }
+                                    .padding(12)
+                                    .frame(width: 240)
+                                }
+
+                                Button {
+                                    isDisplayOptionsPresented.toggle()
+                                } label: {
+                                    Image(systemName: "slider.horizontal.3")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accent : .white)
+                                }
+                                .help("Mini-Player Opacity, Speed & Size")
+                                .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        // GPU-composited Window Opacity (40%–100%, FairPlay DRM & HDR10 safe)
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            HStack {
+                                                Text("Opacity")
+                                                    .font(.system(size: 11, weight: .semibold))
+                                                Spacer()
+                                                Text("\(Int((hoverState.opacity * 100).rounded()))%")
+                                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Slider(
+                                                value: Binding(
+                                                    get: { hoverState.opacity },
+                                                    set: { onSetOpacity($0) }
+                                                ),
+                                                in: 0.40...1.0,
+                                                step: 0.05
+                                            )
+                                            .controlSize(.small)
+                                        }
+
+                                        Divider()
+
+                                        // Universal HTML5 / Shadow DOM Playback Speed
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Playback Speed")
+                                                .font(.system(size: 11, weight: .semibold))
+                                            HStack(spacing: 4) {
+                                                ForEach(speedPresets, id: \.self) { rate in
+                                                    let isSelected = abs(tab.mediaStatus.playbackRate - rate) < 0.03
+                                                    Button {
+                                                        onSetPlaybackRate(rate)
+                                                    } label: {
+                                                        Text(rate == 1.0 ? "1×" : (rate.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(rate))×" : String(format: "%.2g×", rate)))
+                                                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium).monospacedDigit())
+                                                            .padding(.horizontal, 6)
+                                                            .padding(.vertical, 3)
+                                                            .background(
+                                                                Capsule(style: .continuous)
+                                                                    .fill(isSelected ? AppleTheme.accent : Color.primary.opacity(0.08))
+                                                            )
+                                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+
+                                        Divider()
+
+                                        // Size Presets
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Window Size")
+                                                .font(.system(size: 11, weight: .semibold))
+                                            HStack(spacing: 6) {
+                                                ForEach(MiniPlayerSizePreset.allCases) { preset in
+                                                    let isSelected = hoverState.currentSizePreset == preset
+                                                    Button {
+                                                        onSelectSizePreset(preset)
+                                                    } label: {
+                                                        Text(preset.title)
+                                                            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                                                            .padding(.horizontal, 9)
+                                                            .padding(.vertical, 4)
+                                                            .background(
+                                                                Capsule(style: .continuous)
+                                                                    .fill(isSelected ? AppleTheme.accent.opacity(0.22) : Color.primary.opacity(0.07))
+                                                            )
+                                                            .foregroundStyle(isSelected ? AppleTheme.accent : Color.primary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .padding(12)
+                                    .frame(width: 278)
+                                }
 
                                 Button {
                                     onDock()
@@ -260,6 +386,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
 
     var onFrameChanged: ((NSRect) -> Void)?
     var onWindowClosedExternally: (() -> Void)?
+    var onOpacityChanged: ((Double) -> Void)?
 
     var isVisible: Bool {
         panel?.isVisible ?? false
@@ -272,17 +399,28 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         return panel.isKeyWindow || panel.frame.contains(NSEvent.mouseLocation)
     }
 
-    init(initialSavedFrame: NSRect? = nil) {
+    init(initialSavedFrame: NSRect? = nil, initialOpacity: Double = 1.0) {
         self.savedFrame = initialSavedFrame
+        self.hoverState.opacity = min(max(initialOpacity.isFinite ? initialOpacity : 1.0, 0.40), 1.0)
         super.init()
+    }
+
+    func updateOpacity(_ opacity: Double) {
+        let clamped = min(max(opacity.isFinite ? opacity : 1.0, 0.40), 1.0)
+        hoverState.opacity = clamped
+        panel?.alphaValue = CGFloat(clamped)
     }
 
     func show(
         tab: BrowserTab,
         allSpaces: Bool,
+        opacity: Double = 1.0,
         onSeek: @escaping (Double) -> Void,
         onTogglePlay: @escaping () -> Void,
         onToggleMute: @escaping () -> Void,
+        onSetPlaybackRate: @escaping (Double) -> Void,
+        onAirPlayResult: @escaping (AirPlayPickerResult) -> Void,
+        onOpenDisplaysSettings: @escaping () -> Void,
         onDock: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -290,6 +428,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
 
         let panel = ensurePanel(allSpaces: allSpaces)
         updateCollectionBehavior(allSpaces: allSpaces)
+        updateOpacity(opacity)
 
         if let existing = hostedTab, existing.id != tab.id {
             if existing.webView.fullscreenState == .notInFullscreen {
@@ -326,6 +465,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onSeek: onSeek,
             onTogglePlay: onTogglePlay,
             onToggleMute: onToggleMute,
+            onSetPlaybackRate: onSetPlaybackRate,
+            onAirPlayResult: onAirPlayResult,
+            onOpenDisplaysSettings: onOpenDisplaysSettings,
             onDock: onDock,
             onClose: onClose
         )
@@ -545,6 +687,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onSeek: @escaping (Double) -> Void,
         onTogglePlay: @escaping () -> Void,
         onToggleMute: @escaping () -> Void,
+        onSetPlaybackRate: @escaping (Double) -> Void,
+        onAirPlayResult: @escaping (AirPlayPickerResult) -> Void,
+        onOpenDisplaysSettings: @escaping () -> Void,
         onDock: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -558,9 +703,16 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onSeek: onSeek,
                 onTogglePlay: onTogglePlay,
                 onToggleMute: onToggleMute,
+                onSetPlaybackRate: onSetPlaybackRate,
+                onSetOpacity: { [weak self] newOpacity in
+                    self?.updateOpacity(newOpacity)
+                    self?.onOpacityChanged?(newOpacity)
+                },
                 onSelectSizePreset: { [weak self] preset in
                     self?.applySizePreset(preset)
                 },
+                onAirPlayResult: onAirPlayResult,
+                onOpenDisplaysSettings: onOpenDisplaysSettings,
                 onDragEnded: {},
                 onDock: onDock,
                 onClose: onClose

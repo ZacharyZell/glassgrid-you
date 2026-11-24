@@ -80,8 +80,33 @@ public enum EnhancementScript {
                 return isWatchPage() && Boolean(getPlayer() || document.querySelector('video.html5-main-video'));
             }
 
+            function collectVideos(root, depth) {
+                const results = [];
+                if (!root || depth > 4) return results;
+                try {
+                    const direct = root.querySelectorAll ? root.querySelectorAll('video') : [];
+                    for (let i = 0; i < direct.length; i += 1) {
+                        results.push(direct[i]);
+                    }
+                    if (depth < 4 && root.querySelectorAll) {
+                        const allEls = root.querySelectorAll('*');
+                        const limit = Math.min(allEls.length, 600);
+                        for (let i = 0; i < limit; i += 1) {
+                            const sr = allEls[i].shadowRoot;
+                            if (sr) {
+                                const nested = collectVideos(sr, depth + 1);
+                                for (let j = 0; j < nested.length; j += 1) {
+                                    results.push(nested[j]);
+                                }
+                            }
+                        }
+                    }
+                } catch (_) {}
+                return results;
+            }
+
             function findPrimaryWebVideo() {
-                const videos = document.querySelectorAll('video');
+                const videos = collectVideos(document, 0);
                 if (!videos || videos.length === 0) return null;
                 let bestPlaying = null;
                 let bestPlayingArea = -1;
@@ -130,6 +155,7 @@ public enum EnhancementScript {
             let lastProgrammaticMuteActionAt = 0;
             let lastKnownMuted = null;
             let lastMutedVideoId = '';
+            let airPlayTargetAvailable = false;
 
             window.__ytmacMarkProgrammaticMute = () => {
                 lastProgrammaticMuteActionAt = Date.now();
@@ -948,7 +974,9 @@ public enum EnhancementScript {
                     isTheater,
                     isHDR: false,
                     playbackRate: 1.0,
-                    isHomeFeedEmpty
+                    isHomeFeedEmpty,
+                    airPlayAvailable: false,
+                    isAirPlayActive: false
                 } : (() => {
                     const isPiP = document.pictureInPictureElement === video ||
                         (typeof video.webkitPresentationMode === 'string' && video.webkitPresentationMode === 'picture-in-picture');
@@ -965,6 +993,7 @@ public enum EnhancementScript {
                     const effectivePlaying = (isScrubSuppressingStateChange(video) && wasPlayingBeforeScrub && hasVideo)
                         ? true
                         : rawPlaying;
+                    const isAirPlayActive = hasVideo && Boolean(video.webkitCurrentPlaybackTargetIsWireless);
                     return {
                         hasVideo,
                         isPlaying: effectivePlaying,
@@ -979,7 +1008,9 @@ public enum EnhancementScript {
                         isTheater,
                         isHDR: hasVideo && detectHDR(),
                         playbackRate: rate,
-                        isHomeFeedEmpty
+                        isHomeFeedEmpty,
+                        airPlayAvailable: hasVideo && Boolean(airPlayTargetAvailable),
+                        isAirPlayActive
                     };
                 })();
 
@@ -999,6 +1030,8 @@ public enum EnhancementScript {
                     payload.isHDR,
                     rateKey,
                     payload.isHomeFeedEmpty,
+                    payload.airPlayAvailable,
+                    payload.isAirPlayActive,
                     secTime,
                     secDur
                 ].join('|');
@@ -1016,9 +1049,25 @@ public enum EnhancementScript {
                 if (video === boundVideo) return;
                 boundVideo = video;
                 if (!video) {
+                    airPlayTargetAvailable = false;
                     emitMediaState(true);
                     return;
                 }
+
+                // Enable native WebKit AirPlay video target availability & wireless state reporting.
+                try {
+                    video.setAttribute('x-webkit-airplay', 'allow');
+                    if ('disableRemotePlayback' in video) {
+                        video.disableRemotePlayback = false;
+                    }
+                } catch (_) {}
+                video.addEventListener('webkitplaybacktargetavailabilitychanged', (ev) => {
+                    airPlayTargetAvailable = Boolean(ev && ev.availability === 'available');
+                    emitMediaState(true);
+                });
+                video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
+                    emitMediaState(true);
+                });
 
                 const immediateEvents = [
                     'play', 'playing', 'pause', 'ended', 'seeked', 'loadedmetadata', 'durationchange',
@@ -1289,9 +1338,9 @@ public enum EnhancementScript {
                     }
                 }
 
-                // Zero-overhead capture-phase detection for dynamically mounted HTML5 <video> elements on React/SPA Companion sites.
+                // Zero-overhead capture-phase detection for dynamically mounted HTML5 <video> elements (including open Shadow DOM).
                 const handleCapturedVideoEvent = (ev) => {
-                    const target = ev && ev.target;
+                    const target = (ev && typeof ev.composedPath === 'function' && ev.composedPath()[0]) || (ev && ev.target);
                     if (!target || target.tagName !== 'VIDEO') return;
                     if (isWebCompanionHost() || boundVideo !== target) {
                         bindVideoListeners();
@@ -1408,7 +1457,26 @@ public enum EnhancementScript {
             v = (p && (p.querySelector('video.html5-main-video') || p.querySelector('video')))
                 || (isWatchPath ? (document.querySelector('video.html5-main-video') || document.querySelector('video')) : null);
         } else {
-            const vids = document.querySelectorAll('video');
+            const collectVids = (root, depth) => {
+                const out = [];
+                if (!root || depth > 4) return out;
+                try {
+                    const list = root.querySelectorAll ? root.querySelectorAll('video') : [];
+                    for (let i = 0; i < list.length; i += 1) out.push(list[i]);
+                    if (depth < 4 && root.querySelectorAll) {
+                        const els = root.querySelectorAll('*');
+                        const cap = Math.min(els.length, 600);
+                        for (let i = 0; i < cap; i += 1) {
+                            if (els[i].shadowRoot) {
+                                const sub = collectVids(els[i].shadowRoot, depth + 1);
+                                for (let j = 0; j < sub.length; j += 1) out.push(sub[j]);
+                            }
+                        }
+                    }
+                } catch (_) {}
+                return out;
+            };
+            const vids = collectVids(document, 0);
             let bestPlaying = null, bestPlayingArea = -1, bestVisible = null, bestVisibleArea = -1, firstMedia = null;
             for (let i = 0; i < vids.length; i += 1) {
                 const cand = vids[i];
@@ -1451,16 +1519,71 @@ public enum EnhancementScript {
     """
 
     public static func seekByScript(seconds: Double) -> String {
-        """
+        let safeDelta = seconds.isFinite ? seconds : 0
+        return """
         (() => {
             \(resolveMainVideoSnippet)
             if (!v) return false;
-            const target = Math.max(0, (v.currentTime || 0) + (\(seconds)));
-            v.currentTime = Number.isFinite(v.duration) ? Math.min(v.duration, target) : target;
+            const cur = Number.isFinite(v.currentTime) ? v.currentTime : 0;
+            let next = cur + (\(safeDelta));
+            if (v.seekable && v.seekable.length > 0) {
+                const minT = v.seekable.start(0);
+                const maxT = v.seekable.end(v.seekable.length - 1);
+                if (Number.isFinite(minT) && Number.isFinite(maxT) && maxT >= minT) {
+                    const ceiling = Number.isFinite(v.duration) ? maxT : Math.max(minT, maxT - 0.25);
+                    next = Math.max(minT, Math.min(ceiling, next));
+                } else {
+                    next = Math.max(0, next);
+                }
+            } else if (Number.isFinite(v.duration) && v.duration > 0) {
+                next = Math.max(0, Math.min(v.duration, next));
+            } else {
+                next = Math.max(0, next);
+            }
+            v.currentTime = next;
+            if (typeof window.__ytmacEmitStateNow === 'function') window.__ytmacEmitStateNow();
             return true;
         })();
         """
     }
+
+    /// Jumps a live HLS/DASH/MSE stream cleanly to its live edge (`maxSeekable - 0.5s`) without tip-of-buffer stalls.
+    public static let seekToLiveEdgeScript = """
+    (() => {
+        \(resolveMainVideoSnippet)
+        if (!v || !v.seekable || v.seekable.length === 0) return false;
+        const minT = v.seekable.start(0);
+        const maxT = v.seekable.end(v.seekable.length - 1);
+        if (!Number.isFinite(maxT) || maxT <= 0) return false;
+        const safeMin = Number.isFinite(minT) ? minT : 0;
+        const target = Math.max(safeMin, maxT - 0.5);
+        v.currentTime = target;
+        if (typeof window.__ytmacEmitStateNow === 'function') window.__ytmacEmitStateNow();
+        return true;
+    })();
+    """
+
+    /// One-shot player viewport resize sync fired when toggling Multiview Solo mode (strictly skipped in HTML5 fullscreen).
+    public static let syncPlayerSizeScript = """
+    (() => {
+        if (document.fullscreenElement || document.webkitFullscreenElement) return false;
+        const syncNow = () => {
+            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+            try {
+                const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                if (p && typeof p.setSize === 'function') p.setSize();
+                if (p && typeof p.setInternalSize === 'function') p.setInternalSize();
+            } catch (_) {}
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(syncNow);
+        } else {
+            syncNow();
+        }
+        return true;
+    })();
+    """
 
     /// Deterministically seeks to an absolute timestamp in seconds (clamped to `0...duration`) and emits media state.
     public static func seekToScript(seconds: Double) -> String {
@@ -1608,6 +1731,38 @@ public enum EnhancementScript {
             return true;
         }
         return false;
+    })();
+    """
+
+    /// Triggers WebKit's native element-level AirPlay target picker when supported, returning a structured
+    /// status string (`'ok'`, `'mse_unsupported'`, `'unavailable'`, or `'no_video'`) so UI never fails silently.
+    public static let showAirPlayPickerScript = """
+    (() => {
+        \(resolveMainVideoSnippet)
+        if (!v) return 'no_video';
+        try {
+            v.setAttribute('x-webkit-airplay', 'allow');
+            if ('disableRemotePlayback' in v) v.disableRemotePlayback = false;
+        } catch (_) {}
+        const src = String(v.currentSrc || v.src || '');
+        const isMSEBlob = src.startsWith('blob:');
+        if (typeof v.webkitShowPlaybackTargetPicker === 'function') {
+            if (isMSEBlob && !v.webkitCurrentPlaybackTargetIsWireless) {
+                try {
+                    v.webkitShowPlaybackTargetPicker();
+                    return 'mse_unsupported';
+                } catch (_) {
+                    return 'mse_unsupported';
+                }
+            }
+            try {
+                v.webkitShowPlaybackTargetPicker();
+                return 'ok';
+            } catch (_) {
+                return isMSEBlob ? 'mse_unsupported' : 'unavailable';
+            }
+        }
+        return isMSEBlob ? 'mse_unsupported' : 'unavailable';
     })();
     """
 

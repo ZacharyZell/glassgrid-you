@@ -316,6 +316,13 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("w", modifiers: [.command, .shift])
             .disabled(targetSnapshot == nil || anyFullscreen)
 
+            Divider()
+
+            Button("Manage Streaming Services…") {
+                coordinator.commandTarget?.openStreamingServicesSetup(step: 1)
+            }
+            .disabled(targetSnapshot == nil || anyFullscreen)
+
             Button("Reopen Closed Tab") {
                 coordinator.commandTarget?.reopenClosedTab()
             }
@@ -519,6 +526,12 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("g", modifiers: [.command, .option])
             .disabled(!(targetSnapshot?.isMultiviewActive ?? false) || anyFullscreen)
 
+            Button((targetSnapshot?.isMultiviewSoloActive ?? false) ? "Back to Multiview Grid" : "Solo / Expand Multiview Tile") {
+                coordinator.commandTarget?.toggleMultiviewSolo()
+            }
+            .keyboardShortcut("z", modifiers: [.command, .option])
+            .disabled(!(targetSnapshot?.isMultiviewActive ?? false) || anyFullscreen)
+
             Button("Add Stream to Multiview") {
                 coordinator.commandTarget?.addTileToMultiview()
             }
@@ -559,6 +572,11 @@ struct YouTubeMacApp: App {
                 }
                 .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
             }
+
+            Button("Stream to AirPlay & TV Displays…") {
+                coordinator.commandTarget?.openAirPlayPopover()
+            }
+            .disabled(targetSnapshot == nil || anyFullscreen)
 
             Divider()
 

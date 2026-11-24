@@ -643,6 +643,8 @@ public struct MediaStatus: Equatable, Sendable {
     public var isHDR: Bool
     public var playbackRate: Double
     public var isHomeFeedEmpty: Bool
+    public var airPlayAvailable: Bool
+    public var isAirPlayActive: Bool
 
     public static let empty = MediaStatus(
         hasVideo: false,
@@ -656,7 +658,9 @@ public struct MediaStatus: Equatable, Sendable {
         isTheater: false,
         isHDR: false,
         playbackRate: 1.0,
-        isHomeFeedEmpty: false
+        isHomeFeedEmpty: false,
+        airPlayAvailable: false,
+        isAirPlayActive: false
     )
 
     public init(
@@ -671,7 +675,9 @@ public struct MediaStatus: Equatable, Sendable {
         isTheater: Bool,
         isHDR: Bool = false,
         playbackRate: Double = 1.0,
-        isHomeFeedEmpty: Bool = false
+        isHomeFeedEmpty: Bool = false,
+        airPlayAvailable: Bool = false,
+        isAirPlayActive: Bool = false
     ) {
         self.hasVideo = hasVideo
         self.isPlaying = isPlaying
@@ -685,6 +691,8 @@ public struct MediaStatus: Equatable, Sendable {
         self.isHDR = isHDR
         self.playbackRate = playbackRate.isFinite && playbackRate > 0 ? playbackRate : 1.0
         self.isHomeFeedEmpty = isHomeFeedEmpty
+        self.airPlayAvailable = airPlayAvailable
+        self.isAirPlayActive = isAirPlayActive
     }
 
     /// Compact speed badge string (e.g. `"1.5×"`), or `nil` when playing at normal `1×` speed.

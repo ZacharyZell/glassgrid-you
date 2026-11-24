@@ -11,6 +11,9 @@ struct SidebarView: View {
     @State private var hoveredPinID: UUID?
     @State private var hoveredFolderID: UUID?
     @State private var hoveredPresetID: UUID?
+    @State private var hoveredServiceID: String?
+    @State private var isServicesExpanded = true
+    @State private var servicePendingReset: StreamingService?
     @State private var isPresetsExpanded = true
     @State private var renamingPresetID: UUID?
     @State private var renamePresetDraft = ""
@@ -138,6 +141,44 @@ struct SidebarView: View {
                             sectionHeader("Library")
                             ForEach(libraryDestinations) { destination in
                                 sidebarRow(for: destination)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Button {
+                                    withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
+                                        isServicesExpanded.toggle()
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        sectionHeader("Services")
+                                        Image(systemName: isServicesExpanded ? "chevron.down" : "chevron.right")
+                                            .font(.system(size: 8.5, weight: .semibold))
+                                            .foregroundStyle(.secondary.opacity(0.75))
+                                            .padding(.bottom, 2)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer()
+
+                                Button("Manage") {
+                                    controller.openStreamingServicesSetup(step: 1)
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(AppleTheme.accent)
+                                .padding(.trailing, 8)
+                                .padding(.bottom, 2)
+                                .help("Choose Streaming Services & Sign In")
+                            }
+
+                            if isServicesExpanded {
+                                ForEach(controller.settings.enabledStreamingServices) { service in
+                                    streamingServiceRow(for: service)
+                                }
                             }
                         }
 
@@ -335,6 +376,104 @@ struct SidebarView: View {
             .padding(.leading, WindowChromeLayout.sidebarCardLeadingInset)
             .padding(.vertical, WindowChromeLayout.sidebarCardVerticalInset)
             .padding(.trailing, WindowChromeLayout.sidebarCardTrailingInset)
+            .confirmationDialog(
+                "Reset \(servicePendingReset?.name ?? "Service") Login & Site Data?",
+                isPresented: Binding(
+                    get: { servicePendingReset != nil },
+                    set: { if !$0 { servicePendingReset = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let service = servicePendingReset {
+                    Button("Reset \(service.name) Login & Data", role: .destructive) {
+                        servicePendingReset = nil
+                        controller.resetStreamingServiceData(service)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    servicePendingReset = nil
+                }
+            } message: {
+                if let service = servicePendingReset {
+                    if let ssoNote = StreamingServiceCatalog.sharedSSOWarning(for: service) {
+                        Text("Clears cookies and site storage for \(service.name) only. \(ssoNote)")
+                    } else {
+                        Text("Clears cookies and site storage for \(service.name) only without signing out of your other services.")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func streamingServiceRow(for service: StreamingService) -> some View {
+        let isHovered = hoveredServiceID == service.id
+        let isActive = StreamingServiceCatalog.service(matchingURL: controller.selectedTab?.url)?.id == service.id
+        let isSignedIn = controller.settings.isServiceSignedIn(service.id)
+
+        Button {
+            controller.openStreamingService(service, inNewTab: false)
+        } label: {
+            HStack(spacing: 9) {
+                StreamingServiceBadge(service: service, size: 19)
+
+                Text(service.name)
+                    .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.86))
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                if isSignedIn {
+                    Circle()
+                        .fill(Color.green.opacity(0.85))
+                        .frame(width: 5.5, height: 5.5)
+                        .help("Signed In")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5.5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        isActive
+                            ? Color.primary.opacity(isResolvedDark ? 0.14 : 0.09)
+                            : (isHovered ? Color.primary.opacity(isResolvedDark ? 0.08 : 0.05) : .clear)
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredServiceID = hovering ? service.id : (hoveredServiceID == service.id ? nil : hoveredServiceID)
+        }
+        .contextMenu {
+            Button("Add to Multiview") {
+                controller.addStreamingServiceToMultiview(service)
+            }
+            .disabled(controller.anyTabInFullscreen || (controller.isMultiviewActive && !controller.canAddMultiviewTile))
+
+            Button("Open in New Tab") {
+                controller.openStreamingService(service, inNewTab: true)
+            }
+
+            Button("Open in New Window") {
+                controller.coordinator?.openURLInNewWindow(service.homeURL, routingMode: service.routingMode)
+            }
+
+            Button("Open in Safari") {
+                controller.openURLInSafari(service.homeURL)
+            }
+
+            Divider()
+
+            Button("Sign In…") {
+                controller.openStreamingServicesSetup(step: 2, focusServiceID: service.id)
+            }
+
+            Button("Reset Login & Site Data…", role: .destructive) {
+                servicePendingReset = service
+            }
         }
     }
 

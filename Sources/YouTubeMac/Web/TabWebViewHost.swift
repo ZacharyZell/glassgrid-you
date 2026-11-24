@@ -152,6 +152,7 @@ final class FlippedTabHostContainerView: NSView {
     var poppedOutTabID: UUID?
     var anyTabInFullscreen: Bool = false
     var multiviewTabIDs: [UUID] = []
+    var soloMultiviewTabID: UUID?
     var multiviewLayoutMode: MultiviewLayoutMode = .auto
     var multiviewSplitRatios: MultiviewSplitRatios = .default
 
@@ -274,11 +275,22 @@ final class FlippedTabHostContainerView: NSView {
         let dockedIDSet = Set(dockedTabs.map(\.id))
         let visibleMultiviewIDs = multiviewTabIDs.filter { dockedIDSet.contains($0) }
         let isMultiview = visibleMultiviewIDs.count >= 2
+        let activeSoloID: UUID? = (isMultiview && soloMultiviewTabID.map { visibleMultiviewIDs.contains($0) } == true)
+            ? soloMultiviewTabID
+            : nil
 
         var tileFrameByTabID: [UUID: CGRect] = [:]
         var activeDividers: [MultiviewDividerDescriptor] = []
 
-        if isMultiview {
+        if let activeSoloID {
+            // Zero-latency Solo mode: fill 100% of container bounds with soloed tile while keeping
+            // the other 1–3 Multiview WKWebViews permanently mounted (`isHidden = true`, 0 teardown).
+            tileFrameByTabID[activeSoloID] = bounds
+            activeTileRects = [(activeSoloID, bounds)]
+            activeDividers = []
+            cancelActiveDividerDrags()
+            setHoveredDividerID(nil)
+        } else if isMultiview {
             let frames = MultiviewGridLayout.frames(
                 forCount: visibleMultiviewIDs.count,
                 in: bounds.size,
@@ -353,8 +365,8 @@ final class FlippedTabHostContainerView: NSView {
                 webView.frame = targetFrame
             }
 
-            // Clip video edges cleanly to the 12pt rounded Multiview card radius (only outside fullscreen).
-            let desiredRadius: CGFloat = (isMultiview && tileRect != nil) ? 12 : 0
+            // Clip video edges cleanly to the 12pt rounded Multiview card radius (0 in Solo or single-tab).
+            let desiredRadius: CGFloat = (isMultiview && activeSoloID == nil && tileRect != nil) ? 12 : 0
             let desiredMasks = desiredRadius > 0
             if !webView.wantsLayer {
                 webView.wantsLayer = true
@@ -534,6 +546,7 @@ struct TabWebViewHost: NSViewRepresentable {
     let poppedOutTabID: UUID?
     let anyTabInFullscreen: Bool
     let multiviewTabIDs: [UUID]
+    let soloMultiviewTabID: UUID?
     let multiviewLayoutMode: MultiviewLayoutMode
     let multiviewSplitRatios: MultiviewSplitRatios
     let onHoveredTileChanged: (UUID?) -> Void
@@ -554,6 +567,7 @@ struct TabWebViewHost: NSViewRepresentable {
         container.poppedOutTabID = poppedOutTabID
         container.anyTabInFullscreen = anyTabInFullscreen
         container.multiviewTabIDs = multiviewTabIDs
+        container.soloMultiviewTabID = soloMultiviewTabID
         container.multiviewLayoutMode = multiviewLayoutMode
         // Never overwrite live 120Hz AppKit ratios from stale SwiftUI props while dragging a divider.
         if !container.isDraggingDivider {

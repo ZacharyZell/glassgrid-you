@@ -35,22 +35,29 @@ Browser tabs bury YouTube behind cluttered web chrome, drain battery with ambien
 
 ## Highlights & Screenshots
 
-### Native Multiview Mode (2-Up, 3-Up & 2×2 Quad-Box + Companion Web Tiles)
-Watch up to **4 simultaneous YouTube, YouTube TV, and Companion Web streams** (Twitch, ESPN Scores, NFL.com, Peacock, Paramount+, Prime Video, or any HTTPS URL) in **Grid**, **Spotlight**, or **Stacked** layouts with **120Hz draggable custom tile dividers** (double-click to reset), single-stream crimson audio focus, optional 15% background audio ducking, per-tile reorder controls, a configurable Multiview quality ceiling (Auto / 1080p / 720p), and one-click **Saved Multiview Presets** that remember custom split ratios.
+### Native Multiview Mode (2-Up, 3-Up & 2×2 Quad-Box + Solo Tile + Live Sync)
+Watch up to **4 simultaneous YouTube, YouTube TV, Twitch, live sports, and Companion Web streams** in **Grid**, **Spotlight**, or **Stacked** layouts with **120Hz draggable custom tile dividers** (double-click to reset), **Zero-Latency Multiview Solo (`⌘⌥Z` / `Esc`)** that keeps all other tiles live in the background and snaps back instantaneously with your split ratios intact, **Live Stream Sync micro-nudge** (`−5s`, `−1s`, `+1s`, `Jump to Live`) per tile, single-stream crimson audio focus, optional 15% background audio ducking, a configurable Multiview quality ceiling (Auto / 1080p / 720p), and one-click **Saved Multiview Presets**.
 
 <p align="center">
   <img src="docs/screenshots/multiview-quad-night.png" alt="GlassGrid You 2x2 Quad-Box Multiview playing four 4K streams simultaneously" width="100%" />
 </p>
 
+### 17-Service Streaming Hub, Sign-In Flow & Native macOS AirPlay
+Select from **17 built-in streaming services** across *Video & Live TV*, *Movies & Shows*, and *Live Sports* during the guided Liquid Glass onboarding intro (or anytime from the Sidebar **Services** section, **Add Screen** Multiview picker, or `⌘K`). Sign in cleanly with stock WebKit + native OAuth popup support, reset individual service cookies/site data with clear shared-SSO notices, and rely on honest **Safari DRM** badges with 1-click **Open in Safari** fallback for strict Safari-only SVODs. Cast supported HTML5/HLS videos with **Native AirPlay Video**, monitor live CoreAudio AirPlay audio output, or send your entire Multiview window to an AirPlay TV or external monitor in one click.
+
+<p align="center">
+  <img src="docs/screenshots/services-onboarding-night.png" alt="GlassGrid You Streaming Service Onboarding sheet showing 17 curated services in Night Mode Liquid Glass" width="100%" />
+</p>
+
 ### Spotlight Command Palette (`⌘K`) & Day/Night Liquid Glass
-Jump straight to open tabs, Continue Watching history, pinned channels, saved Multiview presets, app actions, or live cookieless YouTube search suggestions — rendered in native macOS 26/27 **Liquid Glass** with clean `.regularMaterial` fallback on macOS 14–15.
+Jump straight to open tabs, enabled Streaming Services, Add-to-Multiview actions, Continue Watching history, pinned channels, saved Multiview presets, app actions, or live cookieless YouTube search suggestions — rendered in native macOS 26/27 **Liquid Glass** with clean `.regularMaterial` fallback on macOS 14–15.
 
 <p align="center">
   <img src="docs/screenshots/command-palette-day.png" alt="GlassGrid You Command Palette (⌘K) in Day Mode Liquid Glass" width="100%" />
 </p>
 
-### Smart Floating Mini-Player (`⌘⇧M`)
-Borderless, always-on-top floating 16:9 Mini-Player with magnetic corner snapping, **Compact / Standard / Large** size presets, an ultra-thin `2pt` progress hairline, `Esc` quick dock, optional cross-Spaces visibility, and **Split Screen–aware** auto pop-out (stays docked while you work side-by-side in Split View, pops out only when another app covers the window).
+### Smart Floating Mini-Player (`⌘⇧M`) with Opacity & Universal Companion Support
+Borderless, always-on-top floating 16:9 Mini-Player — now supporting YouTube, YouTube TV, Twitch, ESPN, Peacock, and open Shadow DOM HTML5 players — with magnetic corner snapping, **40%–100% transparency slider**, **0.5×–2.0× speed controls**, **AirPlay casting**, **Compact / Standard / Large** size presets, an ultra-thin `2pt` progress hairline, `Esc` quick dock, optional cross-Spaces visibility, and **Split Screen–aware** auto pop-out.
 
 <p align="center">
   <img src="docs/screenshots/mini-player-night.png" alt="GlassGrid You floating 16:9 Mini-Player with progress hairline" width="70%" />
@@ -134,6 +141,7 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 | :--- | :--- |
 | `⌘⇧G` | Enter / Exit Multiview |
 | `⌘⌥G` | Cycle Layout (Grid / Spotlight / Stacked) |
+| `⌘⌥Z` | Solo / Expand Focused Multiview Tile (`Esc` to return to Grid) |
 | `⌘⌥1` – `⌘⌥4` | Focus Audio on Stream 1–4 |
 | `⌘⌥→` / `⌘⌥←` | Next / Previous Stream Audio |
 
@@ -157,7 +165,7 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 
 GlassGrid You's source code is **100% open-source under the MIT License** — with zero telemetry, zero subscriptions, and zero paywalls.
 
-- **Signed & Apple-Notarized `.dmg` ($12 One-Time):** [Download GlassGrid You for macOS on Polar](https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb) — instant Gatekeeper-trusted macOS installer (`v1.1.1`, macOS 14.0+) with no Xcode or build steps required, directly supporting ongoing macOS & WebKit maintenance.
+- **Signed & Apple-Notarized `.dmg` ($12 One-Time):** [Download GlassGrid You for macOS on Polar](https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb) — instant Gatekeeper-trusted macOS installer (`v1.2.0`, macOS 14.0+) with no Xcode or build steps required, directly supporting ongoing macOS & WebKit maintenance.
 - **Build Free from Source (MIT):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below).
 - **Support Development:** You can also support ongoing development via [GitHub Sponsors](https://github.com/sponsors/ZacharyZell). Maintainers packaging signed & notarized releases can run `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
 
@@ -186,9 +194,9 @@ This installs **`/Applications/GlassGrid You.app`** (bundle identifier `com.glas
 
 GlassGrid You is organized into two Swift Package Manager targets plus a unit test suite:
 
-- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`).
-- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`).
-- **`Tests/YouTubeMacCoreTests`**: Unit tests covering routing, URL parsing, enhancement script generation, multiview layouts, SponsorBlock prefix hashing, command palette ranking, chapter parsing, and session persistence.
+- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `StreamingServices`, `WindowDisplayRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `WindowChromeLayout`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`).
+- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `OnboardingView`, `OnboardingSignInWebView`, `AirPlayPopoverView`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`).
+- **`Tests/YouTubeMacCoreTests`**: 51 unit tests covering routing, streaming service domain isolation, AirPlay display routing, enhancement script generation, multiview layouts & Solo reducer, SponsorBlock prefix hashing, command palette ranking, chapter parsing, window chrome geometry, and session persistence.
 
 Key engineering invariants enforced in code and CI (see [`AGENTS.md`](AGENTS.md)):
 1. **Zero CSS `:has(` selectors** and **zero `MutationObserver` loops** in injected page scripts to preserve smooth 4K 60fps HDR10 compositing.

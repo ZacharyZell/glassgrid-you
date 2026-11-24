@@ -6,8 +6,7 @@ struct MultiviewControlBar: View {
     @Bindable var controller: AppController
     @State private var isSavePresetPopoverPresented = false
     @State private var newPresetName = ""
-    @State private var isCompanionPopoverPresented = false
-    @State private var companionURLDraft = ""
+    @State private var isAddScreenPopoverPresented = false
 
     private var availableTabsToAdd: [BrowserTab] {
         controller.tabs.filter { !controller.multiviewTabIDs.contains($0.id) }
@@ -21,18 +20,38 @@ struct MultiviewControlBar: View {
     var body: some View {
         LiquidGlassGroup(spacing: 8) {
             HStack(spacing: 10) {
-                // Active Multiview indicator + count
-                HStack(spacing: 6) {
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AppleTheme.accent)
-                    Text(streamCountLabel)
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.primary)
+                // Active Multiview indicator + count (or Back to Grid pill when Soloed)
+                if controller.isMultiviewSoloActive {
+                    Button {
+                        controller.exitMultiviewSolo()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.grid.2x2.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Back to Grid")
+                                .font(.system(size: 11.5, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 11)
+                        .frame(height: 26)
+                        .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Return to Multiview Grid (Esc / ⌘⌥Z)")
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppleTheme.accent)
+                        Text(streamCountLabel)
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accent.opacity(0.14))
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accent.opacity(0.14))
 
                 // Layout mode segmented capsule (Grid / Spotlight / Stacked)
                 HStack(spacing: 2) {
@@ -220,144 +239,30 @@ struct MultiviewControlBar: View {
     @ViewBuilder
     private var addStreamMenu: some View {
         let canAdd = controller.canAddMultiviewTile
-        Menu {
-            Button {
-                controller.addTileToMultiview(url: SidebarDestination.home.url)
-            } label: {
-                Label("New YouTube Stream", systemImage: "play.rectangle")
-            }
-
-            Button {
-                controller.openYouTubeTVInMultiview()
-            } label: {
-                Label("Open YouTube TV Live Guide", systemImage: "tv")
-            }
-
-            Button {
-                companionURLDraft = ""
-                isCompanionPopoverPresented = true
-            } label: {
-                Label("Add Companion / Web Tile…", systemImage: "globe")
-            }
-
-            Button {
-                controller.addClipboardURLToMultiview()
-            } label: {
-                Label("Open Copied Link", systemImage: "link.badge.plus")
-            }
-
-            if !availableTabsToAdd.isEmpty {
-                Divider()
-                Section("Add Open Tab") {
-                    ForEach(availableTabsToAdd) { tab in
-                        Button {
-                            controller.addExistingTabToMultiview(id: tab.id)
-                        } label: {
-                            Text(tab.displayTitle)
-                        }
-                    }
-                }
-            }
+        Button {
+            isAddScreenPopoverPresented.toggle()
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "plus")
                     .font(.system(size: 10.5, weight: .bold))
-                Text(canAdd ? "Add Stream" : "4 / 4")
+                Text(canAdd ? "Add Screen" : "4 / 4")
                     .font(.system(size: 11, weight: .semibold))
             }
             .foregroundStyle(canAdd ? Color.primary : Color.secondary)
             .padding(.horizontal, 10)
             .frame(height: 26)
+            .appleGlass(in: Capsule(style: .continuous), interactive: canAdd)
+            .contentShape(Capsule(style: .continuous))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .tint(canAdd ? .primary : .secondary)
-        .frame(height: 26)
-        .appleGlass(in: Capsule(style: .continuous), interactive: canAdd)
+        .buttonStyle(.plain)
         .disabled(!canAdd)
-        .help(canAdd ? "Add a YouTube, YouTube TV, or Companion Web stream (up to 4)" : "Maximum 4 streams active")
-        .popover(isPresented: $isCompanionPopoverPresented, arrowEdge: .bottom) {
-            companionTilePopover
-        }
-    }
-
-    @ViewBuilder
-    private var companionTilePopover: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "globe")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
-                Text("Add Companion / Web Tile")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-
-            LiquidGlassGroup(spacing: 6) {
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)],
-                    spacing: 6
-                ) {
-                    ForEach(CompanionQuickSite.catalog) { site in
-                        Button {
-                            controller.openCompanionTile(url: site.url)
-                            isCompanionPopoverPresented = false
-                        } label: {
-                            HStack(spacing: 7) {
-                                Image(systemName: site.systemImage)
-                                    .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(AppleTheme.accent)
-                                    .frame(width: 16)
-                                VStack(alignment: .leading, spacing: 0.5) {
-                                    Text(site.name)
-                                        .font(.system(size: 11.5, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
-                                    Text(site.subtitle)
-                                        .font(.system(size: 9.5))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .appleGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), interactive: true)
-                            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Or open any website")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 6) {
-                    TextField("Enter website or URL (e.g. espn.com)…", text: $companionURLDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            submitCompanionURL()
-                        }
-
-                    Button("Add Tile") {
-                        submitCompanionURL()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(companionURLDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
-        .padding(14)
-        .frame(width: 310)
-    }
-
-    private func submitCompanionURL() {
-        if controller.openCompanionTile(rawInput: companionURLDraft) {
-            companionURLDraft = ""
-            isCompanionPopoverPresented = false
+        .help(canAdd ? "Add a Streaming Service, Open Tab, or Custom URL (up to 4)" : "Maximum 4 streams active")
+        .popover(isPresented: $isAddScreenPopoverPresented, arrowEdge: .bottom) {
+            AddScreenServicePickerPopover(
+                controller: controller,
+                targetIsMultiview: true,
+                onDismiss: { isAddScreenPopoverPresented = false }
+            )
         }
     }
 }
@@ -386,58 +291,72 @@ struct MultiviewOverlayView: View {
             )
 
             ZStack(alignment: .topLeading) {
-                ForEach(Array(tiles.enumerated()), id: \.element.id) { index, tab in
-                    if index < frames.count {
-                        let rect = frames[index]
-                        let isAudio = (controller.multiviewAudioTab?.id == tab.id)
-                        let isFocused = (controller.selectedTabID == tab.id)
-                        let isHovered = controller.activeMultiviewDividerDragID == nil
-                            && ((controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id))
+                if let soloTab = controller.soloMultiviewTab,
+                   let soloIdx = tiles.firstIndex(where: { $0.id == soloTab.id }) {
+                    let isHovered = (controller.hoveredMultiviewTileID == soloTab.id) || (hoveredActionPillTileID == soloTab.id)
+                    tileTopCornerControls(
+                        tab: soloTab,
+                        index: soloIdx,
+                        totalCount: tiles.count,
+                        isAudio: true,
+                        showActions: isHovered,
+                        tileWidth: proxy.size.width
+                    )
+                    .frame(width: proxy.size.width, height: 36, alignment: .top)
+                } else {
+                    ForEach(Array(tiles.enumerated()), id: \.element.id) { index, tab in
+                        if index < frames.count {
+                            let rect = frames[index]
+                            let isAudio = (controller.multiviewAudioTab?.id == tab.id)
+                            let isFocused = (controller.selectedTabID == tab.id)
+                            let isHovered = controller.activeMultiviewDividerDragID == nil
+                                && ((controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id))
 
-                        // 0. Per-tile load failure / WebContent crash recovery card (strictly scoped to this tile's rect)
-                        if let tileError = tab.loadError {
-                            TabErrorOverlayView(
-                                error: tileError,
-                                isCompactTile: true,
-                                onRetry: { tab.reloadOrStop() }
+                            // 0. Per-tile load failure / WebContent crash recovery card (strictly scoped to this tile's rect)
+                            if let tileError = tab.loadError {
+                                TabErrorOverlayView(
+                                    error: tileError,
+                                    isCompactTile: true,
+                                    onRetry: { tab.reloadOrStop() }
+                                )
+                                .frame(width: rect.width, height: rect.height)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .position(x: rect.midX, y: rect.midY)
+                            }
+
+                            // 1. Non-interactive rounded border (100% pass-through to WKWebView)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(
+                                    borderColor(isAudio: isAudio, isFocused: isFocused),
+                                    lineWidth: isAudio ? 2.0 : 1.0
+                                )
+                                .frame(width: rect.width, height: rect.height)
+                                .position(x: rect.midX, y: rect.midY)
+                                .allowsHitTesting(false)
+
+                            // 2. Compact top-36pt corner controls (only the two corner pills accept hits;
+                            // empty space between them and everything below y+36 passes straight to WKWebView).
+                            tileTopCornerControls(
+                                tab: tab,
+                                index: index,
+                                totalCount: tiles.count,
+                                isAudio: isAudio,
+                                showActions: isHovered,
+                                tileWidth: rect.width
                             )
-                            .frame(width: rect.width, height: rect.height)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .position(x: rect.midX, y: rect.midY)
+                            .frame(width: rect.width, height: 36, alignment: .top)
+                            .offset(x: rect.minX, y: rect.minY)
                         }
-
-                        // 1. Non-interactive rounded border (100% pass-through to WKWebView)
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(
-                                borderColor(isAudio: isAudio, isFocused: isFocused),
-                                lineWidth: isAudio ? 2.0 : 1.0
-                            )
-                            .frame(width: rect.width, height: rect.height)
-                            .position(x: rect.midX, y: rect.midY)
-                            .allowsHitTesting(false)
-
-                        // 2. Compact top-36pt corner controls (only the two corner pills accept hits;
-                        // empty space between them and everything below y+36 passes straight to WKWebView).
-                        tileTopCornerControls(
-                            tab: tab,
-                            index: index,
-                            totalCount: tiles.count,
-                            isAudio: isAudio,
-                            showActions: isHovered,
-                            tileWidth: rect.width
-                        )
-                        .frame(width: rect.width, height: 36, alignment: .top)
-                        .offset(x: rect.minX, y: rect.minY)
                     }
-                }
 
-                // 3. Purely visual Liquid Glass divider pills & live drag ratio capsules (100% non-hit-tested;
-                // AppKit MultiviewDividerNSView handles 120Hz cursor & drag hit-testing underneath).
-                ForEach(dividers) { divider in
-                    let isDragging = controller.activeMultiviewDividerDragID == divider.id
-                    let isHovering = controller.hoveredMultiviewDividerID == divider.id
-                    if isDragging || isHovering {
-                        dividerVisual(for: divider, isDragging: isDragging)
+                    // 3. Purely visual Liquid Glass divider pills & live drag ratio capsules (100% non-hit-tested;
+                    // AppKit MultiviewDividerNSView handles 120Hz cursor & drag hit-testing underneath).
+                    ForEach(dividers) { divider in
+                        let isDragging = controller.activeMultiviewDividerDragID == divider.id
+                        let isHovering = controller.hoveredMultiviewDividerID == divider.id
+                        if isDragging || isHovering {
+                            dividerVisual(for: divider, isDragging: isDragging)
+                        }
                     }
                 }
             }
@@ -602,39 +521,52 @@ struct MultiviewOverlayView: View {
     private func tileActionPill(tab: BrowserTab, index: Int, totalCount: Int) -> some View {
         let isYTTV = YouTubeURLRouter.isYouTubeTVHost(tab.url.host)
         let isCompanion = tab.isCompanionTab
+        let isSoloed = (controller.soloMultiviewTabID == tab.id)
 
+        // Strictly <= 5 compact icons in top-36pt pill (never encroaches on bottom 64pt video scrubber).
         HStack(spacing: 2) {
-            if index > 0 {
-                tileIconButton(
-                    systemImage: "chevron.left",
-                    helpText: "Move Tile Left"
-                ) {
-                    controller.moveMultiviewTile(id: tab.id, by: -1)
-                }
+            // 1. Zero-Latency Solo / Back to Grid
+            tileIconButton(
+                systemImage: isSoloed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                helpText: isSoloed ? "Back to Multiview Grid (Esc / ⌘⌥Z)" : "Solo / Expand Tile (⌘⌥Z)"
+            ) {
+                controller.toggleMultiviewSolo(tabID: tab.id)
             }
 
-            if index < totalCount - 1 {
-                tileIconButton(
-                    systemImage: "chevron.right",
-                    helpText: "Move Tile Right"
-                ) {
-                    controller.moveMultiviewTile(id: tab.id, by: 1)
+            // 2. Live Stream Sync Micro-Nudge (-5s, -1s, +1s, Jump to Live)
+            if tab.mediaStatus.hasVideo {
+                Menu {
+                    Button("Nudge Back −5s") {
+                        controller.nudgeMultiviewTile(id: tab.id, seconds: -5)
+                    }
+                    Button("Nudge Back −1s") {
+                        controller.nudgeMultiviewTile(id: tab.id, seconds: -1)
+                    }
+                    Button("Nudge Forward +1s") {
+                        controller.nudgeMultiviewTile(id: tab.id, seconds: 1)
+                    }
+                    Divider()
+                    Button("Jump to Live Edge") {
+                        controller.jumpMultiviewTileToLive(id: tab.id)
+                    }
+                } label: {
+                    Image(systemName: "clock.arrow.2.circlepath")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Circle())
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Live Stream Sync Micro-Nudge")
             }
 
-            if index > 0 {
-                tileIconButton(
-                    systemImage: "arrow.up.left.and.arrow.down.right",
-                    helpText: "Promote to Main Tile"
-                ) {
-                    controller.promoteMultiviewTileToPrimary(id: tab.id)
-                }
-            }
-
+            // 3. Reload / Browse
             if isCompanion {
                 tileIconButton(
                     systemImage: "arrow.clockwise",
-                    helpText: "Reload Companion Site"
+                    helpText: "Reload Stream"
                 ) {
                     tab.reloadOrStop()
                 }
@@ -647,13 +579,47 @@ struct MultiviewOverlayView: View {
                 }
             }
 
-            tileIconButton(
-                systemImage: "macwindow",
-                helpText: "Expand to Single View"
-            ) {
-                controller.exitMultiview(focusTabID: tab.id)
+            // 4. Overflow Tile Actions (Reorder, Promote, Open in Safari, Exit to Single View)
+            Menu {
+                if !isSoloed {
+                    if index > 0 {
+                        Button("Promote to Main Tile") {
+                            controller.promoteMultiviewTileToPrimary(id: tab.id)
+                        }
+                        Button("Move Tile Left") {
+                            controller.moveMultiviewTile(id: tab.id, by: -1)
+                        }
+                    }
+                    if index < totalCount - 1 {
+                        Button("Move Tile Right") {
+                            controller.moveMultiviewTile(id: tab.id, by: 1)
+                        }
+                    }
+                    Divider()
+                }
+                Button("Expand to Single View") {
+                    controller.exitMultiview(focusTabID: tab.id)
+                }
+                Button("Open in Safari") {
+                    controller.openURLInSafari(tab.url)
+                }
+                Divider()
+                Button("Remove from Multiview", role: .destructive) {
+                    controller.removeTileFromMultiview(id: tab.id)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .frame(width: 20, height: 20)
+                    .contentShape(Circle())
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Tile Options")
 
+            // 5. Remove Tile
             tileIconButton(
                 systemImage: "xmark",
                 helpText: "Remove from Multiview"

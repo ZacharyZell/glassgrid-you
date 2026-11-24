@@ -5,6 +5,7 @@ import YouTubeMacCore
 struct SettingsView: View {
     @Bindable var coordinator: AppCoordinator
     @State private var showClearDataConfirm = false
+    @State private var servicePendingReset: StreamingService?
     @State private var statusMessage: String?
     @State private var statusClearTask: Task<Void, Never>?
 
@@ -44,6 +45,35 @@ struct SettingsView: View {
         } message: {
             Text("This removes YouTube and Google cookies and signs you out of your account in this app.")
         }
+        .confirmationDialog(
+            "Reset \(servicePendingReset?.name ?? "Service") Login & Site Data?",
+            isPresented: Binding(
+                get: { servicePendingReset != nil },
+                set: { if !$0 { servicePendingReset = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let service = servicePendingReset {
+                Button("Reset \(service.name) Login & Data", role: .destructive) {
+                    servicePendingReset = nil
+                    Task {
+                        await coordinator.resetServiceData(for: service)
+                        showTransientStatus("Reset login & site data for \(service.name).")
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                servicePendingReset = nil
+            }
+        } message: {
+            if let service = servicePendingReset {
+                if let ssoNote = StreamingServiceCatalog.sharedSSOWarning(for: service) {
+                    Text("Clears cookies and site storage for \(service.name) only. \(ssoNote)")
+                } else {
+                    Text("Clears cookies and site storage for \(service.name) only without signing out of your other services.")
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -65,6 +95,22 @@ struct SettingsView: View {
                     ForEach(AppAppearance.allCases) { appearance in
                         Text(appearance.title).tag(appearance)
                     }
+                }
+            }
+
+            Section("Streaming Services") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Streaming Services & Sign-In Hub")
+                        Text("\(coordinator.settings.enabledStreamingServices.count) enabled · Appears in Sidebar & \"Add Screen\" picker.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Manage Services…") {
+                        coordinator.commandTarget?.openStreamingServicesSetup(step: 1)
+                    }
+                    .disabled(coordinator.commandTarget == nil)
                 }
             }
 
@@ -216,6 +262,29 @@ struct SettingsView: View {
             }
 
             Section("Storage") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Streaming Service Sign-In Hub")
+                        Text("Sign in or reset cookies for an individual service without affecting others.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Sign-In Hub…") {
+                        coordinator.commandTarget?.openStreamingServicesSetup(step: 2)
+                    }
+                    .disabled(coordinator.commandTarget == nil)
+
+                    Menu("Reset Login…") {
+                        ForEach(coordinator.settings.enabledStreamingServices) { service in
+                            Button("Reset \(service.name)…") {
+                                servicePendingReset = service
+                            }
+                        }
+                    }
+                    .fixedSize()
+                }
+
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clear Local History & Presets")

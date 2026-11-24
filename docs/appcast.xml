@@ -6,6 +6,28 @@
     <description>Most recent releases of GlassGrid You for macOS.</description>
     <language>en</language>
     <item>
+      <title>Version 1.2.0</title>
+      <pubDate>Tue, 24 Nov 2026 07:58:09 +0000</pubDate>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.2.0</h2>
+        <ul>
+          <li><strong>Streaming Service Onboarding &amp; Sign-In Hub:</strong> Pick from 17 major services on first launch and sign in directly with full OAuth popup support and clear Safari DRM badges where studios restrict third-party WebViews.</li>
+          <li><strong>1-Click &ldquo;Add Screen&rdquo; Service Picker:</strong> Add any selected service, open tab, or custom URL straight into your 1&ndash;4 stream Multiview grid, Sidebar Services section, or Command Palette (&#8984;K).</li>
+          <li><strong>Pro Multiview Controls:</strong> Zero-latency Solo/Expand tile (&#8984;&#8997;Z / Esc) without reloading background streams, plus Live Stream Sync micro-nudge (-5s, -1s, +1s, +5s, and Jump to Live).</li>
+          <li><strong>Floating Mini-Player Opacity &amp; Shadow DOM Controls:</strong> Adjustable 40%&ndash;100% glass opacity slider, universal companion pop-out, and Shadow DOM playback/speed support across Peacock, Disney+, Max, and Apple TV+.</li>
+          <li><strong>Native macOS AirPlay Suite &amp; Per-Service Login Reset:</strong> Stream video via AirPlay, route audio output, move your window or 4-stream wall to any External or AirPlay Display, and reset logins cleanly per service.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://glassgridyou.com/updates/GlassGrid-You-1.2.0.dmg"
+        sparkle:edSignature="CANUVb1tDX70WXbpR32EhjsSVxUQRNJJXYDdg1Tm/7aZOCKAub2rYLnk9amZMJ2Ye8UokLc4nrlq9UeHNZqqCg=="
+        length="5029235"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.1.1</title>
       <pubDate>Tue, 24 Nov 2026 05:40:17 +0000</pubDate>
       <sparkle:version>4</sparkle:version>

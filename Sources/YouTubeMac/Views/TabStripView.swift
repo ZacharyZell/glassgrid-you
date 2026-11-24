@@ -77,10 +77,23 @@ struct TabStripView: View {
                 }
             }
 
-            AppleIconButton(systemImage: "plus", helpText: "New Tab (⌘T)") {
+            AppleIconButton(systemImage: "plus", helpText: "New Tab (⌘T) — Right-Click for Streaming Services") {
                 controller.createTab()
             }
             .appleGlass(in: Circle(), interactive: true)
+            .contextMenu {
+                ForEach(controller.settings.enabledStreamingServices) { service in
+                    Button {
+                        controller.openStreamingService(service, inNewTab: true)
+                    } label: {
+                        Label("Open \(service.name)", systemImage: service.symbolName)
+                    }
+                }
+                Divider()
+                Button("Manage Streaming Services…") {
+                    controller.openStreamingServicesSetup(step: 1)
+                }
+            }
             .padding(.trailing, 10)
         }
         .frame(height: 36)
