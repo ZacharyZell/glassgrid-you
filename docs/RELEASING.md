@@ -81,7 +81,7 @@ What `release-dmg.sh` does automatically:
 3. Verifies strict signature integrity (`codesign --verify --deep --strict --verbose=2`) and Hardened Runtime flags.
 4. Packages a drag-to-Applications compressed `UDZO` disk image at `build/release/GlassGrid-You-<version>.dmg`.
 5. Signs the `.dmg` container itself, submits to Apple Notarization (`xcrun notarytool submit --wait`), staples the ticket (`xcrun stapler staple`), and verifies Gatekeeper acceptance (`spctl --assess`).
-6. Writes and verifies a portable `GlassGrid-You-<version>.dmg.sha256` checksum (and if `sign_update` is installed, emits `build/release/appcast-item-<version>.xml` ready to paste into `appcast.xml`).
+6. Writes and verifies a portable `GlassGrid-You-<version>.dmg.sha256` checksum (and if `sign_update` is installed, emits `build/release/appcast-item-<version>.xml` ready to paste into `docs/appcast.xml`).
 
 ### Local Dry-Run (No Developer ID Certificate Needed)
 
@@ -105,5 +105,5 @@ To verify inside-out Hardened Runtime signing, `Sparkle.framework` embedding, `.
      --title "GlassGrid You v1.1.0" \
      --generate-notes
    ```
-2. If using Sparkle 2 silent auto-updates, paste `build/release/appcast-item-1.1.0.xml` into `appcast.xml` at the root of `main` and push.
+2. If using Sparkle 2 silent auto-updates, paste `build/release/appcast-item-1.1.0.xml` into `docs/appcast.xml` (served via GitHub Pages at `https://glassgridyou.com/appcast.xml`) on `main` and push.
 3. Optionally mirror the signed & notarized `.dmg` on **Lemon Squeezy** or **Gumroad** for supporters who prefer a direct download store.

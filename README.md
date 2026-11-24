@@ -2,6 +2,8 @@
 
 **A native, distraction-free macOS client for YouTube & YouTube TV — built with Swift 6, SwiftUI, AppKit, and WebKit.**
 
+🌐 **Official Website:** **[glassgridyou.com](https://glassgridyou.com)**
+
 [![CI](https://github.com/ZacharyZell/glassgrid-you/actions/workflows/ci.yml/badge.svg)](https://github.com/ZacharyZell/glassgrid-you/actions/workflows/ci.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14.0%2B%20(Liquid%20Glass%20on%20macOS%2026%2B)-000000?logo=apple)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0%20Strict%20Concurrency-F05138?logo=swift&logoColor=white)

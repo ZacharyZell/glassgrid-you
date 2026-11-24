@@ -13,7 +13,7 @@ AD_HOC="0"
 SKIP_NOTARIZE="0"
 OUTPUT_DIR="$ROOT_DIR/build/release"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
-SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://raw.githubusercontent.com/ZacharyZell/glassgrid-you/main/appcast.xml}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://glassgridyou.com/appcast.xml}"
 
 usage() {
     cat <<'EOF'
@@ -27,7 +27,7 @@ Options:
   --identity <name>              Codesigning identity (auto-detects "Developer ID Application" if omitted)
   --notary-profile <name>        notarytool Keychain profile name (default: GlassGridYouNotary)
   --sparkle-public-key <base64>  Optional Sparkle Ed25519 public key (SUPublicEDKey) for signed auto-updates
-  --feed-url <https-url>         Optional Sparkle appcast SUFeedURL (default: GitHub main appcast.xml)
+  --feed-url <https-url>         Optional Sparkle appcast SUFeedURL (default: https://glassgridyou.com/appcast.xml)
   --ad-hoc                       Use ad-hoc signing (implies --skip-notarize; for local dry-run testing)
   --skip-notarize                Skip notarytool submission, stapling, and Gatekeeper spctl checks
   --output-dir <path>            Output directory for .dmg and .sha256 (default: build/release)

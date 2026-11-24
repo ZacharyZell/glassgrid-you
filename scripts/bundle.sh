@@ -12,7 +12,7 @@ APP_BUILD="${APP_BUILD:-2}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 ENABLE_HARDENED_RUNTIME="${ENABLE_HARDENED_RUNTIME:-0}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
-SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://raw.githubusercontent.com/ZacharyZell/glassgrid-you/main/appcast.xml}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://glassgridyou.com/appcast.xml}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 BUILD_DIR="$ROOT_DIR/build"

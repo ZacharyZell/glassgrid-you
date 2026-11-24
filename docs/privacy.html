@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — GlassGrid You</title>
+  <meta name="description" content="GlassGrid You privacy policy: zero telemetry, zero trackers, local macOS WebKit storage only.">
+  <meta name="theme-color" content="#0A0A0B">
+  <link rel="canonical" href="https://glassgridyou.com/privacy.html">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav-wrap">
+    <nav class="navbar" aria-label="Primary navigation">
+      <a class="nav-brand" href="./">
+        <img src="assets/app-icon.png" alt="" width="28" height="28">
+        <span>GlassGrid You</span>
+      </a>
+
+      <div class="nav-links">
+        <a href="./#multiview">Multiview</a>
+        <a href="./#features">Features</a>
+        <a href="./#pricing">Pricing</a>
+        <a href="./#faq">FAQ</a>
+        <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+
+      <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+    </nav>
+  </header>
+
+  <main class="legal-main">
+    <div class="container">
+      <article class="legal-card">
+        <a class="legal-back" href="./">&larr; Back to GlassGrid You</a>
+        <h1>Privacy Policy</h1>
+        <p class="legal-updated">Last updated: November 23, 2026</p>
+
+        <p>
+          <strong>GlassGrid You</strong> is designed to be strictly local and privacy-first. We do not collect telemetry, crash analytics, usage statistics, advertising identifiers, or viewing history, and we do not operate backend tracking servers.
+        </p>
+
+        <h2>1. Data Stored Locally on Your Mac</h2>
+        <p>All application state stays exclusively on your device inside standard macOS storage:</p>
+        <ul>
+          <li><strong>WebKit Session Storage:</strong> Cookies, login sessions, and site data for YouTube, YouTube TV, and any Companion Web Tiles you open are stored locally in Apple's <code>WKWebsiteDataStore</code>. You can clear them anytime from GlassGrid You Settings.</li>
+          <li><strong>App Preferences:</strong> Appearance, Multiview presets, pinned channels, folders, Continue Watching resume points, and window layout preferences are stored locally in macOS <code>UserDefaults</code>.</li>
+        </ul>
+
+        <h2>2. Direct Third-Party Network Connections</h2>
+        <p>When you use GlassGrid You, your Mac connects directly to the services you choose to visit or enable—never proxied through us:</p>
+        <ul>
+          <li><strong>YouTube, YouTube TV &amp; Companion Sites:</strong> Loaded directly inside Apple's native WebKit engine subject to each service's own privacy policy.</li>
+          <li><strong>SponsorBlock (Optional, Off by Default):</strong> When explicitly enabled in Settings, GlassGrid You queries the public SponsorBlock API using a k-anonymous 4-character SHA-256 hash prefix of the video ID so the full video ID is never sent.</li>
+          <li><strong>Search Autocomplete (Cookieless &amp; Toggleable):</strong> When enabled, Command Palette search suggestions use cookieless requests and can be disabled anytime in Settings.</li>
+          <li><strong>App Updates:</strong> Update checks fetch the public release metadata at <code>https://glassgridyou.com/appcast.xml</code> (Sparkle 2) or public GitHub Releases without transmitting personal identifiers.</li>
+        </ul>
+
+        <h2>3. Website &amp; Payments</h2>
+        <ul>
+          <li><strong>This Website (<code>glassgridyou.com</code>):</strong> Uses zero cookies, zero analytics scripts, zero external fonts, and zero third-party trackers.</li>
+          <li><strong>Checkout &amp; Billing:</strong> If you purchase the signed and Apple-notarized installer, payment processing, tax/VAT collection, and receipts are handled by <strong>Polar</strong> (<code>polar.sh</code>) acting as Merchant of Record under Polar's privacy policy. We do not receive or store your payment card details.</li>
+        </ul>
+
+        <h2>4. Contact</h2>
+        <p>
+          Questions about privacy or data handling? Reach out anytime at <a href="mailto:support@glassgridyou.com">support@glassgridyou.com</a>.
+        </p>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-brand-row">
+          <img src="assets/app-icon.png" alt="" width="24" height="24">
+          <span>GlassGrid You</span>
+        </div>
+        <p class="footer-disclaimer">
+          Unofficial, independent macOS application. Not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or any third-party streaming service.
+        </p>
+      </div>
+
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="mailto:support@glassgridyou.com">support@glassgridyou.com</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms &amp; Refunds</a>
+        <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

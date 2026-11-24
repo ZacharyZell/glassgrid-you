@@ -5,7 +5,7 @@ import Foundation
 public enum SparkleConfiguration {
     public static let feedURLKey = "SUFeedURL"
     public static let publicEDKey = "SUPublicEDKey"
-    public static let defaultFeedURLString = "https://raw.githubusercontent.com/ZacharyZell/glassgrid-you/main/appcast.xml"
+    public static let defaultFeedURLString = "https://glassgridyou.com/appcast.xml"
 
     /// Extracts a validated `https://` Sparkle appcast feed URL from an `Info.plist` dictionary.
     public static func feedURL(infoDictionary: [String: Any]?) -> URL? {

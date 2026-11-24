@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>GlassGrid You</title>
+    <link>https://glassgridyou.com/appcast.xml</link>
+    <description>Most recent releases of GlassGrid You for macOS.</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.1.1</title>
+      <pubDate>Tue, 24 Nov 2026 05:40:17 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.1.1</h2>
+        <ul>
+          <li><strong>Unified macOS Liquid Glass Titlebar:</strong> Crisp 52pt unified titlebar alignment keeps traffic-light buttons concentrically inset inside the floating Liquid Glass sidebar with zero corner clipping across Light and Dark modes.</li>
+          <li><strong>Native Fullscreen Polish:</strong> Seamless toolbar handoff on notched MacBook Pro displays ensures the sidebar header and top controls (including Multiview) stay cleanly visible below the bezel.</li>
+          <li><strong>Multi-Window &amp; Sparkle 2 Auto-Updates:</strong> Independent macOS windows (⌘N), draggable 120Hz Multiview tile dividers, Companion Web Tiles (Twitch, ESPN, NFL.com, Prime Video), Sidebar Channel Folders, and silent EdDSA-verified Sparkle updates.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://glassgridyou.com/updates/GlassGrid-You-1.1.1.dmg"
+        sparkle:edSignature="7CZ4h2VQFgAJnhVn5csYH3mvuo8JwJCev4jhPbqKuwoREk4VmI/PgaHVwcP0GeIasvikC6KGKPeENpJuS8GgAQ=="
+        length="4652727"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

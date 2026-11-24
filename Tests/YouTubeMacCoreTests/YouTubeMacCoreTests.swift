@@ -1622,6 +1622,8 @@ final class YouTubeMacCoreTests: XCTestCase {
     // MARK: - Wave B: Multi-Window Title Formatting & Sparkle 2 Configuration Guard
 
     func testSparkleConfigurationValidation() {
+        XCTAssertEqual(SparkleConfiguration.defaultFeedURLString, "https://glassgridyou.com/appcast.xml")
+
         let validKey = Data(repeating: 0x42, count: 32).base64EncodedString()
         let shortKey = Data(repeating: 0x42, count: 16).base64EncodedString()
 
