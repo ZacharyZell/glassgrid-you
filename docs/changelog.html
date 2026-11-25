@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Release Log — GlassGrid You for macOS</title>
+  <meta name="description" content="Complete GlassGrid You release history and exact version-to-version differences across v1.3.0 Preview, v1.2.0, v1.1.1, v1.1.0, and v1.0.0.">
+  <meta name="theme-color" content="#0A0A0B">
+  <link rel="canonical" href="https://glassgridyou.com/changelog.html">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GlassGrid You">
+  <meta property="og:url" content="https://glassgridyou.com/changelog.html">
+  <meta property="og:title" content="Release Log — GlassGrid You for macOS">
+  <meta property="og:description" content="Inspect every change, shortcut, streaming service addition, and security enhancement across each GlassGrid You update.">
+  <meta property="og:image" content="https://glassgridyou.com/screenshots/mini-player-grid-night.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Release Log — GlassGrid You for macOS">
+  <meta name="twitter:description" content="Structured update diffs across every version of GlassGrid You for macOS.">
+  <meta name="twitter:image" content="https://glassgridyou.com/screenshots/mini-player-grid-night.png">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav-wrap">
+    <nav class="navbar" aria-label="Primary navigation">
+      <a class="nav-brand" href="./">
+        <img src="assets/app-icon.png" alt="" width="28" height="28">
+        <span>GlassGrid You</span>
+      </a>
+
+      <div class="nav-links">
+        <a href="./#multiview">Multiview</a>
+        <a href="./#automation">AI &amp; MCP</a>
+        <a href="./#pricing">Pricing</a>
+        <a href="./#faq">FAQ</a>
+        <a class="nav-link--active" href="changelog.html" aria-current="page">Release Log</a>
+        <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+
+      <div class="nav-actions">
+        <a class="nav-mobile-changelog" href="./">Home</a>
+        <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="changelog-main">
+    <div class="container">
+      <header class="changelog-hero">
+        <a class="legal-back" href="./">&larr; Back to GlassGrid You</a>
+        <span class="section-label">Release Log &amp; Version Diffs</span>
+        <h1>What changed in every update.</h1>
+        <p class="changelog-sub">
+          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a>; <strong>v1.3.0 Preview</strong> changes are live today when building from source on <code>main</code> while the notarized installer prepares.
+        </p>
+
+        <nav class="release-jump-strip" aria-label="Jump to version">
+          <a class="release-jump-pill" href="#v1-3-0">
+            <span class="jump-dot jump-dot--preview" aria-hidden="true"></span>
+            <span>v1.3.0 Preview</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-2-0">
+            <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span>v1.2.0</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-1-1">
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
+            <span>v1.1.1</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-1-0">
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
+            <span>v1.1.0</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-0-0">
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
+            <span>v1.0.0</span>
+          </a>
+        </nav>
+      </header>
+
+      <!-- RELEASE ENTRY TEMPLATE (Copy and prepend inside .changelog-timeline for every update):
+      <article class="release-card" id="vX-Y-Z">
+        <div class="release-header">
+          <div class="release-title-row">
+            <h2 class="release-version">vX.Y.Z</h2>
+            <span class="release-status release-status--preview">Preview · Source (main)</span>
+          </div>
+          <div class="release-meta-row">
+            <time datetime="YYYY-MM-DD">Month DD, YYYY</time>
+            <span>Build N</span>
+            <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commits/main" target="_blank" rel="noopener noreferrer">View Diff on GitHub &rarr;</a>
+          </div>
+        </div>
+        <div class="release-delta-summary">
+          <p><strong>Compared to vA.B.C:</strong> One-sentence summary of what changed vs. the prior release.</p>
+          <div class="delta-pills">
+            <span class="delta-pill">Before &rarr; After</span>
+          </div>
+        </div>
+        <div class="diff-groups">
+          <section class="diff-group">
+            <span class="diff-tag diff-tag--added">Added</span>
+            <ul class="diff-list">
+              <li><strong>Feature Name:</strong> Exact difference vs. prior version.</li>
+            </ul>
+          </section>
+        </div>
+      </article>
+      -->
+
+      <div class="changelog-timeline">
+        <article class="release-card release-card--latest" id="v1-3-0">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.3.0</h2>
+              <span class="release-status release-status--preview">Preview · Source (main) · Signed .dmg Preparing</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-24">Nov 24, 2026</time>
+              <span>Source Preview (next Build 6)</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commits/main" target="_blank" rel="noopener noreferrer">View Commits on GitHub &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.2.0:</strong> Introduces opt-in AI Agent control (28 MCP tools, <code>glassgrid</code> CLI, 12 Siri App Intents), expands the hub to 18 services with Crunchyroll and hardened Prime Video sign-in, renders video Clean-Box across all services, and floats full 2&ndash;4 stream Multiview Grids.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">0 &rarr; 28 MCP Tools &amp; 12 Siri Intents</span>
+              <span class="delta-pill">17 &rarr; 18 Services (+Crunchyroll)</span>
+              <span class="delta-pill">Single &rarr; Floating Multiview Grid</span>
+              <span class="delta-pill">+Universal Clean-Box (<kbd>⌘⇧B</kbd>)</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>AI Agent, Local MCP Server &amp; <code>glassgrid</code> CLI:</strong> Bundled stdio MCP server and standalone CLI (zero AppKit/WebKit/Sparkle linkage) exposing <strong>28 tools</strong> and <strong>5 read-only resources</strong> (MCP <code>2025-06-18</code> / <code>2025-03-26</code> / <code>2024-11-05</code>), with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong> plus opt-in local Streamable HTTP MCP (<code>127.0.0.1:41773/mcp</code>).</li>
+                <li><strong>Siri, Apple Intelligence &amp; Shortcuts:</strong> Added <strong>12 native App Intents</strong> and <strong>8 App Shortcuts</strong> (Play/Pause, Now Playing, Search YouTube, Open Service, Launch Multiview Preset, Toggle Mini-Player, Focus Mode, Sleep Timer) extracted into <code>Metadata.appintents</code>, plus opt-in <code>glassgridyou://action/...</code> URL triggers.</li>
+                <li><strong>Universal Clean-Box Service Rendering (<kbd>⌘⇧B</kbd>):</strong> Automatically isolates only the active video player container edge-to-edge across all <strong>18 built-in streaming services</strong> (including cross-origin player iframes like Crunchyroll and overlay SDK players like Prime Video &amp; Apple TV+), while keeping home, browse, guide, and login pages untouched. Toggle anytime with <kbd>⌘⇧B</kbd> or the header pill for Full Page.</li>
+                <li><strong>Floating Multiview Grid Mini-Player (<kbd>⌘⇧M</kbd>):</strong> Float an entire 2-up, 3-up, or 2&times;2 Quad-Box grid into the always-on-top borderless 16:9 panel with zero reload, crimson active-audio borders, click-any-tile audio focus, compact <code>44pt</code> hover header, Display Options popover (40%&ndash;100% opacity, Grid/Spotlight/Stacked layouts, Play/Pause All), and Grid size presets (<strong>Compact 540&times;304</strong>, <strong>Standard 680&times;383</strong>, <strong>Large 880&times;495</strong>; minimum 440&times;248).</li>
+                <li><strong>Crunchyroll in Streaming Hub:</strong> Added Crunchyroll to <em>Movies &amp; Shows</em> (growing the catalog from <strong>17 &rarr; 18 services</strong>: 11 native WKWebView + 7 Safari-DRM-badged) with native OAuth popup isolation and Safari DRM fallback.</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--changed">Changed</span>
+              <ul class="diff-list">
+                <li><strong>New Settings &rarr; AI &amp; Automation Tab:</strong> Added master opt-in toggle, 3 permission tiers, socket/HTTP live status indicators, Bearer token mask/reveal/rotate controls, and a 100-entry live Activity Log.</li>
+                <li><strong>Split Screen–Aware Auto Pop-Out for Multiview:</strong> Leaving or covering the app while a Multiview stream is playing now floats the entire Multiview Grid instead of detaching only a single video, and docks cleanly when switching back.</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--fixed">Fixed</span>
+              <ul class="diff-list">
+                <li><strong>Prime Video &amp; Crunchyroll Login Reliability:</strong> Hardened sign-in across 18 regional Amazon storefronts with direct OpenID routing, locale-segment stripping (<code>/es-es/login</code>, <code>/pt-br/login</code>), non-destructive session cookie presence checks, and immediate Clean-Box script teardown on auth, OAuth, MFA, or CAPTCHA pages.</li>
+                <li><strong>YouTube Live Chat Overlap in Tiles &amp; Floating Overlay Alignment:</strong> Suppressed narrow-viewport live chat drawers (<code>#panels-full-bleed-container</code>, <code>ytd-live-chat-frame</code>) inside compact Multiview tiles and stripped titlebar safe-area insets from floating grid borders for <code>0pt</code> pixel alignment.</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--security">Security &amp; Privacy</span>
+              <ul class="diff-list">
+                <li><strong>Fail-Closed Local Automation Defaults:</strong> AI Agent control, HTTP MCP, and URL triggers ship strictly <strong>OFF by default</strong>. Stdio CLI IPC uses owner-only UNIX domain sockets (<code>0600</code> in <code>0700</code>, <code>getpeereid</code> EUID check, zero tokens in config files); optional HTTP binds strictly to <code>127.0.0.1</code> with <code>Host</code>/<code>Origin</code>/256-bit Bearer token (<code>0600</code> in Application Support) + 60 req/min rate limiting; cookies, SSO logins, arbitrary JS, and site-data wipes are permanently blocked.</li>
+              </ul>
+            </section>
+          </div>
+
+          <details class="release-technical">
+            <summary>Technical details: v1.3.0 Preview build invariants &amp; CLI summary</summary>
+            <div class="release-technical-body">
+              <p><strong>WebKit Invariants:</strong> Zero CSS <code>:has(</code>, zero <code>MutationObserver</code>, zero <code>AudioContext</code>, zero static <code>ytInitialPlayerResponse</code>; Swift 6 strict concurrency (0 warnings Debug &amp; Release); 68 unit tests passing (including Clean-Box 18-service matrix &amp; MCP catalog verification).</p>
+              <p><strong>CLI Quick Commands:</strong> <code>glassgrid mcp</code>, <code>glassgrid status</code>, <code>glassgrid now-playing</code>, <code>glassgrid tabs</code>, <code>glassgrid service &lt;id&gt;</code>, <code>glassgrid multiview &lt;enter|exit|layout|audio|solo|add|remove&gt;</code>, <code>glassgrid mini-player &lt;enter|exit|toggle|compact|standard|large&gt;</code>, <code>glassgrid appearance &lt;system|light|dark&gt;</code>.</p>
+            </div>
+          </details>
+        </article>
+
+        <article class="release-card" id="v1-2-0">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.2.0</h2>
+              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 5</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-24">Nov 24, 2026</time>
+              <span>DMG: 5,029,235 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/3504c43...566b6df" target="_blank" rel="noopener noreferrer">Diff v1.1.1 &rarr; v1.2.0 &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.1.1:</strong> Transformed GlassGrid You from a YouTube-focused client with manual URL companion tiles into a curated 17-service Streaming Hub with guided onboarding, Pro Multiview Solo/Sync, Mini-Player opacity control, and native AirPlay.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">Manual URLs &rarr; 17-Service Hub</span>
+              <span class="delta-pill">+Zero-Latency Solo (<kbd>⌘⌥Z</kbd>)</span>
+              <span class="delta-pill">+Live Sync Micro-Nudge</span>
+              <span class="delta-pill">+Mini-Player 40&ndash;100% Opacity</span>
+              <span class="delta-pill">+Native AirPlay Suite</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>17-Service Onboarding &amp; Sign-In Hub:</strong> Choose enabled services across Video &amp; Live TV, Movies &amp; Shows, and Live Sports, sign in with full OAuth popup handling, and view clear Safari DRM indicators where studios enforce Safari-only CDM checks.</li>
+                <li><strong>1-Click &ldquo;Add Screen&rdquo; &amp; Per-Service Login Reset:</strong> Add any enabled service, open tab, or custom URL directly into Multiview, Sidebar Services, or <kbd>⌘K</kbd> Command Palette, and reset cookies/site data per service cleanly.</li>
+                <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>) &amp; Live Stream Sync:</strong> Expand any Multiview tile full-window while keeping the remaining 3 streams live in the background (press <kbd>Esc</kbd> to snap back), and nudge broadcast latency (<strong>&minus;5s, &minus;1s, +1s, +5s, Jump to Live</strong>).</li>
+                <li><strong>Native macOS AirPlay Video, Audio &amp; TV Display Routing:</strong> Trigger element-level AirPlay video casting, inspect CoreAudio AirPlay output status, or move a window or 4-stream wall onto an AirPlay TV / external display in one click.</li>
+              </ul>
+            </section>
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--changed">Changed</span>
+              <ul class="diff-list">
+                <li><strong>Floating Mini-Player Opacity &amp; Shadow DOM Playback:</strong> Added 40%&ndash;100% Liquid Glass opacity slider, universal companion pop-out, and Shadow DOM video/rate telemetry across Peacock, Disney+, Max, and Apple TV+.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="release-card" id="v1-1-1">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.1.1</h2>
+              <span class="release-status release-status--archive">Signed .dmg · Sparkle Build 4</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-24">Nov 24, 2026</time>
+              <span>DMG: 4,652,727 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commit/3504c43" target="_blank" rel="noopener noreferrer">View Commit on GitHub &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.1.0:</strong> Perfected macOS window chrome geometry on Tahoe &amp; Sequoia with concentric traffic-light alignment, fixed notched MacBook Pro fullscreen layout, and launched <code>glassgridyou.com</code> + Sparkle 2 appcast hosting.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">52pt Unified Titlebar</span>
+              <span class="delta-pill">Notched Fullscreen Fix</span>
+              <span class="delta-pill">+verify-chrome.swift QA</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--fixed">Fixed</span>
+              <ul class="diff-list">
+                <li><strong>Unified 52pt Liquid Glass Titlebar Geometry:</strong> Aligned traffic-light buttons concentrically inside the floating sidebar&rsquo;s 16pt corner arc on an exact 26pt vertical axis across Expanded and Collapsed states with zero clipping.</li>
+                <li><strong>Notched MacBook Pro Native Fullscreen Polish:</strong> Prevented bezel overlap so the sidebar toggle and top toolbar controls (including Multiview) remain cleanly positioned in Native Fullscreen.</li>
+              </ul>
+            </section>
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>Website &amp; Appcast Launch:</strong> Published <code>glassgridyou.com</code> and signed <code>appcast.xml</code> updates alongside automated runtime <code>NSWindow</code> chrome audit tooling (<code>scripts/verify-chrome.swift</code>).</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="release-card" id="v1-1-0">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.1.0</h2>
+              <span class="release-status release-status--archive">Source Milestone</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-23">Nov 23, 2026</time>
+              <span>Rolled into Build 4 .dmg</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/65eb082...67ebcef" target="_blank" rel="noopener noreferrer">Diff v1.0.0 &rarr; v1.1.0 &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.0.0:</strong> Expanded from single-window viewing to independent Multi-Window workflows, 120Hz interactive Multiview resizing, custom channel folders, and Sparkle 2 silent auto-updates.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">1 &rarr; Multi-Window (<kbd>⌘N</kbd>)</span>
+              <span class="delta-pill">120Hz Draggable Dividers</span>
+              <span class="delta-pill">+Companion Tiles &amp; Folders</span>
+              <span class="delta-pill">+Sparkle 2.10.1</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>Independent Multi-Window (<kbd>⌘N</kbd>):</strong> Run multiple Multiview walls or dedicated watch windows across separate macOS Spaces and external monitors.</li>
+                <li><strong>120Hz Draggable Multiview Dividers &amp; Saved Presets:</strong> Drag any grid split divider smoothly in real time (double-click to reset) and save/relaunch custom split-ratio layouts.</li>
+                <li><strong>Companion Web Tiles &amp; Sidebar Channel Folders:</strong> Open Twitch, ESPN, NFL+, or custom HTTPS streams alongside YouTube and organize pinned channels/playlists into collapsible sidebar folders.</li>
+                <li><strong>Sparkle 2.10.1 EdDSA Updates &amp; Hardened Runtime Pipeline:</strong> Embedded Sparkle framework with inside-out Developer ID signing and notarization scripting.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="release-card" id="v1-0-0">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.0.0</h2>
+              <span class="release-status release-status--archive">Initial Release</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-22">Nov 22, 2026</time>
+              <span>MIT Open Source</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commit/65eb082" target="_blank" rel="noopener noreferrer">View Initial Commit &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Baseline Release:</strong> Ground-up native Swift 6 &amp; WebKit macOS desktop app replacing Electron wrappers with macOS Liquid Glass chrome and 4-stream Multiview.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">Swift 6 + Native WebKit</span>
+              <span class="delta-pill">4K60 HDR10 + YTTV FairPlay</span>
+              <span class="delta-pill">Quad-Box Multiview</span>
+              <span class="delta-pill">Zero Telemetry</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>4K 60fps HDR10 &amp; FairPlay DRM Playback:</strong> Preserves Safari desktop WebKit compatibility for YouTube Premium and YouTube TV live channels without Electron overhead.</li>
+                <li><strong>1&ndash;4 Stream Multiview (<kbd>⌘⇧G</kbd>):</strong> Grid, Spotlight, and Stacked layouts with exclusive audio switching (<kbd>⌘⌥1&ndash;4</kbd>) and 15% background audio ducking.</li>
+                <li><strong>Spotlight Command Palette (<kbd>⌘K</kbd>), Floating Mini-Player (<kbd>⌘⇧M</kbd>), Focus Mode (<kbd>⌘⇧F</kbd>) &amp; Menu Bar Control Center:</strong> Complete keyboard-first macOS workflow with Continue Watching, Sleep Timer, AirPods disconnect pause, and optional k-anonymous SponsorBlock.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <div class="footer-brand-row">
+          <img src="assets/app-icon.png" alt="" width="24" height="24">
+          <span>GlassGrid You</span>
+        </div>
+        <p class="footer-disclaimer">
+          Unofficial, independent macOS application. Not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or any third-party streaming service or AI platform.
+        </p>
+      </div>
+
+      <nav class="footer-links" aria-label="Footer navigation">
+        <a href="mailto:support@glassgridyou.com">support@glassgridyou.com</a>
+        <a href="changelog.html" aria-current="page">Release Log</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms &amp; Refunds</a>
+        <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy Policy — GlassGrid You</title>
-  <meta name="description" content="GlassGrid You privacy policy: zero telemetry, zero trackers, local macOS WebKit storage only.">
+  <meta name="description" content="GlassGrid You privacy policy: zero telemetry, zero trackers, local macOS WebKit storage and strictly opt-in local AI Agent / MCP IPC only.">
   <meta name="theme-color" content="#0A0A0B">
   <link rel="canonical" href="https://glassgridyou.com/privacy.html">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -21,13 +21,17 @@
 
       <div class="nav-links">
         <a href="./#multiview">Multiview</a>
-        <a href="./#features">Features</a>
+        <a href="./#automation">AI &amp; MCP</a>
         <a href="./#pricing">Pricing</a>
         <a href="./#faq">FAQ</a>
+        <a href="changelog.html">Release Log</a>
         <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
 
-      <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+      <div class="nav-actions">
+        <a class="nav-mobile-changelog" href="changelog.html">Releases</a>
+        <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+      </div>
     </nav>
   </header>
 
@@ -36,7 +40,7 @@
       <article class="legal-card">
         <a class="legal-back" href="./">&larr; Back to GlassGrid You</a>
         <h1>Privacy Policy</h1>
-        <p class="legal-updated">Last updated: November 23, 2026</p>
+        <p class="legal-updated">Last updated: November 24, 2026</p>
 
         <p>
           <strong>GlassGrid You</strong> is designed to be strictly local and privacy-first. We do not collect telemetry, crash analytics, usage statistics, advertising identifiers, or viewing history, and we do not operate backend tracking servers.
@@ -46,25 +50,34 @@
         <p>All application state stays exclusively on your device inside standard macOS storage:</p>
         <ul>
           <li><strong>WebKit Session Storage:</strong> Cookies, login sessions, and site data for YouTube, YouTube TV, and any enabled streaming services or Companion Web Tiles are stored locally in Apple's <code>WKWebsiteDataStore</code>. You can clear all site data or reset an individual service's cookies &amp; site data anytime from the Sidebar or GlassGrid You Settings (with clear notices where providers share single sign-on, such as Google or MyDisney).</li>
-          <li><strong>App Preferences:</strong> Appearance, enabled streaming services, Multiview presets, pinned channels, folders, Mini-Player opacity, Continue Watching resume points, and window layout preferences are stored locally in macOS <code>UserDefaults</code>.</li>
+          <li><strong>App Preferences:</strong> Appearance, enabled streaming services, Clean-Box streaming player preference, Multiview presets, pinned channels, folders, Mini-Player &amp; Grid frames/opacity, Continue Watching resume points, and AI &amp; Automation permission toggles are stored locally in macOS <code>UserDefaults</code>.</li>
+          <li><strong>Optional Loopback Bearer Token:</strong> If you explicitly enable the optional loopback HTTP MCP endpoint, its 256-bit Bearer token is generated locally and stored strictly in an owner-only (<code>0600</code>) file at <code>~/Library/Application Support/GlassGridYou/http-token</code>—never in <code>UserDefaults</code> or stdio client config files.</li>
         </ul>
 
         <h2>2. Direct Third-Party Network Connections</h2>
         <p>When you use GlassGrid You, your Mac connects directly to the services you choose to visit or enable—never proxied through us:</p>
         <ul>
-          <li><strong>Streaming Services &amp; Sign-In Hub:</strong> YouTube, YouTube TV, Twitch, live sports, and other selected streaming sites load directly inside Apple's native WebKit engine subject to each provider's own privacy policy. GlassGrid You never intercepts, inspects, or stores your passwords.</li>
+          <li><strong>Streaming Services &amp; Sign-In Hub:</strong> YouTube, YouTube TV, Twitch, Crunchyroll, live sports, and other selected streaming sites load directly inside Apple's native WebKit engine subject to each provider's own privacy policy. GlassGrid You never intercepts, inspects, or stores your passwords.</li>
           <li><strong>SponsorBlock (Optional, Off by Default):</strong> When explicitly enabled in Settings, GlassGrid You queries the public SponsorBlock API using a k-anonymous 4-character SHA-256 hash prefix of the video ID so the full video ID is never sent.</li>
           <li><strong>Search Autocomplete (Cookieless &amp; Toggleable):</strong> When enabled, Command Palette search suggestions use cookieless requests and can be disabled anytime in Settings.</li>
           <li><strong>App Updates:</strong> Update checks fetch the public release metadata at <code>https://glassgridyou.com/appcast.xml</code> (Sparkle 2) or public GitHub Releases without transmitting personal identifiers.</li>
         </ul>
 
-        <h2>3. Website &amp; Payments</h2>
+        <h2>3. Local AI Agent, MCP, CLI &amp; Siri Automation (Strictly Opt-In)</h2>
+        <p>All AI assistant, CLI, HTTP MCP, URL trigger, and Siri automation controls ship <strong>disabled by default</strong> and never open network listeners or transmit data back to GlassGrid You:</p>
         <ul>
-          <li><strong>This Website (<code>glassgridyou.com</code>):</strong> Uses zero cookies, zero analytics scripts, zero external fonts, and zero third-party trackers.</li>
+          <li><strong>Local Transports &amp; OS Isolation:</strong> When enabled in <strong>Settings &rarr; AI &amp; Automation</strong>, the bundled <code>glassgrid</code> CLI &amp; stdio MCP server communicates exclusively over an owner-only UNIX domain socket (<code>0600</code> socket inside a <code>0700</code> directory, verified per connection via <code>getpeereid</code> matching your macOS UID). The optional Streamable HTTP MCP server is also off by default and, when enabled, binds strictly to <code>127.0.0.1</code> with <code>Host</code>, <code>Origin</code>, 256-bit Bearer token, and 60 req/min rate limiting.</li>
+          <li><strong>Permission Tiers &amp; Permanent Blocks:</strong> Even at the highest permission tier, external tools are hard-blocked from reading session cookies or tokens, navigating to Google/SSO login, MFA, or checkout pages, executing arbitrary JavaScript, wiping site data, or disrupting WebKit fullscreen. URL scheme triggers (<code>glassgridyou://action/...</code>) are separately opt-in and blocked inside WebKit pages.</li>
+          <li><strong>Client Data Boundary:</strong> When you invoke Siri, Shortcuts, the CLI, or a local MCP client (such as Claude, Gemini, Antigravity, or Grok), requested status metadata (sanitized page title, URL, playback state, chapters) is returned solely over your local Mac connection to the client you configured, subject to that assistant's own privacy terms.</li>
+        </ul>
+
+        <h2>4. Website &amp; Payments</h2>
+        <ul>
+          <li><strong>This Website (<code>glassgridyou.com</code>):</strong> Uses zero cookies, zero JavaScript tracking scripts, zero external fonts, and zero third-party trackers.</li>
           <li><strong>Checkout &amp; Billing:</strong> If you purchase the signed and Apple-notarized installer, payment processing, tax/VAT collection, and receipts are handled by <strong>Polar</strong> (<code>polar.sh</code>) acting as Merchant of Record under Polar's privacy policy. We do not receive or store your payment card details.</li>
         </ul>
 
-        <h2>4. Contact</h2>
+        <h2>5. Contact</h2>
         <p>
           Questions about privacy or data handling? Reach out anytime at <a href="mailto:support@glassgridyou.com">support@glassgridyou.com</a>.
         </p>
@@ -80,13 +93,14 @@
           <span>GlassGrid You</span>
         </div>
         <p class="footer-disclaimer">
-          Unofficial, independent macOS application. Not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or any third-party streaming service.
+          Unofficial, independent macOS application. Not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or any third-party streaming service or AI platform.
         </p>
       </div>
 
       <nav class="footer-links" aria-label="Footer navigation">
         <a href="mailto:support@glassgridyou.com">support@glassgridyou.com</a>
-        <a href="privacy.html">Privacy Policy</a>
+        <a href="changelog.html">Release Log</a>
+        <a href="privacy.html" aria-current="page">Privacy Policy</a>
         <a href="terms.html">Terms &amp; Refunds</a>
         <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
       </nav>

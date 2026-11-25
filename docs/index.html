@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 17+ Streaming Services</title>
-  <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, Twitch, live sports, and 17+ streaming services. Watch 4 simultaneous streams with Solo mode, Live Sync micro-nudge, native AirPlay, Floating Mini-Player opacity, and zero Electron overhead.">
+  <title>GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 18 Streaming Services</title>
+  <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, Twitch, Crunchyroll, live sports, and 18 streaming services—plus Floating Multiview Grid, Clean-Box players, local MCP/CLI AI control, Siri App Intents, and zero Electron.">
   <meta name="theme-color" content="#0A0A0B">
   <link rel="canonical" href="https://glassgridyou.com/">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -13,15 +13,15 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="GlassGrid You">
   <meta property="og:url" content="https://glassgridyou.com/">
-  <meta property="og:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 17+ Streaming Services">
-  <meta property="og:description" content="Zero Electron. Built with Swift 6, SwiftUI, AppKit, and WebKit. Watch up to 4 simultaneous YouTube, YouTube TV, Twitch, and live sports streams with Solo mode, Live Sync, native AirPlay, and Liquid Glass.">
+  <meta property="og:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 18 Streaming Services">
+  <meta property="og:description" content="Zero Electron. Built with Swift 6, SwiftUI, AppKit, and WebKit. Watch up to 4 simultaneous streams with Floating Multiview Grid, Clean-Box playback, native AirPlay, and opt-in MCP/CLI/Siri control.">
   <meta property="og:image" content="https://glassgridyou.com/screenshots/hero-4k-hdr-night.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1640">
 
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; Live Sports">
-  <meta name="twitter:description" content="Native Swift 6 &amp; macOS Liquid Glass client with 4-stream Quad-Box Multiview, 17-service Hub, Solo mode, Live Sync, native AirPlay, Mini-Player opacity, and zero Electron.">
+  <meta name="twitter:description" content="Native Swift 6 &amp; macOS Liquid Glass client with 4-stream Quad-Box Multiview, 18-service Hub, Universal Clean-Box, Floating Multiview Grid, and local AI/MCP/Siri control.">
   <meta name="twitter:image" content="https://glassgridyou.com/screenshots/hero-4k-hdr-night.png">
 
   <link rel="stylesheet" href="styles.css">
@@ -36,13 +36,17 @@
 
       <div class="nav-links">
         <a href="#multiview">Multiview</a>
-        <a href="#features">Features</a>
+        <a href="#automation">AI &amp; MCP</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
+        <a href="changelog.html">Release Log</a>
         <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
 
-      <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+      <div class="nav-actions">
+        <a class="nav-mobile-changelog" href="changelog.html">Releases</a>
+        <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+      </div>
     </nav>
   </header>
 
@@ -50,15 +54,17 @@
     <section class="hero">
       <div class="container">
         <img class="hero-icon" src="assets/app-icon.png" alt="GlassGrid You macOS App Icon" width="76" height="76" decoding="async">
-        <div class="eyebrow">
-          <span class="eyebrow-dot" aria-hidden="true"></span>
-          <span>macOS 14+ · Native Swift 6 &amp; Liquid Glass · v1.2</span>
+        <div>
+          <a class="eyebrow eyebrow--link" href="changelog.html">
+            <span class="eyebrow-dot" aria-hidden="true"></span>
+            <span>macOS 14+ · Swift 6 &amp; Liquid Glass · Release Log &rarr;</span>
+          </a>
         </div>
 
         <h1>Native macOS Multiview for YouTube, YouTube TV &amp; Live Streams</h1>
 
         <p class="hero-sub">
-          Zero Electron. Built from the ground up with Swift 6, SwiftUI, AppKit, and WebKit for 4K 60fps HDR10 playback, 17+ streaming services, native AirPlay, and effortless desktop focus.
+          Zero Electron. Built from the ground up with Swift 6, SwiftUI, AppKit, and WebKit for 4K 60fps HDR10 playback, 18 streaming services, Universal Clean-Box viewing, Floating Multiview Grids, and opt-in MCP, CLI &amp; Siri control.
         </p>
 
         <div class="hero-actions">
@@ -68,9 +74,9 @@
 
         <ul class="trust-strip" aria-label="Key product highlights">
           <li>macOS 14.0+</li>
-          <li>Apple Notarized</li>
+          <li>Apple Notarized v1.2.0</li>
+          <li>v1.3 Preview on main</li>
           <li>Zero Electron</li>
-          <li>One-Time Purchase</li>
           <li>Free v1.x Updates</li>
         </ul>
 
@@ -99,10 +105,10 @@
             <div class="showcase-copy">
               <span class="section-label">Multiview &amp; Live Sports</span>
               <h3>Quad-Box Multiview with Zero-Latency Solo &amp; Live Sync.</h3>
-              <p>Watch up to four simultaneous streams in Grid, Spotlight, or Stacked layouts—mixing YouTube, YouTube TV (FairPlay DRM), Twitch, ESPN, NFL+, Peacock, and any HTTPS stream side by side.</p>
+              <p>Watch up to four simultaneous streams in Grid, Spotlight, or Stacked layouts—mixing YouTube, YouTube TV (FairPlay DRM), Twitch, Crunchyroll, ESPN, NFL+, Peacock, and any HTTPS stream side by side.</p>
               <ul class="feature-bullets">
                 <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>):</strong> Expand any tile full-window while keeping the other 3 streams live in the background; press <kbd>Esc</kbd> to snap back instantaneously with your split ratios intact.</li>
-                <li><strong>Live Stream Sync Micro-Nudge:</strong> Fine-tune broadcast delay per tile with <strong>−5s</strong>, <strong>−1s</strong>, <strong>+1s</strong>, or <strong>Jump to Live</strong> so games and watchalongs stay aligned.</li>
+                <li><strong>Live Stream Sync Micro-Nudge:</strong> Fine-tune broadcast delay per tile with <strong>−5s</strong>, <strong>−1s</strong>, <strong>+1s</strong>, <strong>+5s</strong>, or <strong>Jump to Live</strong> so games and watchalongs stay aligned.</li>
                 <li><strong>120Hz Draggable Dividers &amp; Audio Focus:</strong> Drag any split line smoothly (double-click to reset), press <kbd>⌘⌥1–4</kbd> for exclusive audio, or enable 15% background ducking.</li>
                 <li><strong>Saved Multiview Presets:</strong> Relaunch your favorite Sunday Quad or news wall with custom split ratios in one click.</li>
               </ul>
@@ -122,20 +128,20 @@
 
           <article class="showcase showcase--reverse" id="services">
             <div class="showcase-copy">
-              <span class="section-label">New in v1.2 · Streaming Hub &amp; AirPlay</span>
-              <h3>17 Streaming Services, Sign-In Hub &amp; Native macOS AirPlay.</h3>
-              <p>Pick your favorite streaming services once and launch them from the Sidebar, <strong>Add Screen</strong> Multiview picker, or <kbd>⌘K</kbd> Command Palette—then cast to AirPlay TVs and displays effortlessly.</p>
+              <span class="section-label">18 Services · Clean-Box &amp; AirPlay (<a href="changelog.html#v1-3-0">v1.3 Preview on main</a>)</span>
+              <h3>18 Streaming Services, Clean-Box Playback &amp; Native AirPlay.</h3>
+              <p>Pick your favorite streaming services once and launch them cleanly—every active video renders edge-to-edge on playback while browse, guide, and sign-in pages stay full-featured.</p>
               <ul class="feature-bullets">
-                <li><strong>Guided Onboarding &amp; Sign-In Hub:</strong> Select from 17 services across Video &amp; Live TV, Movies &amp; Shows, and Live Sports, and sign in cleanly with native OAuth popup support and per-service site-data reset.</li>
-                <li><strong>Honest Safari DRM Fallback:</strong> Native WebKit playback for YouTube, YouTube TV, Twitch, ESPN, NFL+, MLB, NBA, Peacock, Paramount+, Fubo, and Sling—plus 1-click <strong>Open in Safari</strong> for strict Safari-only DRM SVODs.</li>
-                <li><strong>Native AirPlay Video, Audio &amp; TV Displays:</strong> Trigger native macOS AirPlay Video casting, monitor live CoreAudio AirPlay audio output, or send your entire Multiview window to an AirPlay TV or external monitor in one click.</li>
+                <li><strong>18-Service Hub (+ Crunchyroll &amp; Prime Video Fix · v1.3 Preview):</strong> Select across Video &amp; Live TV, Movies &amp; Shows, and Live Sports, with hardened Prime Video storefront OAuth, Crunchyroll iframe support, and per-service login reset.</li>
+                <li><strong>Universal Clean-Box Players (<kbd>⌘⇧B</kbd> · v1.3 Preview):</strong> Automatically promotes the native HTML5 player across all 18 services when a show starts—preserving native scrubbers, captions, and DRM, with 1-click Full Page toggle anytime.</li>
+                <li><strong>Native AirPlay Video, Audio &amp; TV Displays:</strong> Trigger macOS AirPlay Video casting, monitor live CoreAudio AirPlay output, or send your entire Multiview window to an AirPlay TV or external monitor in one click.</li>
               </ul>
             </div>
             <div class="showcase-media">
               <div class="screenshot-bezel">
                 <img
                   src="screenshots/services-onboarding-night.png"
-                  alt="GlassGrid You Streaming Service Onboarding sheet showing 17 curated services in Night Mode Liquid Glass"
+                  alt="GlassGrid You Streaming Services sidebar showing 18 curated services including Crunchyroll in Night Mode Liquid Glass"
                   width="2560"
                   height="1640"
                   loading="lazy"
@@ -144,13 +150,44 @@
             </div>
           </article>
 
-          <article class="showcase" id="features">
+          <article class="showcase" id="automation">
+            <div class="showcase-copy">
+              <span class="section-label">AI &amp; Siri Control · <a href="changelog.html#v1-3-0">v1.3 Preview on main</a></span>
+              <h3>Operate GlassGrid You with Claude, Gemini, Grok, Siri &amp; CLI.</h3>
+              <p>Connect your local AI assistant or macOS Shortcuts workflow via Apple's App Intents or the bundled Model Context Protocol (MCP) server—strictly opt-in, off by default, and local to your Mac.</p>
+              <ul class="feature-bullets">
+                <li><strong>28 MCP Tools &amp; 5 Read-Only Resources:</strong> Bundled <code>glassgrid</code> CLI &amp; stdio MCP server with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong>, plus opt-in <code>127.0.0.1</code> Streamable HTTP MCP.</li>
+                <li><strong>Siri, Apple Intelligence &amp; Shortcuts:</strong> 12 native App Intents and 8 App Shortcuts let Siri check Now Playing, seek, open services, switch Multiview audio, or launch presets natively.</li>
+                <li><strong>Zero-Trust Local Security:</strong> Owner-only UNIX socket IPC (zero tokens in stdio configs), 3 permission tiers, live Activity Log, and permanent blocks on cookies, logins, arbitrary JS, and site-data wipes.</li>
+              </ul>
+            </div>
+            <div class="showcase-media">
+              <div class="settings-pedestal">
+                <div class="settings-frame">
+                  <img
+                    src="screenshots/ai-automation-settings-night.png"
+                    alt="GlassGrid You Settings AI and Automation panel showing Socket Ready, permission tiers, and 1-click Claude, Gemini, Grok, and Antigravity MCP setup"
+                    width="1200"
+                    height="1240"
+                    loading="lazy"
+                    decoding="async">
+                </div>
+                <div class="pedestal-caption" aria-hidden="true">
+                  <span class="pedestal-pill">28 MCP Tools</span>
+                  <span class="pedestal-pill">12 Siri Intents</span>
+                  <span class="pedestal-pill">Off by Default</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="showcase showcase--reverse" id="features">
             <div class="showcase-copy">
               <span class="section-label">Liquid Glass &amp; Productivity</span>
               <h3>Spotlight Command Palette, Services Sidebar &amp; Multi-Window.</h3>
               <p>Navigate your entire streaming library without touching the mouse, in synchronized Day and Night Liquid Glass chrome designed specifically for macOS.</p>
               <ul class="feature-bullets">
-                <li><strong>Spotlight Command Palette (<kbd>⌘K</kbd>):</strong> Jump across open tabs, enabled Streaming Services, Add-to-Multiview actions, Continue Watching, saved presets, channel folders, and cookieless search suggestions.</li>
+                <li><strong>Spotlight Command Palette (<kbd>⌘K</kbd>):</strong> Jump across open tabs, all 18 enabled Streaming Services, Add-to-Multiview actions, Continue Watching, saved presets, channel folders, and cookieless search suggestions.</li>
                 <li><strong>Synchronized Day &amp; Night Mode:</strong> Crisp macOS 26+ Liquid Glass with a refined translucent fallback on macOS 14–15.</li>
                 <li><strong>Sidebar Services &amp; Channel Folders:</strong> Launch enabled services directly into Multiview or organize favorite creators and playlists into collapsible custom folders.</li>
                 <li><strong>Independent Multi-Window (<kbd>⌘N</kbd>):</strong> Run separate Multiview walls or dedicated watch windows across multiple displays.</li>
@@ -169,30 +206,30 @@
             </div>
           </article>
 
-          <article class="showcase showcase--reverse">
+          <article class="showcase" id="mini-player">
             <div class="showcase-copy">
-              <span class="section-label">Floating Mini-Player &amp; Media Controls</span>
-              <h3>Always-on-top Mini-Player with Opacity Control &amp; Universal Companion Support.</h3>
-              <p>Keep a borderless 16:9 video pinned to any corner—now for YouTube, YouTube TV, Twitch, ESPN, and open Shadow DOM HTML5 streams alike—smart enough to stay docked during macOS Split Screen.</p>
+              <span class="section-label">Floating Mini-Player &amp; Grid · <a href="changelog.html#v1-3-0">v1.3 Preview on main</a></span>
+              <h3>Always-on-top Single or Quad-Box Floating Multiview Grid.</h3>
+              <p>Keep either a single borderless 16:9 stream or an entire 2&ndash;4 stream Multiview Grid pinned in any corner—with zero reload, click-to-focus audio, and Split Screen–aware auto pop-out.</p>
               <ul class="feature-bullets">
-                <li><strong>Adjustable Transparency (40%–100%) &amp; Speed:</strong> Dial window opacity, playback speed (0.5×–2.0×), size presets, or AirPlay directly from the Mini-Player's unobtrusive top hover controls.</li>
-                <li><strong>Split Screen–Aware Auto Pop-Out:</strong> Pops out automatically when another app covers GlassGrid You, and docks back the moment you return.</li>
-                <li><strong>Control Center Menu Bar &amp; System Guards:</strong> Scrub timelines, switch Multiview audio focus, set a Sleep Timer, and auto-pause on AirPods disconnect or screen lock.</li>
+                <li><strong>Floating Multiview Grid (<kbd>⌘⇧M</kbd> · v1.3 Preview):</strong> Pop out 2-Up, 3-Up, or 2&times;2 Quad-Box walls with crimson active-audio borders, click-any-tile audio switching, and dedicated Grid size presets (<strong>540&times;304</strong>, <strong>680&times;383</strong>, <strong>880&times;495</strong>).</li>
+                <li><strong>Adjustable Opacity (40%&ndash;100%) &amp; Controls:</strong> Dial transparency, switch Grid/Spotlight/Stacked layouts, Mute All, or toggle speed and AirPlay straight from the compact Liquid Glass hover header.</li>
+                <li><strong>Split Screen–Aware Auto Pop-Out:</strong> Floats automatically when another app covers GlassGrid You, and docks cleanly back the moment you return.</li>
               </ul>
             </div>
             <div class="showcase-media">
               <div class="mini-player-pedestal">
-                <div class="mini-player-frame">
+                <div class="mini-player-frame mini-player-frame--grid">
                   <img
-                    src="screenshots/mini-player-night.png"
-                    alt="GlassGrid You borderless 16:9 floating Mini-Player in Night Mode"
-                    width="880"
-                    height="496"
+                    src="screenshots/mini-player-grid-night.png"
+                    alt="GlassGrid You borderless 2x2 Floating Multiview Grid Mini-Player in Night Mode showing crimson active-audio focus and hover controls"
+                    width="1360"
+                    height="766"
                     loading="lazy"
                     decoding="async">
                 </div>
                 <div class="pedestal-caption" aria-hidden="true">
-                  <span class="pedestal-pill">Borderless 16:9</span>
+                  <span class="pedestal-pill">Single or 2×2 Grid</span>
                   <span class="pedestal-pill">40–100% Opacity</span>
                   <span class="pedestal-pill">Toggle with ⌘⇧M</span>
                 </div>
@@ -213,9 +250,9 @@
 
         <div class="bento-grid">
           <div class="glass-card">
-            <span class="bento-badge">~4.5 MB App</span>
+            <span class="bento-badge">5.0 MB DMG</span>
             <h3>Zero Electron Overhead</h3>
-            <p>Compiled natively in Swift 6 with SwiftUI, AppKit, and Apple's native WebKit engine—using a fraction of the RAM and disk space of Chromium wrappers.</p>
+            <p>Compiled natively in Swift 6 (~21 MB universal-clean bundle, ~5 MB notarized DMG) using SwiftUI, AppKit, and Apple WebKit—without bundling Chromium.</p>
           </div>
 
           <div class="glass-card">
@@ -232,20 +269,20 @@
 
           <div class="glass-card">
             <span class="bento-badge">100% Local</span>
-            <h3>Zero Telemetry</h3>
-            <p>No analytics, no tracking pixels, and no developer servers. Cookies, tabs, presets, and history stay strictly on your Mac in Apple's local WebKit storage.</p>
+            <h3>Zero Telemetry &amp; Local MCP</h3>
+            <p>No analytics, no tracking pixels, and no developer servers. Cookies, tabs, presets, and optional UNIX-socket AI/MCP IPC stay strictly local on your Mac.</p>
           </div>
 
           <div class="glass-card">
             <span class="bento-badge">Keyboard-First</span>
             <h3>Native Mac Shortcuts</h3>
-            <p>First-class shortcuts throughout: <kbd>⌘K</kbd> Command Palette, <kbd>⌘⇧G</kbd> Multiview, <kbd>⌘⌥Z</kbd> Solo Tile, <kbd>⌘⇧M</kbd> Mini-Player, <kbd>⌘⇧F</kbd> Focus Mode, and <kbd>⌘N</kbd> New Window.</p>
+            <p>First-class shortcuts throughout: <kbd>⌘K</kbd> Command Palette, <kbd>⌘⇧G</kbd> Multiview, <kbd>⌘⌥Z</kbd> Solo Tile, <kbd>⌘⇧M</kbd> Floating Grid, <kbd>⌘⇧B</kbd> Full Page, <kbd>⌘⇧F</kbd> Focus, and <kbd>⌘N</kbd> New Window.</p>
           </div>
 
           <div class="glass-card">
             <span class="bento-badge">MIT License</span>
             <h3>Open-Source Core</h3>
-            <p>Every single line of Swift 6 source code is public on GitHub. Audit the codebase, contribute pull requests, or build locally from source anytime.</p>
+            <p>Every line of Swift 6 source code—plus the <code>glassgrid</code> CLI &amp; MCP server—is public on GitHub. Audit, fork, or build locally from source anytime.</p>
           </div>
         </div>
       </div>
@@ -261,31 +298,31 @@
 
         <div class="pricing-grid">
           <div class="pricing-card pricing-card--featured">
-            <span class="pricing-kicker">Recommended · Instant Install</span>
+            <span class="pricing-kicker">Recommended · Instant Install (v1.2.0)</span>
             <h3>Notarized macOS Installer</h3>
             <div class="price-row">
               <span class="price-amount">$12</span>
               <span class="price-note">one-time · free v1.x updates</span>
             </div>
-            <p class="pricing-desc">Drag into Applications and launch immediately—signed with an Apple Developer ID, Apple notarized, and ready for silent Sparkle 2 updates.</p>
+            <p class="pricing-desc">Current signed &amp; Apple-notarized release is <strong>v1.2.0</strong>—includes free automatic Sparkle 2 upgrades to <strong>v1.3.0</strong> and every future v1.x update.</p>
             <ul class="pricing-list">
               <li>Signed &amp; Apple-Notarized macOS <code>.dmg</code></li>
               <li>Zero Xcode or command-line setup required</li>
               <li>Sparkle 2 EdDSA-verified automatic updates</li>
-              <li>All v1.x updates included forever, zero subscription</li>
+              <li>Free upgrade to v1.3.0 (MCP, Clean-Box, Grid Mini-Player) once notarized</li>
               <li>Directly supports independent macOS development</li>
             </ul>
             <a class="btn btn-primary" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download for macOS — $12</a>
           </div>
 
           <div class="pricing-card pricing-card--muted">
-            <span class="pricing-kicker">Open Source · MIT License</span>
+            <span class="pricing-kicker">Open Source · MIT License (v1.3 Preview on main)</span>
             <h3>Build from Source</h3>
             <div class="price-row">
               <span class="price-amount">$0</span>
               <span class="price-note">forever · full Swift 6 repo</span>
             </div>
-            <p class="pricing-desc">Prefer compiling your own binaries or inspecting every line first? Clone the public repository and build locally with Xcode and Swift 6.</p>
+            <p class="pricing-desc">Includes the latest <strong>v1.3.0 Preview</strong> work on <code>main</code> today—clone the public repository and build locally with Xcode and Swift 6.</p>
             <ul class="pricing-list">
               <li>100% identical feature set—zero locked pro tiers</li>
               <li>Clean Swift Package Manager &amp; <code>./scripts/bundle.sh</code></li>
@@ -295,6 +332,10 @@
             <a class="btn btn-glass" href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">View Source on GitHub</a>
           </div>
         </div>
+
+        <p class="pricing-changelog-note">
+          Wondering what changed between updates? Compare every release line by line in the <a href="changelog.html">GlassGrid You Release Log</a>.
+        </p>
       </div>
     </section>
 
@@ -314,9 +355,16 @@
           </details>
 
           <details class="faq-item">
-            <summary>Which streaming services &amp; DRM platforms work natively?</summary>
+            <summary>Which streaming services &amp; DRM platforms work natively—and how does Clean-Box work?</summary>
             <div class="faq-answer">
-              <p>Because GlassGrid You is powered by Apple's native WebKit engine rather than Electron/Chromium, it supports Safari desktop User-Agent compatibility, 4K 60fps HDR10, YouTube Premium, YouTube TV FairPlay DRM, Twitch, ESPN, NFL+, MLB.tv, NBA, Peacock, Paramount+, Fubo, and Sling directly inside Multiview tiles. Six subscription services that enforce strict Safari-only CDM checks on macOS (Prime Video, Disney+, Hulu, Max, Apple TV+, and Netflix) are clearly labeled <strong>Safari DRM</strong> in the service picker and include 1-click <strong>Open in Safari</strong> fallback if playback requires full Safari.</p>
+              <p>Because GlassGrid You uses Apple's native WebKit engine rather than Electron/Chromium, it supports Safari desktop compatibility, 4K 60fps HDR10, YouTube Premium, YouTube TV FairPlay DRM, Twitch, ESPN, NFL+, MLB.tv, NBA, Peacock, Paramount+, Fubo, and Sling natively. Seven subscription services that enforce strict Safari-only CDM checks on macOS (Prime Video, Disney+, Hulu, Max, Apple TV+, Netflix, and Crunchyroll) are clearly labeled <strong>Safari DRM</strong> with 1-click <strong>Open in Safari</strong> fallback. In <strong>v1.3 Preview</strong>, Universal Clean-Box (<kbd>⌘⇧B</kbd>) isolates just the video player across all 18 services when a stream starts while leaving home and login pages untouched.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>How does AI Agent, MCP, and Siri automation work—and is it private?</summary>
+            <div class="faq-answer">
+              <p>All AI, MCP, CLI, URL trigger, and Siri features (in <strong>v1.3 Preview</strong>) are strictly opt-in and <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; AI &amp; Automation</strong>, the bundled <code>glassgrid</code> CLI &amp; stdio MCP server lets Claude Desktop, Claude Code, Gemini CLI, Antigravity, or Grok CLI operate GlassGrid You over an owner-only local UNIX socket (never transmitting cookies, passwords, or arbitrary JS), alongside 12 native Siri / Shortcuts App Intents.</p>
             </div>
           </details>
 
@@ -335,9 +383,9 @@
           </details>
 
           <details class="faq-item">
-            <summary>How do automatic updates work?</summary>
+            <summary>How do automatic updates work, and where can I see what changed?</summary>
             <div class="faq-answer">
-              <p>The notarized macOS installer embeds Sparkle 2 and checks our signed appcast feed at <code>https://glassgridyou.com/appcast.xml</code>. Every update package is cryptographically verified with an Ed25519 signature before installing.</p>
+              <p>The notarized macOS installer embeds Sparkle 2 and checks our signed appcast feed at <code>https://glassgridyou.com/appcast.xml</code>. Every update package is cryptographically verified with an Ed25519 signature before installing. View detailed version-to-version differences anytime in our <a href="changelog.html">Release Log</a>.</p>
             </div>
           </details>
 
@@ -367,12 +415,13 @@
           <span>GlassGrid You</span>
         </div>
         <p class="footer-disclaimer">
-          Unofficial, independent macOS application. Not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or any third-party streaming service.
+          Unofficial, independent macOS application. Not affiliated with, endorsed by, or sponsored by Google LLC, YouTube, or any third-party streaming service or AI platform.
         </p>
       </div>
 
       <nav class="footer-links" aria-label="Footer navigation">
         <a href="mailto:support@glassgridyou.com">support@glassgridyou.com</a>
+        <a href="changelog.html">Release Log</a>
         <a href="privacy.html">Privacy Policy</a>
         <a href="terms.html">Terms &amp; Refunds</a>
         <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
