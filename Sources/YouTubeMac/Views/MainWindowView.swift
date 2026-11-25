@@ -53,7 +53,11 @@ struct MainWindowView: View {
     }
 
     private var isSelectedTabPoppedOut: Bool {
-        controller.poppedOutTabID != nil && controller.selectedTabID == controller.poppedOutTabID
+        controller.isSelectedTabPoppedOut
+    }
+
+    private var isMultiviewGridPoppedOut: Bool {
+        controller.isFloatingMultiviewGrid
     }
 
     private var isSelectedTabOnHome: Bool {
@@ -145,8 +149,8 @@ struct MainWindowView: View {
                     TabWebViewHost(
                         tabs: controller.tabs,
                         selectedTabID: controller.selectedTabID,
-                        poppedOutTabID: controller.poppedOutTabID,
-                        anyTabInFullscreen: controller.anyTabInFullscreen,
+                        poppedOutTabIDs: controller.poppedOutTabIDs,
+                        anyTabInFullscreen: controller.hasLiveFullscreenTab,
                         multiviewTabIDs: controller.multiviewTabIDs,
                         soloMultiviewTabID: controller.soloMultiviewTabID,
                         multiviewLayoutMode: controller.multiviewLayoutMode,
@@ -169,7 +173,7 @@ struct MainWindowView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    if controller.isMultiviewActive && !controller.anyTabInFullscreen {
+                    if controller.isMultiviewActive && !controller.hasLiveFullscreenTab && !isMultiviewGridPoppedOut {
                         MultiviewOverlayView(controller: controller)
                     }
 
@@ -180,7 +184,7 @@ struct MainWindowView: View {
                     }
 
                     if !controller.isMultiviewActive,
-                       !controller.anyTabInFullscreen,
+                       !controller.hasLiveFullscreenTab,
                        !isSelectedTabPoppedOut,
                        let tab = controller.selectedTab,
                        let loadError = tab.loadError {
@@ -192,7 +196,9 @@ struct MainWindowView: View {
                         )
                     }
 
-                    if isSelectedTabPoppedOut, let poppedTab = controller.poppedOutTab {
+                    if isMultiviewGridPoppedOut {
+                        poppedOutMultiviewPlaceholder
+                    } else if isSelectedTabPoppedOut, let poppedTab = controller.poppedOutTab {
                         poppedOutPlaceholder(for: poppedTab)
                     }
 
@@ -339,6 +345,8 @@ struct MainWindowView: View {
 
                     // Trailing Liquid Glass control capsules
                     HStack(spacing: 6) {
+                        cleanBoxTogglePill
+
                         focusModePill
 
                         HStack(spacing: 2) {
@@ -364,7 +372,7 @@ struct MainWindowView: View {
                             AppleIconButton(
                                 systemImage: controller.isMultiviewActive ? "square.grid.2x2.fill" : "square.grid.2x2",
                                 isActive: controller.isMultiviewActive,
-                                isDisabled: controller.anyTabInFullscreen,
+                                isDisabled: controller.hasLiveFullscreenTab,
                                 helpText: controller.isMultiviewActive ? "Exit Multiview (⌘⇧G)" : "Multiview — Watch Up to 4 Streams (⌘⇧G)"
                             ) {
                                 controller.toggleMultiview()
@@ -382,8 +390,10 @@ struct MainWindowView: View {
                             AppleIconButton(
                                 systemImage: controller.isMiniPlayer ? "arrow.down.right.and.arrow.up.left" : "rectangle.inset.bottomright.filled",
                                 isActive: controller.isMiniPlayer,
-                                isDisabled: !controller.isMiniPlayer && !controller.canPopOutActiveTab,
-                                helpText: controller.isMiniPlayer ? "Return Floating Mini-Player (⌘⇧M)" : "Pop Out Floating Mini-Player (⌘⇧M)"
+                                isDisabled: !controller.isMiniPlayer && !controller.canPopOutActiveContent,
+                                helpText: controller.isMiniPlayer
+                                    ? (controller.isFloatingMultiviewGrid ? "Return Floating Grid (⌘⇧M)" : "Return Floating Mini-Player (⌘⇧M)")
+                                    : (controller.isMultiviewActive ? "Float Multiview Grid (⌘⇧M)" : "Pop Out Floating Mini-Player (⌘⇧M)")
                             ) {
                                 controller.toggleMiniPlayer()
                             }
@@ -391,7 +401,7 @@ struct MainWindowView: View {
                             AppleIconButton(
                                 systemImage: "airplayvideo",
                                 isActive: controller.isAirPlayActive || controller.isAirPlayPopoverPresented,
-                                isDisabled: controller.anyTabInFullscreen,
+                                isDisabled: controller.hasLiveFullscreenTab,
                                 helpText: "AirPlay & TV Displays"
                             ) {
                                 controller.openAirPlayPopover()
@@ -416,6 +426,44 @@ struct MainWindowView: View {
         .frame(height: WindowChromeLayout.topHeaderBarHeight)
         .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
         .youtubeURLDropTarget(controller: controller)
+    }
+
+    @ViewBuilder
+    private var cleanBoxTogglePill: some View {
+        if controller.settings.cleanBoxStreamingPlayers,
+           let tab = controller.selectedTab,
+           !controller.isMultiviewActive,
+           tab.routingMode == .companion,
+           tab.mediaStatus.isCleanBoxActive || tab.isCleanBoxBypassed {
+            let isCleanActive = !tab.isCleanBoxBypassed
+            Button {
+                controller.toggleCleanBoxForActiveTab()
+            } label: {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 5) {
+                        Image(systemName: isCleanActive ? "rectangle.expand.diagonal" : "rectangle.inset.filled")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(isCleanActive ? "Full Page" : "Clean-Box")
+                            .font(.system(size: 11.5, weight: .semibold))
+                    }
+                    .padding(.horizontal, 10)
+
+                    Image(systemName: isCleanActive ? "rectangle.expand.diagonal" : "rectangle.inset.filled")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 9)
+                }
+                .foregroundStyle(isCleanActive ? Color.primary.opacity(0.84) : AppleTheme.accent)
+                .frame(height: 32)
+                .appleGlass(
+                    in: Capsule(style: .continuous),
+                    tint: isCleanActive ? nil : AppleTheme.accent.opacity(0.18),
+                    interactive: true
+                )
+                .contentShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(isCleanActive ? "Show Full Service Page (⌘⇧B)" : "Restore Clean-Box Video Player (⌘⇧B)")
+        }
     }
 
     @ViewBuilder
@@ -640,6 +688,13 @@ struct MainWindowView: View {
                 )
             )
             Toggle(
+                "Clean-Box Service Players",
+                isOn: Binding(
+                    get: { controller.settings.cleanBoxStreamingPlayers },
+                    set: { controller.settings.cleanBoxStreamingPlayers = $0 }
+                )
+            )
+            Toggle(
                 "Hide Top Web Header",
                 isOn: Binding(
                     get: { controller.settings.hideWebHeader },
@@ -800,6 +855,104 @@ struct MainWindowView: View {
                         controller.createTab(url: controller.settings.startupDestination.url, select: true)
                     } label: {
                         Text("Browse Home")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
+                            .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 2)
+        }
+        .padding(28)
+        .appleGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
+    }
+
+    @ViewBuilder
+    private var poppedOutMultiviewPlaceholder: some View {
+        let tabs = controller.multiviewTabs
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(AppleTheme.accent.opacity(0.14))
+                    .frame(width: 56, height: 56)
+                Image(systemName: "pip.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(AppleTheme.accent)
+            }
+
+            VStack(spacing: 4) {
+                Text("Multiview Grid in Floating Mini-Player")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("\(tabs.count) streams active (\(controller.multiviewLayoutMode.title)) · Click a stream to switch audio")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.secondary)
+            }
+
+            if !tabs.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                        let isAudio = controller.multiviewAudioTabID == tab.id && !tab.mediaStatus.isMuted
+                        Button {
+                            controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("\(index + 1)")
+                                    .font(.system(size: 10.5, weight: .bold, design: .rounded).monospacedDigit())
+                                Image(systemName: isAudio ? "waveform" : "speaker.slash.fill")
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                Text(tab.displayTitle)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(isAudio ? .white : Color.primary.opacity(0.84))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(isAudio ? AppleTheme.accent : Color.primary.opacity(0.08))
+                            )
+                            .frame(maxWidth: 150)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            LiquidGlassGroup(spacing: 10) {
+                HStack(spacing: 10) {
+                    Button {
+                        controller.dockMiniPlayer(selectTab: true, focusMain: true)
+                    } label: {
+                        Text("Return Grid Here")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        controller.muteAllMultiviewTiles()
+                    } label: {
+                        Label("Mute All", systemImage: "speaker.slash.fill")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
+                            .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        controller.dockMiniPlayer(selectTab: true, focusMain: true)
+                        controller.exitMultiview()
+                    } label: {
+                        Text("Exit Multiview")
                             .font(.system(size: 12.5, weight: .medium))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 7)

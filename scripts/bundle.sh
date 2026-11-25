@@ -22,13 +22,22 @@ ENTITLEMENTS_PATH="$ROOT_DIR/scripts/entitlements.plist"
 INSTALL_PATH="/Applications/$APP_NAME.app"
 
 echo "==> Building release binary..."
-swift build -c release
+if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1; then
+    swift build -c release -Xswiftc -emit-const-values
+else
+    swift build -c release
+fi
 
 BIN_DIR="$(swift build -c release --show-bin-path)"
 RELEASE_BIN="$BIN_DIR/YouTubeMac"
+CLI_BIN="$BIN_DIR/glassgrid"
 
 if [[ ! -f "$RELEASE_BIN" ]]; then
     echo "Error: Release binary not found at $RELEASE_BIN" >&2
+    exit 1
+fi
+if [[ ! -f "$CLI_BIN" ]]; then
+    echo "Error: CLI/MCP helper binary not found at $CLI_BIN" >&2
     exit 1
 fi
 
@@ -46,9 +55,19 @@ echo "==> Generating macOS Liquid Glass app icon..."
 swift "$ROOT_DIR/scripts/generate_icon.swift" "$ICONSET_DIR"
 iconutil -c icns "$ICONSET_DIR" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
-echo "==> Copying executable, Sparkle.framework, and metadata..."
+echo "==> Copying executable, glassgrid CLI/MCP helper, Sparkle.framework, and metadata..."
 cp "$RELEASE_BIN" "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
+
+cp "$CLI_BIN" "$APP_BUNDLE/Contents/MacOS/glassgrid"
+chmod +x "$APP_BUNDLE/Contents/MacOS/glassgrid"
+
+# Verify glassgrid CLI/MCP binary does NOT link Sparkle, AppKit, or WebKit.
+if otool -L "$APP_BUNDLE/Contents/MacOS/glassgrid" | grep -qE "Sparkle\.framework|AppKit\.framework|WebKit\.framework"; then
+    echo "Error: glassgrid CLI binary unexpectedly links Sparkle, AppKit, or WebKit:" >&2
+    otool -L "$APP_BUNDLE/Contents/MacOS/glassgrid" >&2
+    exit 1
+fi
 
 # Preserve Sparkle.framework internal Versions/Current symlinks via ditto.
 ditto "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
@@ -147,7 +166,54 @@ $SPARKLE_PLIST_ENTRIES
 </plist>
 EOF
 
-echo "==> Signing embedded Sparkle.framework and app bundle strictly inside-out..."
+APP_INTENTS_PROCESSOR="$(xcrun --find appintentsmetadataprocessor 2>/dev/null || true)"
+if [[ -n "$APP_INTENTS_PROCESSOR" && -x "$APP_INTENTS_PROCESSOR" ]]; then
+    echo "==> Extracting App Intents metadata (Metadata.appintents)..."
+    TOOLCHAIN_DIR="$(cd "$(dirname "$APP_INTENTS_PROCESSOR")/../.." && pwd)"
+    SDK_ROOT="$(xcrun --sdk macosx --show-sdk-path)"
+    XCODE_VER="$(xcodebuild -version 2>/dev/null | awk '/Build version/ { print $3; exit }' || echo "27B52")"
+    ARCH="$(uname -m)"
+    TARGET_TRIPLE="${ARCH}-apple-macos14.0"
+
+    META_TMP="$(mktemp -d)"
+    SRC_LIST="$META_TMP/sources.txt"
+    CONST_LIST="$META_TMP/constvals.txt"
+
+    find "$ROOT_DIR/Sources/YouTubeMac" -name "*.swift" | sort > "$SRC_LIST"
+    find "$ROOT_DIR/.build" \( -path "*/YouTubeMac*.build/*" -o -path "*/YouTubeMac.build/*" \) -name "*.swiftconstvalues" 2>/dev/null | sort > "$CONST_LIST"
+
+    if [[ ! -s "$CONST_LIST" ]]; then
+        echo "Error: No .swiftconstvalues files found for YouTubeMac despite -emit-const-values." >&2
+        rm -rf "$META_TMP"
+        exit 1
+    fi
+
+    "$APP_INTENTS_PROCESSOR" \
+        --output "$APP_BUNDLE/Contents/Resources" \
+        --toolchain-dir "$TOOLCHAIN_DIR" \
+        --module-name YouTubeMac \
+        --sdk-root "$SDK_ROOT" \
+        --xcode-version "$XCODE_VER" \
+        --platform-family macOS \
+        --deployment-target 14.0 \
+        --target-triple "$TARGET_TRIPLE" \
+        --source-file-list "$SRC_LIST" \
+        --swift-const-vals-list "$CONST_LIST" \
+        --force
+
+    rm -rf "$META_TMP"
+
+    ACTIONS_DATA="$APP_BUNDLE/Contents/Resources/Metadata.appintents/extract.actionsdata"
+    if [[ ! -s "$ACTIONS_DATA" ]] || ! grep -q "ControlPlaybackIntent" "$ACTIONS_DATA"; then
+        echo "Error: App Intents metadata extraction failed or missing ControlPlaybackIntent at $ACTIONS_DATA" >&2
+        exit 1
+    fi
+    echo "    Verified $ACTIONS_DATA ($(wc -c < "$ACTIONS_DATA" | tr -d ' ') bytes)"
+else
+    echo "==> Note: appintentsmetadataprocessor not found (CLT-only environment); skipping Metadata.appintents extraction."
+fi
+
+echo "==> Signing embedded Sparkle.framework, glassgrid helper, and app bundle strictly inside-out..."
 xattr -cr "$APP_BUNDLE"
 
 BASE_SIGN_ARGS=(--force)
@@ -180,6 +246,13 @@ sign_item "$SPARKLE_VER/Updater.app"
 # 3. Sparkle.framework bundle itself
 sign_item "$SPARKLE_DST"
 
+# 3b. Embedded glassgrid CLI/MCP executable in Contents/MacOS/
+if [[ "$ENABLE_HARDENED_RUNTIME" == "1" && -f "$ENTITLEMENTS_PATH" ]]; then
+    sign_item "$APP_BUNDLE/Contents/MacOS/glassgrid" --identifier "com.glassgridyou.mac.cli" --entitlements "$ENTITLEMENTS_PATH"
+else
+    sign_item "$APP_BUNDLE/Contents/MacOS/glassgrid" --identifier "com.glassgridyou.mac.cli"
+fi
+
 # 4. Top-level app bundle (with minimal Hardened Runtime entitlements when enabled; never --deep)
 if [[ "$ENABLE_HARDENED_RUNTIME" == "1" && -f "$ENTITLEMENTS_PATH" ]]; then
     sign_item "$APP_BUNDLE" --entitlements "$ENTITLEMENTS_PATH"
@@ -187,6 +260,7 @@ else
     sign_item "$APP_BUNDLE"
 fi
 
+codesign --verify --strict --verbose=2 "$APP_BUNDLE/Contents/MacOS/glassgrid"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 if ! otool -L "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME" | grep -q "@rpath/Sparkle.framework"; then

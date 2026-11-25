@@ -149,7 +149,7 @@ private final class MultiviewDividerNSView: NSView {
 final class FlippedTabHostContainerView: NSView {
     var tabs: [BrowserTab] = []
     var selectedTabID: UUID = UUID()
-    var poppedOutTabID: UUID?
+    var poppedOutTabIDs: [UUID] = []
     var anyTabInFullscreen: Bool = false
     var multiviewTabIDs: [UUID] = []
     var soloMultiviewTabID: UUID?
@@ -262,7 +262,8 @@ final class FlippedTabHostContainerView: NSView {
             return
         }
 
-        let dockedTabs = tabs.filter { $0.id != poppedOutTabID }
+        let poppedOutSet = Set(poppedOutTabIDs)
+        let dockedTabs = tabs.filter { !poppedOutSet.contains($0.id) }
         let dockedWebViews = Set(dockedTabs.map { ObjectIdentifier($0.webView) })
 
         // Only remove stale WKWebView subviews (never remove WebKit helper/placeholder or MultiviewDividerNSView subviews).
@@ -382,6 +383,11 @@ final class FlippedTabHostContainerView: NSView {
 
             if isMultiview && tileRect != nil && tab.needsPostAttachResize {
                 tab.needsPostAttachResize = false
+                if tab.webView.superview === self,
+                   !tab.webView.isHidden,
+                   tab.webView.fullscreenState == .notInFullscreen {
+                    tab.schedulePostAttachResize(in: self, useMultiviewSync: true)
+                }
             }
         }
 
@@ -543,7 +549,7 @@ private extension MultiviewDividerID {
 struct TabWebViewHost: NSViewRepresentable {
     let tabs: [BrowserTab]
     let selectedTabID: UUID
-    let poppedOutTabID: UUID?
+    let poppedOutTabIDs: [UUID]
     let anyTabInFullscreen: Bool
     let multiviewTabIDs: [UUID]
     let soloMultiviewTabID: UUID?
@@ -564,7 +570,7 @@ struct TabWebViewHost: NSViewRepresentable {
     func updateNSView(_ container: FlippedTabHostContainerView, context: Context) {
         container.tabs = tabs
         container.selectedTabID = selectedTabID
-        container.poppedOutTabID = poppedOutTabID
+        container.poppedOutTabIDs = poppedOutTabIDs
         container.anyTabInFullscreen = anyTabInFullscreen
         container.multiviewTabIDs = multiviewTabIDs
         container.soloMultiviewTabID = soloMultiviewTabID

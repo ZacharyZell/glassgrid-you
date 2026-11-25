@@ -65,8 +65,12 @@ struct StreamingOnboardingView: View {
     @State private var step: Int
     @State private var selectedSignInServiceID: String?
     @State private var webReloadToken: Int = 0
+    @State private var freshSignInToken: Int = 0
     @State private var isSignInWebLoading: Bool = false
     @State private var currentSignInURL: URL?
+    @State private var signInErrorMessage: String?
+    @State private var signInCheckTask: Task<Void, Never>?
+    @State private var resetTask: Task<Void, Never>?
     @State private var servicePendingReset: StreamingService?
 
     init(controller: AppController) {
@@ -111,6 +115,12 @@ struct StreamingOnboardingView: View {
                 selectedSignInServiceID = enabledServices.first?.id
             }
         }
+        .onDisappear {
+            signInCheckTask?.cancel()
+            signInCheckTask = nil
+            resetTask?.cancel()
+            resetTask = nil
+        }
         .confirmationDialog(
             "Reset \(servicePendingReset?.name ?? "Service") Login & Site Data?",
             isPresented: Binding(
@@ -122,8 +132,14 @@ struct StreamingOnboardingView: View {
             if let service = servicePendingReset {
                 Button("Reset \(service.name) Login & Data", role: .destructive) {
                     servicePendingReset = nil
-                    controller.resetStreamingServiceData(service)
-                    webReloadToken += 1
+                    signInErrorMessage = nil
+                    signInCheckTask?.cancel()
+                    resetTask?.cancel()
+                    resetTask = Task { @MainActor in
+                        await controller.resetStreamingServiceDataAndWait(service)
+                        guard !Task.isCancelled, activeSignInService.id == service.id else { return }
+                        freshSignInToken += 1
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {
@@ -282,6 +298,7 @@ struct StreamingOnboardingView: View {
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(service.name), \(isSelected ? "selected" : "not selected")\(isSignedIn ? ", signed in" : "")\(service.requiresStrictDRM ? ", Safari DRM supported" : "")")
     }
 
     private var signInHubStep: some View {
@@ -296,6 +313,8 @@ struct StreamingOnboardingView: View {
                         Button {
                             selectedSignInServiceID = service.id
                             currentSignInURL = nil
+                            signInErrorMessage = nil
+                            signInCheckTask?.cancel()
                         } label: {
                             HStack(spacing: 9) {
                                 StreamingServiceBadge(service: service, size: 24)
@@ -363,7 +382,12 @@ struct StreamingOnboardingView: View {
                     Spacer()
 
                     Button {
-                        webReloadToken += 1
+                        if signInErrorMessage != nil || currentSignInURL == nil {
+                            signInErrorMessage = nil
+                            freshSignInToken += 1
+                        } else {
+                            webReloadToken += 1
+                        }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11.5, weight: .medium))
@@ -410,17 +434,56 @@ struct StreamingOnboardingView: View {
 
                 Divider().opacity(0.35)
 
+                if let signInErrorMessage {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        Text(signInErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        Spacer(minLength: 8)
+                        Button("Retry Sign-In") {
+                            self.signInErrorMessage = nil
+                            freshSignInToken += 1
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AppleTheme.accent)
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.orange.opacity(0.12))
+
+                    Divider().opacity(0.35)
+                }
+
                 OnboardingSignInWebView(
                     service: activeSignInService,
                     reloadToken: webReloadToken,
-                    onURLChanged: { newURL in
+                    freshSignInToken: freshSignInToken,
+                    onURLChanged: { serviceID, newURL in
+                        guard serviceID == activeSignInService.id else { return }
                         currentSignInURL = newURL
-                        if StreamingServiceCatalog.isLikelySignedInNavigation(url: newURL, for: activeSignInService) {
-                            controller.settings.setServiceSignedIn(activeSignInService.id, signedIn: true)
+                        signInCheckTask?.cancel()
+                        let targetService = activeSignInService
+                        signInCheckTask = Task { @MainActor in
+                            _ = await controller.evaluateSignInCompletion(
+                                for: targetService,
+                                url: newURL,
+                                fromAuthFlow: true,
+                                refreshIdleTabsOnNewSignIn: true
+                            )
                         }
                     },
-                    onLoadingChanged: { loading in
+                    onLoadingChanged: { serviceID, loading in
+                        guard serviceID == activeSignInService.id else { return }
                         isSignInWebLoading = loading
+                    },
+                    onError: { serviceID, errorMessage in
+                        guard serviceID == activeSignInService.id else { return }
+                        signInErrorMessage = errorMessage
                     }
                 )
             }
@@ -457,6 +520,8 @@ struct StreamingOnboardingView: View {
                 .controlSize(.large)
             } else {
                 Button("← Back to Services") {
+                    signInCheckTask?.cancel()
+                    signInErrorMessage = nil
                     withAnimation(.easeInOut(duration: 0.16)) {
                         step = 1
                     }
@@ -489,6 +554,8 @@ struct StreamingOnboardingView: View {
         let currentID = activeSignInService.id
         controller.settings.setServiceSignedIn(currentID, signedIn: true)
         if let nextUnsigned = enabledServices.first(where: { $0.id != currentID && !controller.settings.isServiceSignedIn($0.id) }) {
+            signInCheckTask?.cancel()
+            signInErrorMessage = nil
             selectedSignInServiceID = nextUnsigned.id
             currentSignInURL = nil
         }

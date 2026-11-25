@@ -1,16 +1,32 @@
 import AppKit
 import Observation
+import QuartzCore
 import SwiftUI
 import WebKit
 import YouTubeMacCore
 
-/// Observable hover, opacity & size-preset state bridged from the floating Mini-Player panel.
+/// Observable hover, mode, opacity, size-preset, and hosted Multiview state bridged from the floating panel.
 @MainActor
 @Observable
 private final class MiniPlayerHoverState {
+    var mode: MiniPlayerMode = .single
     var isHovered: Bool = false
+    var isPopoverPresented: Bool = false
     var currentSizePreset: MiniPlayerSizePreset = .standard
+    var currentGridSizePreset: MiniPlayerGridSizePreset = .standard
     var opacity: Double = 1.0
+    var hostedTabs: [BrowserTab] = []
+    var audioTabID: UUID?
+    var layoutMode: MultiviewLayoutMode = .auto
+    var splitRatios: MultiviewSplitRatios = .default
+
+    var isHeaderVisible: Bool {
+        isHovered || isPopoverPresented
+    }
+
+    var allMuted: Bool {
+        !hostedTabs.isEmpty && hostedTabs.allSatisfy { !$0.mediaStatus.hasVideo || $0.mediaStatus.isMuted }
+    }
 }
 
 /// `NSPanel` subclass supporting `Esc` (`cancelOperation`) to dock cleanly when not in WebKit fullscreen.
@@ -23,10 +39,112 @@ private final class MiniPlayerPanel: NSPanel {
 }
 
 /// Strictly non-hit-tested container hosting the `2pt` bottom progress hairline so the underlying
-/// YouTube video scrubber remains 100% unobstructed.
+/// video scrubber remains 100% unobstructed.
 private final class PassThroughProgressHostView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
+    }
+}
+
+/// Strictly non-hit-tested container hosting floating Multiview grid borders & compact corner badges
+/// above `WKWebView`s so clicks and scrubs pass directly to any tile.
+private final class PassThroughGridBorderHostView: NSView {
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+/// Flipped AppKit container positioning either 1 full-bleed `WKWebView` or 2–4 Multiview `WKWebView` tiles
+/// using `MultiviewGridLayout` top-left coordinates with zero Auto Layout thrash and strict fullscreen immutability.
+@MainActor
+private final class FlippedMiniPlayerContainerView: NSView {
+    var mode: MiniPlayerMode = .single
+    var hostedTabs: [BrowserTab] = []
+    var layoutMode: MultiviewLayoutMode = .auto
+    var splitRatios: MultiviewSplitRatios = .default
+
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        applyLayout()
+    }
+
+    func applyLayout() {
+        if hostedTabs.contains(where: { $0.webView.fullscreenState != .notInFullscreen }) {
+            return
+        }
+
+        let targetWebViews = Set(hostedTabs.map { ObjectIdentifier($0.webView) })
+        for subview in subviews {
+            if let wv = subview as? WKWebView,
+               !targetWebViews.contains(ObjectIdentifier(wv)),
+               wv.fullscreenState == .notInFullscreen {
+                wv.removeFromSuperview()
+            }
+        }
+
+        guard !hostedTabs.isEmpty, bounds.width > 0, bounds.height > 0 else { return }
+
+        let frames: [CGRect]
+        let tileRadius: CGFloat
+        if mode == .multiviewGrid && hostedTabs.count >= 2 {
+            frames = MultiviewGridLayout.frames(
+                forCount: hostedTabs.count,
+                in: bounds.size,
+                mode: layoutMode,
+                ratios: splitRatios,
+                padding: MultiviewGridLayout.floatingMiniPlayerPadding,
+                spacing: MultiviewGridLayout.floatingMiniPlayerSpacing
+            )
+            tileRadius = MultiviewGridLayout.floatingTileCornerRadius
+        } else {
+            frames = [bounds]
+            tileRadius = 0
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        for (index, tab) in hostedTabs.enumerated() where index < frames.count {
+            let webView = tab.webView
+            guard webView.fullscreenState == .notInFullscreen else { continue }
+
+            if webView.superview !== self {
+                webView.removeFromSuperview()
+                webView.translatesAutoresizingMaskIntoConstraints = true
+                webView.autoresizingMask = []
+                addSubview(webView)
+            } else if !webView.translatesAutoresizingMaskIntoConstraints {
+                webView.translatesAutoresizingMaskIntoConstraints = true
+                webView.autoresizingMask = []
+            }
+
+            if webView.isHidden {
+                webView.isHidden = false
+            }
+
+            let targetFrame = frames[index]
+            if targetFrame.width > 0, targetFrame.height > 0, !webView.frame.equalTo(targetFrame) {
+                webView.frame = targetFrame
+            }
+
+            if !webView.wantsLayer {
+                webView.wantsLayer = true
+            }
+            if let layer = webView.layer {
+                let masks = tileRadius > 0
+                if layer.cornerRadius != tileRadius {
+                    layer.cornerRadius = tileRadius
+                }
+                if layer.masksToBounds != masks {
+                    layer.masksToBounds = masks
+                }
+            }
+        }
     }
 }
 
@@ -46,8 +164,72 @@ private struct MiniPlayerProgressHairlineView: View {
                 }
             }
             .frame(height: 2)
+            .ignoresSafeArea(.all)
             .allowsHitTesting(false)
         }
+    }
+}
+
+/// Non-blocking crimson audio focus borders & compact corner slot indicators for the Floating Multiview Grid.
+private struct FloatingMultiviewGridOverlayView: View {
+    let hoverState: MiniPlayerHoverState
+
+    var body: some View {
+        GeometryReader { proxy in
+            let tabs = hoverState.hostedTabs
+            let frames = MultiviewGridLayout.frames(
+                forCount: tabs.count,
+                in: proxy.size,
+                mode: hoverState.layoutMode,
+                ratios: hoverState.splitRatios,
+                padding: MultiviewGridLayout.floatingMiniPlayerPadding,
+                spacing: MultiviewGridLayout.floatingMiniPlayerSpacing
+            )
+
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
+                    if index < frames.count {
+                        let rect = frames[index]
+                        let isAudioActive = (tab.id == hoverState.audioTabID)
+                        let hideCornerBadgeForTopHeader = hoverState.isHeaderVisible && rect.minY < 46
+
+                        RoundedRectangle(cornerRadius: MultiviewGridLayout.floatingTileCornerRadius, style: .continuous)
+                            .strokeBorder(
+                                isAudioActive ? AppleTheme.accent : Color.white.opacity(0.16),
+                                lineWidth: isAudioActive ? 2.0 : 0.75
+                            )
+                            .frame(width: rect.width, height: rect.height)
+                            .offset(x: rect.minX, y: rect.minY)
+                            .allowsHitTesting(false)
+
+                        if !hideCornerBadgeForTopHeader {
+                            HStack(spacing: 4) {
+                                Text("\(index + 1)")
+                                    .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
+                                Image(systemName: isAudioActive ? "waveform" : "speaker.slash.fill")
+                                    .font(.system(size: 8.5, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .frame(height: 18)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(isAudioActive ? AppleTheme.accent.opacity(0.92) : Color.black.opacity(0.62))
+                            )
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(.white.opacity(isAudioActive ? 0.28 : 0.16), lineWidth: 0.75)
+                            )
+                            .offset(x: rect.minX + 6, y: rect.minY + 6)
+                            .allowsHitTesting(false)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .ignoresSafeArea(.all)
+        .allowsHitTesting(false)
     }
 }
 
@@ -59,7 +241,7 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
     }
 }
 
-/// Panel root view that tracks mouse enter/exit across the entire floating video even while YouTube.app is inactive.
+/// Panel root view that tracks mouse enter/exit across the entire floating video even while GlassGrid You is inactive.
 private final class HoverTrackingRootView: NSView {
     var onHoverChanged: ((Bool) -> Void)?
     private var trackingArea: NSTrackingArea?
@@ -88,7 +270,7 @@ private final class HoverTrackingRootView: NSView {
     }
 }
 
-/// Apple TV / Liquid Glass top overlay bar for the floating mini-player pop-up panel.
+/// Apple TV / Liquid Glass top overlay bar for single-video floating mini-player mode.
 private struct FloatingMiniPlayerOverlayView: View {
     let tab: BrowserTab
     let hoverState: MiniPlayerHoverState
@@ -100,6 +282,7 @@ private struct FloatingMiniPlayerOverlayView: View {
     let onSelectSizePreset: (MiniPlayerSizePreset) -> Void
     let onAirPlayResult: (AirPlayPickerResult) -> Void
     let onOpenDisplaysSettings: () -> Void
+    let onPopoverVisibilityChanged: (Bool) -> Void
     let onDragEnded: () -> Void
     let onDock: () -> Void
     let onClose: () -> Void
@@ -110,13 +293,11 @@ private struct FloatingMiniPlayerOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Top draggable strip: click-drag moves the floating panel anywhere on screen; release snaps near corners; double-click docks back.
             WindowDragArea(onDoubleClick: onDock, onDragEnded: onDragEnded)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if hoverState.isHovered {
+            if hoverState.isHeaderVisible {
                 VStack(spacing: 4) {
-                    // Subtle centered grabber indicator so dragging the Mini-Player is unmistakable
                     Capsule(style: .continuous)
                         .fill(.white.opacity(0.55))
                         .frame(width: 34, height: 3.5)
@@ -167,6 +348,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     Image(systemName: "gobackward.10")
                                 }
                                 .help("Rewind 10s")
+                                .accessibilityLabel("Rewind 10 seconds")
 
                                 Button {
                                     onTogglePlay()
@@ -174,6 +356,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     Image(systemName: tab.mediaStatus.isPlaying ? "pause.fill" : "play.fill")
                                 }
                                 .help("Play / Pause")
+                                .accessibilityLabel(tab.mediaStatus.isPlaying ? "Pause" : "Play")
 
                                 Button {
                                     onSeek(10)
@@ -181,6 +364,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     Image(systemName: "goforward.10")
                                 }
                                 .help("Forward 10s")
+                                .accessibilityLabel("Forward 10 seconds")
 
                                 Button {
                                     onToggleMute()
@@ -189,6 +373,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         .foregroundStyle(tab.mediaStatus.isMuted ? AppleTheme.accent : .white)
                                 }
                                 .help(tab.mediaStatus.isMuted ? "Unmute" : "Mute")
+                                .accessibilityLabel(tab.mediaStatus.isMuted ? "Unmute" : "Mute")
 
                                 Rectangle()
                                     .fill(.white.opacity(0.28))
@@ -202,7 +387,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         case .ok:
                                             airPlayFeedbackMessage = nil
                                         case .mseUnsupported:
-                                            airPlayFeedbackMessage = "YouTube MSE streams cast best via AirPlay Display in macOS Displays."
+                                            airPlayFeedbackMessage = "MSE streams cast best via AirPlay Display in macOS Displays."
                                         case .unavailable:
                                             airPlayFeedbackMessage = "Direct video AirPlay unavailable on this stream — use AirPlay Display."
                                         case .noVideo:
@@ -215,6 +400,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         .foregroundStyle(tab.mediaStatus.isAirPlayActive ? AppleTheme.accent : .white)
                                 }
                                 .help("AirPlay Video")
+                                .accessibilityLabel("AirPlay Video")
                                 .popover(
                                     isPresented: Binding(
                                         get: { airPlayFeedbackMessage != nil },
@@ -252,9 +438,9 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accent : .white)
                                 }
                                 .help("Mini-Player Opacity, Speed & Size")
+                                .accessibilityLabel("Mini-Player Display Options")
                                 .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
                                     VStack(alignment: .leading, spacing: 12) {
-                                        // GPU-composited Window Opacity (40%–100%, FairPlay DRM & HDR10 safe)
                                         VStack(alignment: .leading, spacing: 5) {
                                             HStack {
                                                 Text("Opacity")
@@ -277,7 +463,6 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                                         Divider()
 
-                                        // Universal HTML5 / Shadow DOM Playback Speed
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text("Playback Speed")
                                                 .font(.system(size: 11, weight: .semibold))
@@ -304,7 +489,6 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                                         Divider()
 
-                                        // Size Presets
                                         VStack(alignment: .leading, spacing: 6) {
                                             Text("Window Size")
                                                 .font(.system(size: 11, weight: .semibold))
@@ -339,6 +523,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                                 }
                                 .help("Return to Main Window")
+                                .accessibilityLabel("Return to Main Window")
 
                                 Button {
                                     onClose()
@@ -346,6 +531,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     Image(systemName: "xmark")
                                 }
                                 .help("Close Mini-Player")
+                                .accessibilityLabel("Close Mini-Player")
                             }
                             .buttonStyle(.plain)
                             .font(.system(size: 11.5, weight: .semibold))
@@ -364,27 +550,290 @@ private struct FloatingMiniPlayerOverlayView: View {
             }
         }
         .frame(height: 50, alignment: .top)
+        .ignoresSafeArea(.all)
         .contentShape(Rectangle())
+        .onChange(of: isDisplayOptionsPresented || airPlayFeedbackMessage != nil) { _, open in
+            onPopoverVisibilityChanged(open)
+        }
     }
 }
 
-/// Dedicated always-on-top floating `NSPanel` hosting a detached playing `BrowserTab` pop-up.
+/// Compact Liquid Glass hover top bar (`44pt` tall) for the Floating Multiview Grid Mini-Player.
+private struct FloatingMultiviewHeaderOverlayView: View {
+    let hoverState: MiniPlayerHoverState
+    let onFocusAudio: (UUID) -> Void
+    let onCycleLayout: () -> Void
+    let onSelectLayout: (MultiviewLayoutMode) -> Void
+    let onToggleMuteAll: () -> Void
+    let onTogglePlayActive: () -> Void
+    let onPlayAll: () -> Void
+    let onPauseAll: () -> Void
+    let onSetOpacity: (Double) -> Void
+    let onSelectGridPreset: (MiniPlayerGridSizePreset) -> Void
+    let onPopoverVisibilityChanged: (Bool) -> Void
+    let onDragEnded: () -> Void
+    let onDock: () -> Void
+    let onClose: () -> Void
+
+    @State private var isDisplayOptionsPresented = false
+
+    private var activeAudioTab: BrowserTab? {
+        hoverState.hostedTabs.first(where: { $0.id == hoverState.audioTabID }) ?? hoverState.hostedTabs.first
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            WindowDragArea(onDoubleClick: onDock, onDragEnded: onDragEnded)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if hoverState.isHeaderVisible {
+                VStack(spacing: 3.5) {
+                    Capsule(style: .continuous)
+                        .fill(.white.opacity(0.55))
+                        .frame(width: 34, height: 3.5)
+                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                        .allowsHitTesting(false)
+
+                    LiquidGlassGroup(spacing: 6) {
+                        HStack(spacing: 6) {
+                            // Leading clickable slot audio pills [1] [2] [3] [4]
+                            HStack(spacing: 4) {
+                                ForEach(Array(hoverState.hostedTabs.enumerated()), id: \.element.id) { index, tab in
+                                    let isAudio = tab.id == hoverState.audioTabID
+                                    Button {
+                                        onFocusAudio(tab.id)
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Text("\(index + 1)")
+                                                .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                                            if isAudio {
+                                                Image(systemName: "waveform")
+                                                    .font(.system(size: 8.5, weight: .semibold))
+                                            }
+                                        }
+                                        .foregroundStyle(isAudio ? .white : .white.opacity(0.84))
+                                        .padding(.horizontal, isAudio ? 7 : 6)
+                                        .frame(height: 20)
+                                        .background(
+                                            Capsule(style: .continuous)
+                                                .fill(isAudio ? AppleTheme.accent : Color.white.opacity(0.14))
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Audio Focus: Stream \(index + 1) — \(tab.displayTitle)")
+                                    .accessibilityLabel("Switch Audio to Stream \(index + 1)")
+                                }
+                            }
+                            .padding(.horizontal, 6)
+                            .frame(height: 28)
+                            .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.48), interactive: true)
+
+                            Spacer(minLength: 6)
+
+                            // Trailing Multiview Grid controls capsule
+                            HStack(spacing: 8) {
+                                Button(action: onCycleLayout) {
+                                    Image(systemName: hoverState.layoutMode.systemImage)
+                                }
+                                .help("Layout: \(hoverState.layoutMode.title) (Click to Cycle)")
+                                .accessibilityLabel("Cycle Grid Layout")
+
+                                Button(action: onToggleMuteAll) {
+                                    Image(systemName: hoverState.allMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                        .foregroundStyle(hoverState.allMuted ? AppleTheme.accent : .white)
+                                }
+                                .help(hoverState.allMuted ? "Unmute Active Stream" : "Mute All Streams")
+                                .accessibilityLabel(hoverState.allMuted ? "Unmute Active Stream" : "Mute All Streams")
+
+                                Button(action: onTogglePlayActive) {
+                                    Image(systemName: (activeAudioTab?.mediaStatus.isPlaying ?? false) ? "pause.fill" : "play.fill")
+                                }
+                                .help((activeAudioTab?.mediaStatus.isPlaying ?? false) ? "Pause Active Stream" : "Play Active Stream")
+                                .accessibilityLabel((activeAudioTab?.mediaStatus.isPlaying ?? false) ? "Pause Active Stream" : "Play Active Stream")
+
+                                Button {
+                                    isDisplayOptionsPresented.toggle()
+                                } label: {
+                                    Image(systemName: "slider.horizontal.3")
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accent : .white)
+                                }
+                                .help("Grid Opacity, Layout & Size Presets")
+                                .accessibilityLabel("Floating Grid Options")
+                                .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
+                                    VStack(alignment: .leading, spacing: 11) {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            HStack {
+                                                Text("Opacity")
+                                                    .font(.system(size: 11, weight: .semibold))
+                                                Spacer()
+                                                Text("\(Int((hoverState.opacity * 100).rounded()))%")
+                                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Slider(
+                                                value: Binding(
+                                                    get: { hoverState.opacity },
+                                                    set: { onSetOpacity($0) }
+                                                ),
+                                                in: 0.40...1.0,
+                                                step: 0.05
+                                            )
+                                            .controlSize(.small)
+                                        }
+
+                                        Divider()
+
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Layout Mode")
+                                                .font(.system(size: 11, weight: .semibold))
+                                            HStack(spacing: 6) {
+                                                ForEach(MultiviewLayoutMode.allCases) { mode in
+                                                    let isSelected = hoverState.layoutMode == mode
+                                                    Button {
+                                                        onSelectLayout(mode)
+                                                    } label: {
+                                                        Label(mode.title, systemImage: mode.systemImage)
+                                                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+                                                            .padding(.horizontal, 8)
+                                                            .padding(.vertical, 5)
+                                                            .background(
+                                                                Capsule(style: .continuous)
+                                                                    .fill(isSelected ? AppleTheme.accent : Color.primary.opacity(0.10))
+                                                            )
+                                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+
+                                        Divider()
+
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            HStack {
+                                                Text("Grid Size")
+                                                    .font(.system(size: 11, weight: .semibold))
+                                                Spacer()
+                                                let sz = hoverState.currentGridSizePreset.size
+                                                Text("\(Int(sz.width))×\(Int(sz.height))")
+                                                    .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            HStack(spacing: 6) {
+                                                ForEach(MiniPlayerGridSizePreset.allCases) { preset in
+                                                    let isSelected = hoverState.currentGridSizePreset == preset
+                                                    Button {
+                                                        onSelectGridPreset(preset)
+                                                    } label: {
+                                                        Text(preset.shortTitle)
+                                                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+                                                            .padding(.horizontal, 10)
+                                                            .padding(.vertical, 5)
+                                                            .background(
+                                                                Capsule(style: .continuous)
+                                                                    .fill(isSelected ? AppleTheme.accent : Color.primary.opacity(0.10))
+                                                            )
+                                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .help(preset.title)
+                                                }
+                                            }
+                                        }
+
+                                        Divider()
+
+                                        HStack(spacing: 8) {
+                                            Button(action: onPlayAll) {
+                                                Label("Play All", systemImage: "play.fill")
+                                                    .font(.system(size: 11, weight: .medium))
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 5)
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(Color.primary.opacity(0.10))
+                                                    )
+                                                    .foregroundStyle(Color.primary)
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            Button(action: onPauseAll) {
+                                                Label("Pause All", systemImage: "pause.fill")
+                                                    .font(.system(size: 11, weight: .medium))
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 5)
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(Color.primary.opacity(0.10))
+                                                    )
+                                                    .foregroundStyle(Color.primary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .frame(width: 286)
+                                }
+
+                                Button(action: onDock) {
+                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                }
+                                .help("Dock Grid to Main Window")
+                                .accessibilityLabel("Dock Grid to Main Window")
+
+                                Button(action: onClose) {
+                                    Image(systemName: "xmark")
+                                }
+                                .help("Close Floating Grid & Pause")
+                                .accessibilityLabel("Close Floating Grid")
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .frame(height: 28)
+                            .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.48), interactive: true)
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 4)
+                .padding(.bottom, 5)
+                .environment(\.colorScheme, .dark)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
+        }
+        .frame(height: 44, alignment: .top)
+        .ignoresSafeArea(.all)
+        .contentShape(Rectangle())
+        .onChange(of: isDisplayOptionsPresented) { _, open in
+            onPopoverVisibilityChanged(open)
+        }
+    }
+}
+
+/// Dedicated always-on-top floating `NSPanel` hosting either a single detached `BrowserTab`
+/// or the live 2–4 stream Multiview Grid with zero reload and strict fullscreen safety.
 @MainActor
 final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     private var panel: MiniPlayerPanel?
-    private var webContainer: NSView?
+    private var webContainer: FlippedMiniPlayerContainerView?
+    private var gridBorderHostView: PassThroughGridBorderHostView?
     private var overlayHostingView: NSView?
     private var progressHostView: PassThroughProgressHostView?
     private let hoverState = MiniPlayerHoverState()
     private var savedFrame: NSRect?
-    private weak var hostedTab: BrowserTab?
+    private var savedGridFrame: NSRect?
     private var isProgrammaticallyHiding = false
     private var isSnapping = false
     private var onDockHandler: (() -> Void)?
     private var frameSaveTask: Task<Void, Never>?
     private var cornerSnapTask: Task<Void, Never>?
+    private var gridSyncResizeTask: Task<Void, Never>?
 
     var onFrameChanged: ((NSRect) -> Void)?
+    var onGridFrameChanged: ((NSRect) -> Void)?
     var onWindowClosedExternally: (() -> Void)?
     var onOpacityChanged: ((Double) -> Void)?
 
@@ -392,15 +841,42 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         panel?.isVisible ?? false
     }
 
-    /// True when the user is actively interacting with or hovering over the floating panel,
-    /// preventing app-activation auto-dock from yanking the `WKWebView` mid-scrub or mid-drag.
-    var isInteractingWithPanel: Bool {
-        guard let panel, panel.isVisible else { return false }
-        return panel.isKeyWindow || panel.frame.contains(NSEvent.mouseLocation)
+    var currentMode: MiniPlayerMode {
+        hoverState.mode
     }
 
-    init(initialSavedFrame: NSRect? = nil, initialOpacity: Double = 1.0) {
+    var hasLiveFullscreenTab: Bool {
+        hoverState.hostedTabs.contains {
+            $0.isInFullscreen || $0.webView.fullscreenState != .notInFullscreen
+        }
+    }
+
+    /// True when the user is interacting with or hovering the floating panel or any child popover window,
+    /// preventing app-activation auto-dock from yanking WebViews mid-click, mid-scrub, or mid-popover.
+    var isInteractingWithPanel: Bool {
+        guard let panel, panel.isVisible else { return false }
+        if hoverState.isPopoverPresented {
+            return true
+        }
+        let mouse = NSEvent.mouseLocation
+        if panel.isKeyWindow || panel.frame.contains(mouse) {
+            return true
+        }
+        if let children = panel.childWindows {
+            return children.contains { child in
+                child.isVisible && (child.isKeyWindow || child.frame.contains(mouse))
+            }
+        }
+        return false
+    }
+
+    init(
+        initialSavedFrame: NSRect? = nil,
+        initialSavedGridFrame: NSRect? = nil,
+        initialOpacity: Double = 1.0
+    ) {
         self.savedFrame = initialSavedFrame
+        self.savedGridFrame = initialSavedGridFrame
         self.hoverState.opacity = min(max(initialOpacity.isFinite ? initialOpacity : 1.0, 0.40), 1.0)
         super.init()
     }
@@ -424,42 +900,35 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onDock: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
-        guard tab.webView.fullscreenState == .notInFullscreen else { return }
+        guard tab.webView.fullscreenState == .notInFullscreen, !hasLiveFullscreenTab else { return }
 
-        let panel = ensurePanel(allSpaces: allSpaces)
+        cancelPendingGeometryTasks()
+        let panel = ensurePanel(for: .single, allSpaces: allSpaces)
+        configurePanelConstraints(for: .single, on: panel)
         updateCollectionBehavior(allSpaces: allSpaces)
         updateOpacity(opacity)
 
-        if let existing = hostedTab, existing.id != tab.id {
-            if existing.webView.fullscreenState == .notInFullscreen {
-                existing.webView.removeFromSuperview()
-            }
-        }
-        hostedTab = tab
-        onDockHandler = onDock
+        gridSyncResizeTask?.cancel()
+        gridSyncResizeTask = nil
+        gridBorderHostView?.removeFromSuperview()
+        gridBorderHostView = nil
+
+        hoverState.mode = .single
+        hoverState.hostedTabs = [tab]
+        hoverState.audioTabID = tab.id
         hoverState.isHovered = false
+        hoverState.isPopoverPresented = false
         hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
+        onDockHandler = onDock
 
         if let webContainer {
-            let webView = tab.webView
-            if webView.superview !== webContainer {
-                webView.removeFromSuperview()
-                webView.translatesAutoresizingMaskIntoConstraints = false
-                webContainer.addSubview(webView)
-                NSLayoutConstraint.activate([
-                    webView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
-                    webView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
-                    webView.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                    webView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor)
-                ])
-            }
-            webView.isHidden = false
+            webContainer.mode = .single
+            webContainer.hostedTabs = [tab]
+            webContainer.applyLayout()
             webContainer.layoutSubtreeIfNeeded()
-            webView.needsLayout = true
-            webView.needsDisplay = true
         }
 
-        installOverlay(
+        installSingleOverlay(
             in: panel,
             tab: tab,
             onSeek: onSeek,
@@ -472,9 +941,102 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onClose: onClose
         )
         installProgressHairline(in: panel, tab: tab)
-
-        // Stay on top across apps without stealing keyboard focus from the app the user switched to.
         panel.orderFrontRegardless()
+    }
+
+    func showGrid(
+        tabs: [BrowserTab],
+        audioTabID: UUID?,
+        layoutMode: MultiviewLayoutMode,
+        splitRatios: MultiviewSplitRatios,
+        allSpaces: Bool,
+        opacity: Double = 1.0,
+        onFocusAudio: @escaping (UUID) -> Void,
+        onCycleLayout: @escaping () -> Void,
+        onSelectLayout: @escaping (MultiviewLayoutMode) -> Void,
+        onToggleMuteAll: @escaping () -> Void,
+        onTogglePlayActive: @escaping () -> Void,
+        onPlayAll: @escaping () -> Void,
+        onPauseAll: @escaping () -> Void,
+        onDock: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        guard tabs.count >= 2,
+              !hasLiveFullscreenTab,
+              !tabs.contains(where: { $0.isInFullscreen || $0.webView.fullscreenState != .notInFullscreen }) else {
+            return
+        }
+
+        cancelPendingGeometryTasks()
+        let panel = ensurePanel(for: .multiviewGrid, allSpaces: allSpaces)
+        configurePanelConstraints(for: .multiviewGrid, on: panel)
+        updateCollectionBehavior(allSpaces: allSpaces)
+        updateOpacity(opacity)
+
+        progressHostView?.removeFromSuperview()
+        progressHostView = nil
+
+        hoverState.mode = .multiviewGrid
+        hoverState.hostedTabs = tabs
+        hoverState.audioTabID = audioTabID ?? tabs.first?.id
+        hoverState.layoutMode = layoutMode
+        hoverState.splitRatios = splitRatios
+        hoverState.isHovered = false
+        hoverState.isPopoverPresented = false
+        hoverState.currentGridSizePreset = MiniPlayerGridSizePreset.closest(to: panel.frame.size)
+        onDockHandler = onDock
+
+        if let webContainer {
+            webContainer.mode = .multiviewGrid
+            webContainer.hostedTabs = tabs
+            webContainer.layoutMode = layoutMode
+            webContainer.splitRatios = splitRatios
+            webContainer.applyLayout()
+            webContainer.layoutSubtreeIfNeeded()
+        }
+
+        installGridBorderOverlayIfNeeded(in: panel)
+        installGridHeaderOverlay(
+            in: panel,
+            onFocusAudio: onFocusAudio,
+            onCycleLayout: onCycleLayout,
+            onSelectLayout: onSelectLayout,
+            onToggleMuteAll: onToggleMuteAll,
+            onTogglePlayActive: onTogglePlayActive,
+            onPlayAll: onPlayAll,
+            onPauseAll: onPauseAll,
+            onDock: onDock,
+            onClose: onClose
+        )
+        panel.orderFrontRegardless()
+        scheduleGridTileResizeSync()
+    }
+
+    func syncGrid(
+        tabs: [BrowserTab],
+        audioTabID: UUID?,
+        layoutMode: MultiviewLayoutMode,
+        splitRatios: MultiviewSplitRatios
+    ) {
+        guard hoverState.mode == .multiviewGrid,
+              !hasLiveFullscreenTab,
+              !tabs.contains(where: { $0.isInFullscreen || $0.webView.fullscreenState != .notInFullscreen }) else {
+            return
+        }
+
+        hoverState.hostedTabs = tabs
+        hoverState.audioTabID = audioTabID ?? tabs.first?.id
+        hoverState.layoutMode = layoutMode
+        hoverState.splitRatios = splitRatios
+
+        if let webContainer {
+            webContainer.mode = .multiviewGrid
+            webContainer.hostedTabs = tabs
+            webContainer.layoutMode = layoutMode
+            webContainer.splitRatios = splitRatios
+            webContainer.applyLayout()
+            webContainer.layoutSubtreeIfNeeded()
+        }
     }
 
     func updateCollectionBehavior(allSpaces: Bool) {
@@ -487,36 +1049,49 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     }
 
     @discardableResult
-    func detachAndHide() -> BrowserTab? {
-        // Never yank a WKWebView out of the panel while it is in or transitioning fullscreen.
-        if let hosted = hostedTab, hosted.webView.fullscreenState != .notInFullscreen {
-            return nil
+    func detachAndHide() -> [BrowserTab] {
+        guard !hasLiveFullscreenTab else {
+            return []
         }
 
-        cornerSnapTask?.cancel()
-        cornerSnapTask = nil
+        cancelPendingGeometryTasks()
+        gridSyncResizeTask?.cancel()
+        gridSyncResizeTask = nil
+
         if let panel, panel.isVisible {
-            flushPendingFrameSave(panel.frame)
+            flushPendingFrameSave(panel.frame, isGridMode: hoverState.mode == .multiviewGrid)
             isProgrammaticallyHiding = true
             panel.orderOut(nil)
             isProgrammaticallyHiding = false
         }
-        let previous = hostedTab
-        if let webView = previous?.webView, webView.superview === webContainer {
-            webView.removeFromSuperview()
+
+        let previous = hoverState.hostedTabs
+        if let webContainer {
+            for tab in previous where tab.webView.superview === webContainer {
+                tab.webView.layer?.cornerRadius = 0
+                tab.webView.layer?.masksToBounds = false
+                tab.webView.removeFromSuperview()
+            }
+            webContainer.hostedTabs = []
         }
+
+        gridBorderHostView?.removeFromSuperview()
+        gridBorderHostView = nil
         overlayHostingView?.removeFromSuperview()
         overlayHostingView = nil
         progressHostView?.removeFromSuperview()
         progressHostView = nil
         onDockHandler = nil
         hoverState.isHovered = false
-        hostedTab = nil
+        hoverState.isPopoverPresented = false
+        hoverState.hostedTabs = []
+        hoverState.audioTabID = nil
+        hoverState.mode = .single
         return previous
     }
 
     func applySizePreset(_ preset: MiniPlayerSizePreset) {
-        guard let panel, panel.isVisible else { return }
+        guard let panel, panel.isVisible, hoverState.mode == .single else { return }
         cornerSnapTask?.cancel()
         cornerSnapTask = nil
         let visibleFrame = visibleFrameContaining(panel.frame)
@@ -525,13 +1100,44 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         isSnapping = true
         panel.setFrame(target, display: true, animate: true)
         isSnapping = false
-        flushPendingFrameSave(target)
+        flushPendingFrameSave(target, isGridMode: false)
     }
 
-    private func scheduleCornerSnapAfterDrag() {
+    func applyGridSizePreset(_ preset: MiniPlayerGridSizePreset) {
+        guard let panel, panel.isVisible, hoverState.mode == .multiviewGrid else { return }
+        cornerSnapTask?.cancel()
+        cornerSnapTask = nil
+        let visibleFrame = visibleFrameContaining(panel.frame)
+        let target = MiniPlayerGeometry.resizedGridFrame(from: panel.frame, to: preset, in: visibleFrame)
+        hoverState.currentGridSizePreset = preset
+        isSnapping = true
+        panel.setFrame(target, display: true, animate: true)
+        isSnapping = false
+        flushPendingFrameSave(target, isGridMode: true)
+    }
+
+    private func scheduleGridTileResizeSync() {
+        gridSyncResizeTask?.cancel()
+        gridSyncResizeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled, let self, !self.hasLiveFullscreenTab else { return }
+            for tab in self.hoverState.hostedTabs {
+                tab.syncPlayerSize()
+            }
+            self.gridSyncResizeTask = nil
+        }
+    }
+
+    private func cancelPendingGeometryTasks() {
+        cornerSnapTask?.cancel()
+        cornerSnapTask = nil
+        frameSaveTask?.cancel()
+        frameSaveTask = nil
+    }
+
+    private func scheduleCornerSnapAfterDrag(isGridMode: Bool) {
         cornerSnapTask?.cancel()
         cornerSnapTask = Task { @MainActor [weak self] in
-            // Wait until the left mouse button is released so we never fight an active WindowServer drag.
             while !Task.isCancelled {
                 if (NSEvent.pressedMouseButtons & 1) == 0 {
                     break
@@ -541,21 +1147,23 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             try? await Task.sleep(for: .milliseconds(65))
             guard !Task.isCancelled, let self, (NSEvent.pressedMouseButtons & 1) == 0 else { return }
             self.cornerSnapTask = nil
-            self.snapToNearestCornerIfClose()
+            self.snapToNearestCornerIfClose(isGridMode: isGridMode)
         }
     }
 
-    private func snapToNearestCornerIfClose() {
+    private func snapToNearestCornerIfClose(isGridMode: Bool) {
         guard let panel, panel.isVisible, !isSnapping else { return }
+        let currentModeIsGrid = (hoverState.mode == .multiviewGrid)
+        guard currentModeIsGrid == isGridMode else { return }
         let visibleFrame = visibleFrameContaining(panel.frame)
         let snapped = MiniPlayerGeometry.snappedFrame(panel.frame, in: visibleFrame)
         if !snapped.equalTo(panel.frame) {
             isSnapping = true
             panel.setFrame(snapped, display: true, animate: true)
             isSnapping = false
-            flushPendingFrameSave(snapped)
+            flushPendingFrameSave(snapped, isGridMode: isGridMode)
         } else {
-            flushPendingFrameSave(panel.frame)
+            flushPendingFrameSave(panel.frame, isGridMode: isGridMode)
         }
     }
 
@@ -563,59 +1171,83 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard let panel, panel.isVisible, !isSnapping else { return }
-        scheduleDebouncedFrameSave(panel.frame)
-        scheduleCornerSnapAfterDrag()
+        let isGrid = (hoverState.mode == .multiviewGrid)
+        scheduleDebouncedFrameSave(panel.frame, isGridMode: isGrid)
+        scheduleCornerSnapAfterDrag(isGridMode: isGrid)
     }
 
     func windowDidResize(_ notification: Notification) {
         guard let panel, panel.isVisible, !isSnapping else { return }
-        hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
-        scheduleDebouncedFrameSave(panel.frame)
+        let isGrid = (hoverState.mode == .multiviewGrid)
+        if isGrid {
+            hoverState.currentGridSizePreset = MiniPlayerGridSizePreset.closest(to: panel.frame.size)
+        } else {
+            hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
+        }
+        scheduleDebouncedFrameSave(panel.frame, isGridMode: isGrid)
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
         guard let panel, panel.isVisible else { return }
-        hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
-        flushPendingFrameSave(panel.frame)
+        let isGrid = (hoverState.mode == .multiviewGrid)
+        if isGrid {
+            hoverState.currentGridSizePreset = MiniPlayerGridSizePreset.closest(to: panel.frame.size)
+        } else {
+            hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
+        }
+        flushPendingFrameSave(panel.frame, isGridMode: isGrid)
     }
 
     func windowWillClose(_ notification: Notification) {
         guard !isProgrammaticallyHiding else { return }
-        if hostedTab != nil {
+        if !hoverState.hostedTabs.isEmpty && !hasLiveFullscreenTab {
             onWindowClosedExternally?()
         }
     }
 
-    private func scheduleDebouncedFrameSave(_ frame: NSRect) {
-        savedFrame = frame
+    private func scheduleDebouncedFrameSave(_ frame: NSRect, isGridMode: Bool) {
+        if isGridMode {
+            savedGridFrame = frame
+        } else {
+            savedFrame = frame
+        }
         frameSaveTask?.cancel()
         frameSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self, let latest = self.savedFrame else { return }
+            guard !Task.isCancelled, let self else { return }
             self.frameSaveTask = nil
-            self.onFrameChanged?(latest)
+            if isGridMode {
+                if let latest = self.savedGridFrame {
+                    self.onGridFrameChanged?(latest)
+                }
+            } else if let latest = self.savedFrame {
+                self.onFrameChanged?(latest)
+            }
         }
     }
 
-    private func flushPendingFrameSave(_ frame: NSRect) {
+    private func flushPendingFrameSave(_ frame: NSRect, isGridMode: Bool) {
         frameSaveTask?.cancel()
         frameSaveTask = nil
-        savedFrame = frame
-        onFrameChanged?(frame)
+        if isGridMode {
+            savedGridFrame = frame
+            onGridFrameChanged?(frame)
+        } else {
+            savedFrame = frame
+            onFrameChanged?(frame)
+        }
     }
 
     // MARK: - Private
 
-    private func ensurePanel(allSpaces: Bool) -> MiniPlayerPanel {
+    private func ensurePanel(for mode: MiniPlayerMode, allSpaces: Bool) -> MiniPlayerPanel {
         if let panel {
-            let clamped = clampedFrame(panel.frame)
-            if clamped != panel.frame {
-                panel.setFrame(clamped, display: false)
-            }
             return panel
         }
 
-        let initialFrame = clampedFrame(savedFrame ?? defaultFrame())
+        let isGrid = (mode == .multiviewGrid)
+        let targetRaw = isGrid ? (savedGridFrame ?? defaultGridFrame()) : (savedFrame ?? defaultSingleFrame())
+        let initialFrame = clampedFrame(targetRaw, forGridMode: isGrid)
         let panel = MiniPlayerPanel(
             contentRect: initialFrame,
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
@@ -624,9 +1256,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         )
         panel.onEscapePressed = { [weak self] in
             guard let self,
-                  let hosted = self.hostedTab,
-                  !hosted.isInFullscreen,
-                  hosted.webView.fullscreenState == .notInFullscreen else {
+                  !self.hoverState.hostedTabs.isEmpty,
+                  !self.hasLiveFullscreenTab else {
                 return
             }
             self.onDockHandler?()
@@ -643,8 +1274,6 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = .black
         panel.hasShadow = true
-        panel.minSize = NSSize(width: 300, height: 169)
-        panel.aspectRatio = NSSize(width: 16, height: 9)
 
         for buttonType: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             panel.standardWindowButton(buttonType)?.isHidden = true
@@ -664,24 +1293,54 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             }
         }
 
-        let container = NSView(frame: rootView.bounds)
-        container.translatesAutoresizingMaskIntoConstraints = false
+        let container = FlippedMiniPlayerContainerView(frame: rootView.bounds)
+        container.autoresizingMask = [.width, .height]
         rootView.addSubview(container)
-        NSLayoutConstraint.activate([
-            container.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-            container.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-            container.topAnchor.constraint(equalTo: rootView.topAnchor),
-            container.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
-        ])
 
         panel.contentView = rootView
         self.panel = panel
         self.webContainer = container
+        configurePanelConstraints(for: mode, on: panel)
         updateCollectionBehavior(allSpaces: allSpaces)
         return panel
     }
 
-    private func installOverlay(
+    private func configurePanelConstraints(for mode: MiniPlayerMode, on panel: MiniPlayerPanel) {
+        let isGrid = (mode == .multiviewGrid)
+        isSnapping = true
+        defer { isSnapping = false }
+
+        if isGrid {
+            panel.minSize = NSSize(
+                width: MiniPlayerGeometry.gridMinimumSize.width,
+                height: MiniPlayerGeometry.gridMinimumSize.height
+            )
+            panel.resizeIncrements = NSSize(width: 1, height: 1)
+            let target = clampedFrame(savedGridFrame ?? defaultGridFrame(), forGridMode: true)
+            if !panel.frame.equalTo(target) {
+                panel.setFrame(target, display: true)
+            }
+        } else {
+            panel.minSize = NSSize(width: 300, height: 169)
+            panel.aspectRatio = NSSize(width: 16, height: 9)
+            let target = clampedFrame(savedFrame ?? defaultSingleFrame(), forGridMode: false)
+            if !panel.frame.equalTo(target) {
+                panel.setFrame(target, display: true)
+            }
+        }
+    }
+
+    private func refreshHoverAfterPopoverDismissal(_ popoverOpen: Bool) {
+        hoverState.isPopoverPresented = popoverOpen
+        if !popoverOpen, let panel {
+            let inside = panel.frame.contains(NSEvent.mouseLocation)
+            withAnimation(.easeInOut(duration: 0.16)) {
+                hoverState.isHovered = inside
+            }
+        }
+    }
+
+    private func installSingleOverlay(
         in panel: NSPanel,
         tab: BrowserTab,
         onSeek: @escaping (Double) -> Void,
@@ -713,11 +1372,15 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 },
                 onAirPlayResult: onAirPlayResult,
                 onOpenDisplaysSettings: onOpenDisplaysSettings,
+                onPopoverVisibilityChanged: { [weak self] open in
+                    self?.refreshHoverAfterPopoverDismissal(open)
+                },
                 onDragEnded: {},
                 onDock: onDock,
                 onClose: onClose
             )
         )
+        overlay.safeAreaRegions = []
         overlay.translatesAutoresizingMaskIntoConstraints = false
         rootView.addSubview(overlay)
         NSLayoutConstraint.activate([
@@ -729,6 +1392,85 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         overlayHostingView = overlay
     }
 
+    private func installGridBorderOverlayIfNeeded(in panel: NSPanel) {
+        guard let rootView = panel.contentView else { return }
+        if gridBorderHostView?.superview === rootView {
+            return
+        }
+        gridBorderHostView?.removeFromSuperview()
+
+        let host = PassThroughGridBorderHostView(frame: rootView.bounds)
+        host.autoresizingMask = [.width, .height]
+        let borderView = NSHostingView(rootView: FloatingMultiviewGridOverlayView(hoverState: hoverState))
+        borderView.safeAreaRegions = []
+        borderView.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(borderView)
+        NSLayoutConstraint.activate([
+            borderView.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            borderView.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            borderView.topAnchor.constraint(equalTo: host.topAnchor),
+            borderView.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+        ])
+        if let overlayHostingView, overlayHostingView.superview === rootView {
+            rootView.addSubview(host, positioned: .below, relativeTo: overlayHostingView)
+        } else {
+            rootView.addSubview(host)
+        }
+        gridBorderHostView = host
+    }
+
+    private func installGridHeaderOverlay(
+        in panel: NSPanel,
+        onFocusAudio: @escaping (UUID) -> Void,
+        onCycleLayout: @escaping () -> Void,
+        onSelectLayout: @escaping (MultiviewLayoutMode) -> Void,
+        onToggleMuteAll: @escaping () -> Void,
+        onTogglePlayActive: @escaping () -> Void,
+        onPlayAll: @escaping () -> Void,
+        onPauseAll: @escaping () -> Void,
+        onDock: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        guard let rootView = panel.contentView else { return }
+        overlayHostingView?.removeFromSuperview()
+
+        let overlay = FirstMouseHostingView(
+            rootView: FloatingMultiviewHeaderOverlayView(
+                hoverState: hoverState,
+                onFocusAudio: onFocusAudio,
+                onCycleLayout: onCycleLayout,
+                onSelectLayout: onSelectLayout,
+                onToggleMuteAll: onToggleMuteAll,
+                onTogglePlayActive: onTogglePlayActive,
+                onPlayAll: onPlayAll,
+                onPauseAll: onPauseAll,
+                onSetOpacity: { [weak self] newOpacity in
+                    self?.updateOpacity(newOpacity)
+                    self?.onOpacityChanged?(newOpacity)
+                },
+                onSelectGridPreset: { [weak self] preset in
+                    self?.applyGridSizePreset(preset)
+                },
+                onPopoverVisibilityChanged: { [weak self] open in
+                    self?.refreshHoverAfterPopoverDismissal(open)
+                },
+                onDragEnded: {},
+                onDock: onDock,
+                onClose: onClose
+            )
+        )
+        overlay.safeAreaRegions = []
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        rootView.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: rootView.topAnchor),
+            overlay.heightAnchor.constraint(equalToConstant: 44)
+        ])
+        overlayHostingView = overlay
+    }
+
     private func installProgressHairline(in panel: NSPanel, tab: BrowserTab) {
         guard let rootView = panel.contentView else { return }
         progressHostView?.removeFromSuperview()
@@ -736,6 +1478,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         let host = PassThroughProgressHostView(frame: .zero)
         host.translatesAutoresizingMaskIntoConstraints = false
         let hairline = NSHostingView(rootView: MiniPlayerProgressHairlineView(timeline: tab.timeline))
+        hairline.safeAreaRegions = []
         hairline.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(hairline)
         NSLayoutConstraint.activate([
@@ -765,25 +1508,43 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             .first(where: { $0.intersects(frame) }) ?? (NSScreen.main?.visibleFrame ?? screens[0].visibleFrame)
     }
 
-    private func clampedFrame(_ frame: NSRect) -> NSRect {
+    private func clampedFrame(_ frame: NSRect, forGridMode isGrid: Bool) -> NSRect {
         let screens = NSScreen.screens
-        guard !screens.isEmpty else { return defaultFrame() }
+        guard !screens.isEmpty else {
+            return isGrid ? defaultGridFrame() : defaultSingleFrame()
+        }
 
         let targetVisible = screens
             .map(\.visibleFrame)
             .first(where: { $0.intersects(frame) }) ?? (NSScreen.main?.visibleFrame ?? screens[0].visibleFrame)
 
-        let width = min(max(frame.width, 300), targetVisible.width - 24)
-        let height = min(max(frame.height, 169), targetVisible.height - 24)
+        let minW: CGFloat = isGrid ? MiniPlayerGeometry.gridMinimumSize.width : 300
+        let minH: CGFloat = isGrid ? MiniPlayerGeometry.gridMinimumSize.height : 169
+        let width = min(max(frame.width, minW), targetVisible.width - 24)
+        let height = min(max(frame.height, minH), targetVisible.height - 24)
         let x = min(max(frame.origin.x, targetVisible.minX + 8), targetVisible.maxX - width - 8)
         let y = min(max(frame.origin.y, targetVisible.minY + 8), targetVisible.maxY - height - 8)
         return NSRect(x: x, y: y, width: width, height: height)
     }
 
-    private func defaultFrame() -> NSRect {
+    private func defaultSingleFrame() -> NSRect {
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let width: CGFloat = 440
-        let height: CGFloat = 248
+        let width: CGFloat = 480
+        let height: CGFloat = 270
+        let margin: CGFloat = 24
+        return NSRect(
+            x: visibleFrame.maxX - width - margin,
+            y: visibleFrame.minY + margin,
+            width: width,
+            height: height
+        )
+    }
+
+    private func defaultGridFrame() -> NSRect {
+        let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let size = MiniPlayerGridSizePreset.standard.size
+        let width = min(size.width, max(MiniPlayerGeometry.gridMinimumSize.width, visibleFrame.width - 48))
+        let height = min(size.height, max(MiniPlayerGeometry.gridMinimumSize.height, visibleFrame.height - 48))
         let margin: CGFloat = 24
         return NSRect(
             x: visibleFrame.maxX - width - margin,

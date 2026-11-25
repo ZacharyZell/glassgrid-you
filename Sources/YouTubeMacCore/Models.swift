@@ -645,6 +645,8 @@ public struct MediaStatus: Equatable, Sendable {
     public var isHomeFeedEmpty: Bool
     public var airPlayAvailable: Bool
     public var isAirPlayActive: Bool
+    public var isCleanBoxActive: Bool
+    public var isCleanBoxEligible: Bool
 
     public static let empty = MediaStatus(
         hasVideo: false,
@@ -660,7 +662,9 @@ public struct MediaStatus: Equatable, Sendable {
         playbackRate: 1.0,
         isHomeFeedEmpty: false,
         airPlayAvailable: false,
-        isAirPlayActive: false
+        isAirPlayActive: false,
+        isCleanBoxActive: false,
+        isCleanBoxEligible: false
     )
 
     public init(
@@ -677,7 +681,9 @@ public struct MediaStatus: Equatable, Sendable {
         playbackRate: Double = 1.0,
         isHomeFeedEmpty: Bool = false,
         airPlayAvailable: Bool = false,
-        isAirPlayActive: Bool = false
+        isAirPlayActive: Bool = false,
+        isCleanBoxActive: Bool = false,
+        isCleanBoxEligible: Bool = false
     ) {
         self.hasVideo = hasVideo
         self.isPlaying = isPlaying
@@ -693,6 +699,8 @@ public struct MediaStatus: Equatable, Sendable {
         self.isHomeFeedEmpty = isHomeFeedEmpty
         self.airPlayAvailable = airPlayAvailable
         self.isAirPlayActive = isAirPlayActive
+        self.isCleanBoxActive = isCleanBoxActive
+        self.isCleanBoxEligible = isCleanBoxEligible
     }
 
     /// Compact speed badge string (e.g. `"1.5×"`), or `nil` when playing at normal `1×` speed.
@@ -810,6 +818,8 @@ public struct DistractionFreeConfig: Equatable, Sendable {
     public var focusModeActive: Bool
     public var miniPlayerActive: Bool
     public var multiviewTileActive: Bool
+    public var cleanBoxStreamingPlayers: Bool
+    public var cleanBoxBypassed: Bool
 
     public init(
         hideShorts: Bool = true,
@@ -830,7 +840,9 @@ public struct DistractionFreeConfig: Equatable, Sendable {
         appearance: AppAppearance = .system,
         focusModeActive: Bool = false,
         miniPlayerActive: Bool = false,
-        multiviewTileActive: Bool = false
+        multiviewTileActive: Bool = false,
+        cleanBoxStreamingPlayers: Bool = true,
+        cleanBoxBypassed: Bool = false
     ) {
         self.hideShorts = hideShorts
         self.redirectShortsToWatch = redirectShortsToWatch
@@ -851,6 +863,8 @@ public struct DistractionFreeConfig: Equatable, Sendable {
         self.focusModeActive = focusModeActive
         self.miniPlayerActive = miniPlayerActive
         self.multiviewTileActive = multiviewTileActive
+        self.cleanBoxStreamingPlayers = cleanBoxStreamingPlayers
+        self.cleanBoxBypassed = cleanBoxBypassed
     }
 
     public var effectiveTilePlayerActive: Bool {

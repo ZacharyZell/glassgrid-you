@@ -228,8 +228,8 @@ struct TabStripView: View {
             Button("Open in New Window") {
                 controller.openTabInNewWindow(id: tab.id)
             }
-            if tab.id == controller.poppedOutTabID {
-                Button("Return Mini-Player to Tab") {
+            if controller.isTabPoppedOut(tab.id) {
+                Button(controller.isFloatingMultiviewGrid ? "Return Floating Grid to Window" : "Return Mini-Player to Tab") {
                     controller.dockMiniPlayer(selectTab: true, focusMain: false)
                 }
             } else if controller.canPopOut(tab: tab) {
@@ -237,12 +237,19 @@ struct TabStripView: View {
                     controller.popOutToMiniPlayer(tab: tab, reason: .manual)
                 }
             }
+            let showCleanBoxAction = controller.settings.cleanBoxStreamingPlayers
+                && (tab.mediaStatus.isCleanBoxActive || tab.isCleanBoxBypassed)
+            if showCleanBoxAction {
+                Button(tab.isCleanBoxBypassed ? "Clean-Box Video" : "Show Full Page") {
+                    controller.toggleCleanBox(forTabID: tab.id)
+                }
+            }
             if controller.canPutTabToSleep(id: tab.id) {
                 Button("Put Tab to Sleep") {
                     controller.putTabToSleep(id: tab.id)
                 }
             }
-            if tab.mediaStatus.hasVideo || tab.id == controller.poppedOutTabID || controller.isMultiviewActive || controller.canPutTabToSleep(id: tab.id) {
+            if tab.mediaStatus.hasVideo || controller.isTabPoppedOut(tab.id) || controller.isMultiviewActive || controller.canPutTabToSleep(id: tab.id) || showCleanBoxAction {
                 Divider()
             }
             Button("Duplicate Tab") {
@@ -262,7 +269,7 @@ struct TabStripView: View {
 
     @ViewBuilder
     private func tabLeadingIcon(for tab: BrowserTab) -> some View {
-        if tab.id == controller.poppedOutTabID {
+        if controller.isTabPoppedOut(tab.id) {
             Image(systemName: "pip.fill")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppleTheme.accent)

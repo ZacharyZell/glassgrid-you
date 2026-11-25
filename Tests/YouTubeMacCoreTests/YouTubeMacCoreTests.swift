@@ -1744,13 +1744,14 @@ final class YouTubeMacCoreTests: XCTestCase {
 
     func testStreamingServiceCatalogIntegrityDomainIsolationAndSignInDetection() {
         let services = StreamingServiceCatalog.all
-        XCTAssertEqual(services.count, 17)
-        XCTAssertEqual(Set(services.map(\.id)).count, 17)
+        XCTAssertEqual(services.count, 18)
+        XCTAssertEqual(Set(services.map(\.id)).count, 18)
 
         let tier1Count = services.filter { !$0.requiresStrictDRM }.count
         let tier2Count = services.filter { $0.requiresStrictDRM }.count
         XCTAssertEqual(tier1Count, 11)
-        XCTAssertEqual(tier2Count, 6)
+        XCTAssertEqual(tier2Count, 7)
+        XCTAssertEqual(StreamingServiceCatalog.services(in: .moviesAndShows).count, 9)
 
         for service in services {
             XCTAssertEqual(service.homeURL.scheme, "https", "Invalid home URL for \(service.id)")
@@ -1760,6 +1761,15 @@ final class YouTubeMacCoreTests: XCTestCase {
                 XCTAssertEqual(service.routingMode, .youtube)
             } else {
                 XCTAssertEqual(service.routingMode, .companion)
+            }
+            if let homeHost = service.homeURL.host?.lowercased() {
+                for authHint in service.authHostHints {
+                    let lowerHint = authHint.lowercased()
+                    XCTAssertFalse(
+                        homeHost == lowerHint || homeHost.hasSuffix("." + lowerHint) || lowerHint.hasSuffix("." + homeHost),
+                        "Service \(service.id) must not place shared content host \(homeHost) in authHostHints (\(lowerHint))"
+                    )
+                }
             }
         }
 
@@ -1778,13 +1788,158 @@ final class YouTubeMacCoreTests: XCTestCase {
         XCTAssertNotNil(StreamingServiceCatalog.sharedSSOWarning(for: StreamingServiceCatalog.service(id: "disneyplus")!))
         XCTAssertNil(StreamingServiceCatalog.sharedSSOWarning(for: twitch))
 
-        // Conservative passive sign-in detection
+        // Conservative passive sign-in detection (Netflix & YouTube)
         let netflix = StreamingServiceCatalog.service(id: "netflix")!
         XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.netflix.com/login"), for: netflix))
         XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.netflix.com/browse"), for: netflix))
         let youtube = StreamingServiceCatalog.service(id: "youtube")!
         XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://accounts.google.com/ServiceLogin?service=youtube"), for: youtube))
         XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.youtube.com/"), for: youtube))
+
+        // Prime Video OpenID sign-in URL, regional resolution, cookie checks & sign-in detection
+        let prime = StreamingServiceCatalog.service(id: "primevideo")!
+        let primeSignInQuery = prime.signInURL.query ?? ""
+        XCTAssertTrue(primeSignInQuery.contains("openid.mode=checkid_setup"))
+        XCTAssertTrue(primeSignInQuery.contains("gp%2Fvideo%2Fstorefront"))
+        XCTAssertTrue(primeSignInQuery.contains("openid.ns="))
+
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.amazon.com/gp/video/storefront"))?.id, "primevideo")
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.amazon.co.uk/gp/video/storefront"))?.id, "primevideo")
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.amazon.de/gp/video/detail/B001"))?.id, "primevideo")
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.primevideo.com/storefront"))?.id, "primevideo")
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "amazon.co.uk", for: prime))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "evil-amazon.com", for: prime))
+
+        for notSignedIn in [
+            "https://www.amazon.com/ap/signin",
+            "https://www.amazon.com/ax/claim?arb=123",
+            "https://www.amazon.com/ap/mfa",
+            "https://www.amazon.com/ap/cvf",
+            "https://www.amazon.com/gp/video/splash/t/signIn",
+            "https://www.amazon.com/gp/video/offers",
+            "https://www.primevideo.com/offers/nonprimehomepage"
+        ] {
+            XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: notSignedIn), for: prime), "Should not be signed-in: \(notSignedIn)")
+        }
+        for signedInCandidate in [
+            "https://www.amazon.com/gp/video/storefront",
+            "https://amazon.com/gp/video/home",
+            "https://www.amazon.co.uk/gp/video/storefront",
+            "https://www.primevideo.com/storefront"
+        ] {
+            XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: signedInCandidate), for: prime), "Expected candidate signed-in path: \(signedInCandidate)")
+        }
+
+        XCTAssertEqual(StreamingServiceCatalog.hasAuthenticatedSessionCookie(cookieEntries: [("session-id", ".amazon.com")], for: prime), false)
+        XCTAssertEqual(StreamingServiceCatalog.hasAuthenticatedSessionCookie(cookieEntries: [("x-main", ".amazon.com")], for: prime), false)
+        XCTAssertEqual(StreamingServiceCatalog.hasAuthenticatedSessionCookie(cookieEntries: [("at-main", ".evil-amazon.com")], for: prime), false)
+        for cookieName in ["at-main", "sess-at-main", "at-main-av", "sess-at-main-av", "at-av", "sess-at-av", "at-acbuk", "sess-at-acbde"] {
+            let domain = cookieName.contains("-av") ? ".primevideo.com" : ".amazon.co.uk"
+            XCTAssertEqual(
+                StreamingServiceCatalog.hasAuthenticatedSessionCookie(cookieEntries: [(cookieName, domain)], for: prime),
+                true,
+                "Expected cookie \(cookieName) on \(domain) to confirm Prime Video session"
+            )
+        }
+
+        // Crunchyroll catalog, domain isolation, BCP-47 locales & sign-in detection
+        let crunchy = StreamingServiceCatalog.service(id: "crunchyroll")!
+        XCTAssertEqual(crunchy.category, .moviesAndShows)
+        XCTAssertTrue(crunchy.requiresStrictDRM)
+        XCTAssertNil(StreamingServiceCatalog.sharedSSOWarning(for: crunchy))
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "crunchyroll.com", for: crunchy))
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "sso.crunchyroll.com", for: crunchy))
+        XCTAssertTrue(StreamingServiceCatalog.matchesCookieDomain(".crunchyroll.com", for: crunchy))
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "cr-play-service.prd.crunchyrollsvc.com", for: crunchy))
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "v.vrv.co", for: crunchy))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "not-crunchyroll.com", for: crunchy))
+        XCTAssertFalse(StreamingServiceCatalog.matchesDataRecord(displayName: "netflix.com", for: crunchy))
+
+        for blockedCR in [
+            "https://sso.crunchyroll.com/login",
+            "https://www.crunchyroll.com/login",
+            "https://www.crunchyroll.com/es-es/login",
+            "https://www.crunchyroll.com/pt-br/welcome",
+            "https://www.crunchyroll.com/pt-br/freetrial",
+            "https://www.crunchyroll.com/es-es/premium",
+            "https://www.crunchyroll.com/es-es/register"
+        ] {
+            XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: blockedCR), for: crunchy), "Expected logged-out/auth for \(blockedCR)")
+        }
+        for allowedCR in [
+            "https://www.crunchyroll.com/",
+            "https://www.crunchyroll.com/discover",
+            "https://www.crunchyroll.com/watch/G12345/ep-1"
+        ] {
+            XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: allowedCR), for: crunchy), "Expected signed-in destination for \(allowedCR)")
+        }
+
+        // Auth/OAuth popup & transient auth URL detection
+        for transientURL in [
+            "https://www.amazon.com/ap/signin",
+            "https://www.amazon.com/ax/claim?arb=1",
+            "https://www.amazon.com/ap/mfa",
+            "https://na.account.amazon.com/",
+            "https://sso.crunchyroll.com/login",
+            "https://www.primevideo.com/auth-redirect/ref=dv"
+        ] {
+            let parsed = URL(string: transientURL)!
+            XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(parsed))
+            XCTAssertTrue(StreamingServiceCatalog.isAuthOrOAuthPopupURL(parsed))
+        }
+        for nonAuthURL in [
+            "https://www.amazon.com/gp/video/storefront",
+            "https://www.crunchyroll.com/discover",
+            "https://www.netflix.com/browse",
+            "https://www.espn.com/tournament-challenge"
+        ] {
+            let parsed = URL(string: nonAuthURL)!
+            XCTAssertFalse(StreamingServiceCatalog.isTransientAuthURL(parsed))
+            XCTAssertFalse(StreamingServiceCatalog.isAuthOrOAuthPopupURL(parsed))
+        }
+
+        // Session restoration strips transient auth URLs while keeping valid companion tabs (like ESPN Tournament Challenge)
+        let snapshots = [
+            SavedTabSnapshot(urlString: "https://www.amazon.com/ax/claim?arb=123", title: "Sign-In", routingMode: .companion),
+            SavedTabSnapshot(urlString: "https://sso.crunchyroll.com/login", title: "Login", routingMode: .companion),
+            SavedTabSnapshot(urlString: "https://www.amazon.com/gp/video/storefront", title: "Prime Video", routingMode: .companion),
+            SavedTabSnapshot(urlString: "https://www.crunchyroll.com/discover", title: "Crunchyroll", routingMode: .companion),
+            SavedTabSnapshot(urlString: "https://www.espn.com/tournament-challenge", title: "ESPN", routingMode: .companion)
+        ]
+        let sanitizedSession = SessionRestorationFilter.sanitize(tabs: snapshots, selectedIndex: 0)!
+        XCTAssertEqual(sanitizedSession.tabs.map(\.urlString), [
+            "https://www.amazon.com/gp/video/storefront",
+            "https://www.crunchyroll.com/discover",
+            "https://www.espn.com/tournament-challenge"
+        ])
+
+        // App-handoff & internal schemes blocked even on companion subframes/links
+        for blockedScheme in ["aiv://detail", "amzn://home", "amazon://gp", "primevideo://open", "crunchyroll://watch/1", "glassgridyou://action/play", "youtubemac://watch?v=1"] {
+            XCTAssertEqual(
+                YouTubeURLRouter.routeNavigation(
+                    url: URL(string: blockedScheme)!,
+                    currentPageURL: URL(string: "https://www.amazon.com/gp/video/storefront"),
+                    isUserLinkClick: true,
+                    openExternalLinksInBrowser: true,
+                    redirectShortsToWatch: true,
+                    routingMode: .companion
+                ),
+                .block
+            )
+        }
+        XCTAssertTrue(YouTubeURLRouter.isBlockedAppScheme("aiv"))
+        XCTAssertTrue(YouTubeURLRouter.isBlockedAppScheme("crunchyroll"))
+        XCTAssertTrue(YouTubeURLRouter.isAllowedWebScheme("https"))
+        XCTAssertFalse(YouTubeURLRouter.isAllowedWebScheme("aiv"))
+
+        // CompanionQuickSite & EnhancementScript auth bailout invariant
+        XCTAssertTrue(CompanionQuickSite.catalog.contains { $0.id == "crunchyroll" })
+        let boot = EnhancementScript.bootstrapScript(config: DistractionFreeConfig())
+        XCTAssertTrue(boot.contains("isCompanionAuthPage"))
+        XCTAssertFalse(boot.contains(":has("))
+        XCTAssertFalse(boot.contains("MutationObserver"))
+        XCTAssertFalse(boot.contains("AudioContext"))
+        XCTAssertFalse(boot.contains("ytInitialPlayerResponse"))
     }
 
     func testMultiviewReducerSoloToggleAndAutoClear() {
@@ -1856,7 +2011,8 @@ final class YouTubeMacCoreTests: XCTestCase {
         let enabled = [
             StreamingServiceCatalog.service(id: "youtube")!,
             StreamingServiceCatalog.service(id: "espn")!,
-            StreamingServiceCatalog.service(id: "netflix")!
+            StreamingServiceCatalog.service(id: "netflix")!,
+            StreamingServiceCatalog.service(id: "crunchyroll")!
         ]
 
         let items = CommandPaletteEngine.rank(
@@ -1875,6 +2031,22 @@ final class YouTubeMacCoreTests: XCTestCase {
 
         XCTAssertTrue(items.contains { $0.payload == .addStreamingServiceToMultiview("espn") && $0.title == "Add ESPN / ESPN+ Screen" })
         XCTAssertTrue(items.contains { $0.payload == .openStreamingService("espn") && $0.title == "Open ESPN / ESPN+" })
+
+        let crunchyItems = CommandPaletteEngine.rank(
+            query: "crunchyroll",
+            openTabs: [],
+            presets: [],
+            continueWatching: [],
+            pinnedItems: [],
+            watchedChannels: [],
+            enabledServices: enabled,
+            isMultiviewActive: true,
+            canAddMultiviewTile: true,
+            actions: [],
+            suggestions: []
+        )
+        XCTAssertTrue(crunchyItems.contains { $0.payload == .addStreamingServiceToMultiview("crunchyroll") && $0.title == "Add Crunchyroll Screen" })
+        XCTAssertTrue(crunchyItems.contains { $0.payload == .openStreamingService("crunchyroll") && $0.title == "Open Crunchyroll" })
     }
 
     func testWindowDisplayRouterTargetFrameAndNegativeOriginDisplays() {
@@ -1901,5 +2073,126 @@ final class YouTubeMacCoreTests: XCTestCase {
         XCTAssertLessThanOrEqual(clampedFrame.maxX, smallVisible.maxX)
         XCTAssertGreaterThanOrEqual(clampedFrame.minY, smallVisible.minY)
         XCTAssertLessThanOrEqual(clampedFrame.maxY, smallVisible.maxY)
+    }
+
+    func testCleanBoxRulesAll18ServicesAndIframeAllowlist() {
+        XCTAssertEqual(StreamingServiceCatalog.all.count, 18)
+        for service in StreamingServiceCatalog.all {
+            XCTAssertNotNil(
+                CleanBoxRules.profile(serviceID: service.id),
+                "Expected CleanBoxServiceProfile for \(service.id)"
+            )
+        }
+
+        let cases: [(String, CleanBoxRouteClassification)] = [
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", .watch),
+            ("https://www.youtube.com/", .browse),
+            ("https://tv.youtube.com/watch/abc123", .watch),
+            ("https://tv.youtube.com/live", .browse),
+            ("https://www.twitch.tv/shroud", .watch),
+            ("https://www.twitch.tv/directory", .browse),
+            ("https://www.twitch.tv/login", .auth),
+            ("https://www.crunchyroll.com/watch/G12345/ep-1", .watch),
+            ("https://www.crunchyroll.com/es-es/watch/G12345/ep-1", .watch),
+            ("https://www.crunchyroll.com/discover", .browse),
+            ("https://www.crunchyroll.com/es-es/login", .auth),
+            ("https://www.amazon.com/gp/video/detail/B001", .overlaySDK),
+            ("https://www.amazon.com/ap/signin", .auth),
+            ("https://tv.apple.com/us/show/severance/umc.cmc.1", .overlaySDK),
+            ("https://www.espn.com/watch/player/_/id/123", .watch),
+            ("https://www.espn.com/", .browse),
+            ("https://www.nfl.com/plus/games/123", .watch),
+            ("https://www.nfl.com/news/", .browse),
+            ("https://www.mlb.com/tv/g717234", .watch),
+            ("https://www.mlb.com/scores", .browse),
+            ("https://www.nba.com/watch/event/0022", .watch),
+            ("https://www.nba.com/games", .browse),
+            ("https://www.peacocktv.com/watch/playback/vod/123", .watch),
+            ("https://www.peacocktv.com/", .browse),
+            ("https://www.paramountplus.com/shows/halo/video/123/", .watch),
+            ("https://www.paramountplus.com/home/", .browse),
+            ("https://www.fubo.tv/p/watch/123", .watch),
+            ("https://www.fubo.tv/welcome", .browse),
+            ("https://watch.sling.com/1/channel/123", .watch),
+            ("https://www.sling.com/", .browse),
+            ("https://www.disneyplus.com/play/abc", .watch),
+            ("https://www.disneyplus.com/home", .browse),
+            ("https://www.hulu.com/watch/123", .watch),
+            ("https://www.hulu.com/hub/home", .browse),
+            ("https://play.max.com/video/watch/123", .watch),
+            ("https://www.max.com/", .browse),
+            ("https://www.netflix.com/watch/80057281", .watch),
+            ("https://www.netflix.com/browse", .browse)
+        ]
+
+        for (raw, expected) in cases {
+            let url = URL(string: raw)!
+            XCTAssertEqual(CleanBoxRules.classifyRoute(url), expected, "Route mismatch for \(raw)")
+        }
+
+        let crWatch = URL(string: "https://www.crunchyroll.com/watch/G12345/ep-1")!
+        let crDiscover = URL(string: "https://www.crunchyroll.com/discover")!
+        let twitchWatch = URL(string: "https://www.twitch.tv/shroud")!
+
+        XCTAssertTrue(CleanBoxRules.isAllowedPlayerIframeHost("static.crunchyroll.com", forMainFrameURL: crWatch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("static.crunchyroll.com", forMainFrameURL: crDiscover))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("static.crunchyroll.com", forMainFrameURL: twitchWatch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("doubleclick.net", forMainFrameURL: crWatch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("sso.crunchyroll.com", forMainFrameURL: crWatch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost(nil, forMainFrameURL: crWatch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("", forMainFrameURL: crWatch))
+    }
+
+    func testEnhancementScriptCleanBoxSubframeAndAuthTeardownInvariants() {
+        let bootstrap = EnhancementScript.bootstrapScript(config: DistractionFreeConfig())
+        let subframe = EnhancementScript.subframeMediaBridgeScript()
+        let teardown = EnhancementScript.teardownCompanionCleanBoxScript
+        let sync = EnhancementScript.syncCompanionCleanBoxScript
+        let noResizeApply = EnhancementScript.applyConfigScript(DistractionFreeConfig(), triggerResize: false)
+
+        XCTAssertTrue(bootstrap.contains("ytmac-cleanbox-style"))
+        XCTAssertTrue(bootstrap.contains("data-ytmac-cb"))
+        XCTAssertTrue(bootstrap.contains("syncCompanionCleanBox"))
+        XCTAssertTrue(bootstrap.contains("if (isWebCompanionHost() || !document.head || document.getElementById('ytmac-style')) return;"))
+        XCTAssertTrue(bootstrap.contains("collectVideos(document, 0)"))
+        XCTAssertTrue(subframe.contains("window === window.top"))
+        XCTAssertTrue(subframe.contains("subframeMedia: true"))
+        XCTAssertTrue(teardown.contains("data-ytmac-cb"))
+        XCTAssertTrue(sync.contains("__ytmacSyncCleanBox"))
+
+        XCTAssertFalse(noResizeApply.contains("dispatchEvent"))
+        XCTAssertFalse(noResizeApply.contains("emitMediaState"))
+
+        for snippet in [bootstrap, subframe, teardown, sync] {
+            XCTAssertFalse(snippet.contains(":has("))
+            XCTAssertFalse(snippet.contains("MutationObserver"))
+            XCTAssertFalse(snippet.contains("AudioContext"))
+            XCTAssertFalse(snippet.contains("ytInitialPlayerResponse"))
+        }
+    }
+
+    func testFloatingMultiviewGridGeometryAndPresets() {
+        XCTAssertEqual(MiniPlayerGridSizePreset.compact.size, CGSize(width: 540, height: 304))
+        XCTAssertEqual(MiniPlayerGridSizePreset.standard.size, CGSize(width: 680, height: 383))
+        XCTAssertEqual(MiniPlayerGridSizePreset.large.size, CGSize(width: 880, height: 495))
+        XCTAssertEqual(MiniPlayerGeometry.gridMinimumSize, CGSize(width: 440, height: 248))
+
+        XCTAssertEqual(MultiviewGridLayout.floatingMiniPlayerPadding, 6)
+        XCTAssertEqual(MultiviewGridLayout.floatingMiniPlayerSpacing, 6)
+        XCTAssertEqual(MultiviewGridLayout.floatingTileCornerRadius, 10)
+
+        let visible = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        let bottomRightCompact = CGRect(x: 880, y: 45, width: 540, height: 304)
+        let grown = MiniPlayerGeometry.resizedGridFrame(
+            from: bottomRightCompact,
+            to: .large,
+            in: visible,
+            inset: 20
+        )
+        XCTAssertEqual(grown.size, CGSize(width: 880, height: 495))
+        XCTAssertEqual(grown.maxX, bottomRightCompact.maxX, accuracy: 1.0)
+        XCTAssertEqual(grown.minY, bottomRightCompact.minY, accuracy: 1.0)
+        XCTAssertGreaterThanOrEqual(grown.minX, visible.minX + 8)
+        XCTAssertLessThanOrEqual(grown.maxY, visible.maxY - 8)
     }
 }

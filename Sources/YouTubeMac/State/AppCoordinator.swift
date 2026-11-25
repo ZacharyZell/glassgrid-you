@@ -17,8 +17,12 @@ public enum WindowLaunchRequest: Sendable {
 @MainActor
 @Observable
 public final class AppCoordinator {
+    public static weak var sharedActive: AppCoordinator?
+
     public let settings: AppSettings
     public let updater: SparkleUpdaterManager
+    @ObservationIgnored
+    public private(set) lazy var agentBridge: AgentBridgeController = AgentBridgeController(coordinator: self)
 
     public private(set) var windowOrder: [UUID] = []
     public var activeWindowID: UUID?
@@ -58,15 +62,30 @@ public final class AppCoordinator {
     private var appearanceSyncTask: Task<Void, Never>?
 
     @ObservationIgnored
-    public var openWindowHandler: ((UUID) -> Void)?
+    private var serviceResetGeneration: [String: Int] = [:]
+
+    public func resetGeneration(for serviceID: String) -> Int {
+        serviceResetGeneration[serviceID, default: 0]
+    }
+
+    @ObservationIgnored
+    public var openWindowHandler: ((UUID) -> Void)? {
+        didSet {
+            if openWindowHandler != nil {
+                agentBridge.notifyWindowReady()
+            }
+        }
+    }
 
     public init(settings: AppSettings = AppSettings()) {
         self.settings = settings
         self.updater = SparkleUpdaterManager(settings: settings)
         self.floatingMiniPlayer = FloatingMiniPlayerController(
             initialSavedFrame: settings.savedMiniPlayerFrame,
+            initialSavedGridFrame: settings.savedMiniPlayerGridFrame,
             initialOpacity: settings.miniPlayerOpacity
         )
+        _ = self.agentBridge
 
         bindSharedSettingsObservers()
         bindSharedFloatingMiniPlayerCallbacks()
@@ -98,6 +117,10 @@ public final class AppCoordinator {
 
     public var hasMultipleWindows: Bool {
         windowOrder.count > 1
+    }
+
+    public var hasAnyWindowInLiveFullscreen: Bool {
+        openWindows.contains(where: \.hasLiveFullscreenTab)
     }
 
     /// Active command target for macOS menu shortcuts, Dock actions, and incoming URLs.
@@ -158,6 +181,7 @@ public final class AppCoordinator {
         if activeWindowID == nil {
             activeWindowID = windowID
         }
+        agentBridge.notifyWindowReady()
         return controller
     }
 
@@ -228,14 +252,25 @@ public final class AppCoordinator {
         }
     }
 
-    /// Enforces single shared `FloatingMiniPlayerController` ownership across all windows.
-    public func prepareMiniPlayerOwnership(for windowID: UUID) {
+    /// Enforces single shared `FloatingMiniPlayerController` ownership across all windows,
+    /// refusing transfer when a floating tab or the previous owner is currently in live WebKit fullscreen.
+    public func prepareMiniPlayerOwnership(for windowID: UUID) -> Bool {
+        if floatingMiniPlayer.hasLiveFullscreenTab {
+            return false
+        }
         if let existingOwnerID = floatingMiniPlayerOwnerWindowID,
            existingOwnerID != windowID,
            let previousOwner = controllersByID[existingOwnerID] {
+            if previousOwner.hasLiveFullscreenTab {
+                return false
+            }
             previousOwner.dockMiniPlayer(selectTab: false, focusMain: false)
+            if previousOwner.isMiniPlayer {
+                return false
+            }
         }
         floatingMiniPlayerOwnerWindowID = windowID
+        return true
     }
 
     public func releaseMiniPlayerOwnership(for windowID: UUID) {
@@ -288,7 +323,7 @@ public final class AppCoordinator {
             target.handleAppDidResignActive()
             return
         }
-        if let playing = openWindows.first(where: { $0.nowPlayingStatus.isPlaying && !$0.isMultiviewActive }) {
+        if let playing = openWindows.first(where: { $0.nowPlayingStatus.isPlaying }) {
             playing.handleAppDidResignActive()
             return
         }
@@ -316,9 +351,14 @@ public final class AppCoordinator {
         initialThemeCookieSyncTask?.cancel()
         initialThemeCookieSyncTask = nil
         systemPlaybackGuard.stop()
+        agentBridge.shutdown()
     }
 
     public func handleIncomingURL(_ url: URL) {
+        if AgentURLActionParser.isActionURL(url) {
+            agentBridge.handleActionURL(url)
+            return
+        }
         if let target = commandTarget {
             target.handleIncomingURL(url)
         } else if let resolved = YouTubeURLRouter.resolveCustomSchemeURL(url) {
@@ -412,8 +452,13 @@ public final class AppCoordinator {
     }
 
     /// Clears WebKit site data and in-memory HTTP cookies strictly matching `service.dataDomains`
-    /// without touching unrelated streaming services, then reloads matching open tabs across all windows.
+    /// without touching unrelated streaming services, then safely refreshes eligible matching open tabs across all windows.
     public func resetServiceData(for service: StreamingService) async {
+        serviceResetGeneration[service.id, default: 0] += 1
+        for controller in openWindows {
+            controller.cancelSignInCheckTasks(forServiceID: service.id)
+        }
+
         let store = WKWebsiteDataStore.default()
         let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
 
@@ -434,15 +479,51 @@ public final class AppCoordinator {
 
         settings.setServiceSignedIn(service.id, signedIn: false)
 
-        // Reload any open tabs belonging to the reset service across all open windows.
-        for controller in openWindows {
+        // Safely reload eligible open tabs belonging to the reset service (never mutate fullscreen or sleeping/lazy tabs).
+        for controller in openWindows where !controller.hasLiveFullscreenTab {
             for tab in controller.tabs {
-                if StreamingServiceCatalog.service(matchingURL: tab.url)?.id == service.id {
-                    tab.reloadOrStop()
+                guard !tab.isInFullscreen,
+                      tab.webView.fullscreenState == .notInFullscreen,
+                      !tab.isSleeping,
+                      tab.pendingLazyURL == nil,
+                      StreamingServiceCatalog.service(matchingURL: tab.url)?.id == service.id else {
+                    continue
+                }
+                tab.authFlowServiceID = nil
+                if StreamingServiceCatalog.isTransientAuthURL(tab.url) {
+                    tab.load(service.homeURL)
+                } else {
+                    tab.loadError = nil
+                    tab.webView.reload()
                 }
             }
         }
         commandTarget?.showHUD(icon: "arrow.counterclockwise", message: "Reset \(service.name) Login & Data")
+    }
+
+    /// Reloads non-playing, non-fullscreen, non-sleeping tabs for `service` after a new sign-in completes elsewhere.
+    public func refreshIdleTabs(for service: StreamingService, excludingTabID: UUID? = nil) {
+        for controller in openWindows where !controller.hasLiveFullscreenTab {
+            for tab in controller.tabs {
+                guard tab.id != excludingTabID,
+                      !controller.isTabPoppedOut(tab.id),
+                      !tab.isInFullscreen,
+                      tab.webView.fullscreenState == .notInFullscreen,
+                      !tab.mediaStatus.isPlaying,
+                      !tab.isSleeping,
+                      tab.pendingLazyURL == nil,
+                      !tab.isLoading,
+                      StreamingServiceCatalog.service(matchingURL: tab.url)?.id == service.id else {
+                    continue
+                }
+                if StreamingServiceCatalog.isTransientAuthURL(tab.url) {
+                    tab.load(service.homeURL)
+                } else {
+                    tab.loadError = nil
+                    tab.webView.reload()
+                }
+            }
+        }
     }
 
     // MARK: - AirPlay Audio Output & Connected Displays
@@ -536,11 +617,20 @@ public final class AppCoordinator {
         settings.onMiniPlayerOpacityDidChange = { [weak self] opacity in
             self?.floatingMiniPlayer.updateOpacity(opacity)
         }
+        settings.onAgentSettingsDidChange = { [weak self] in
+            self?.agentBridge.reconcileServerState()
+        }
+        settings.onShortcutsParametersDidChange = {
+            GlassGridShortcutsProvider.updateAppShortcutParameters()
+        }
     }
 
     private func bindSharedFloatingMiniPlayerCallbacks() {
         floatingMiniPlayer.onFrameChanged = { [weak self] frame in
             self?.settings.savedMiniPlayerFrame = frame
+        }
+        floatingMiniPlayer.onGridFrameChanged = { [weak self] frame in
+            self?.settings.savedMiniPlayerGridFrame = frame
         }
         floatingMiniPlayer.onOpacityChanged = { [weak self] opacity in
             self?.settings.miniPlayerOpacity = opacity

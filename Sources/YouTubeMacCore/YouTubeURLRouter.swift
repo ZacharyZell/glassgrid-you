@@ -40,7 +40,8 @@ public struct CompanionQuickSite: Identifiable, Equatable, Hashable, Sendable {
         CompanionQuickSite(id: "yttv", name: "YouTube TV", subtitle: "Live TV", urlString: "https://tv.youtube.com", systemImage: "tv"),
         CompanionQuickSite(id: "peacock", name: "Peacock", subtitle: "Live & Sports", urlString: "https://www.peacocktv.com", systemImage: "play.tv"),
         CompanionQuickSite(id: "paramount", name: "Paramount+", subtitle: "CBS & Sports", urlString: "https://www.paramountplus.com", systemImage: "sparkles.tv"),
-        CompanionQuickSite(id: "primevideo", name: "Prime Video", subtitle: "Live & TNF", urlString: "https://www.amazon.com/gp/video/storefront", systemImage: "film")
+        CompanionQuickSite(id: "primevideo", name: "Prime Video", subtitle: "Live & TNF", urlString: "https://www.amazon.com/gp/video/storefront", systemImage: "film"),
+        CompanionQuickSite(id: "crunchyroll", name: "Crunchyroll", subtitle: "Anime & Simulcasts", urlString: "https://www.crunchyroll.com", systemImage: "play.tv")
     ]
 }
 
@@ -49,11 +50,27 @@ public enum URLRouteDecision: Equatable, Sendable {
     case allowInApp
     case redirectInApp(URL)
     case openExternal(URL)
+    case block
 }
 
 /// Pure URL routing, Shorts rewriting, and omnibox parsing helpers.
 public enum YouTubeURLRouter {
     private static let inAppSchemes: Set<String> = ["about", "data", "blob", "javascript"]
+    private static let blockedAppSchemes: Set<String> = [
+        "glassgridyou", "youtubemac",
+        "aiv", "amzn", "amazon", "primevideo", "crunchyroll"
+    ]
+
+    /// Returns true for app-handoff and internal custom schemes that WebKit must never open inside or launch externally.
+    public static func isBlockedAppScheme(_ scheme: String) -> Bool {
+        blockedAppSchemes.contains(scheme.lowercased())
+    }
+
+    /// Returns true strictly for safe web & inline WebKit document schemes (`http`, `https`, `about`, `data`, `blob`, `javascript`).
+    public static func isAllowedWebScheme(_ scheme: String) -> Bool {
+        let lower = scheme.lowercased()
+        return lower == "http" || lower == "https" || inAppSchemes.contains(lower)
+    }
 
     private static let fixedGoogleAuthHosts: Set<String> = [
         "accounts.youtube.com",
@@ -265,6 +282,9 @@ public enum YouTubeURLRouter {
         routingMode: TabRoutingMode = .youtube
     ) -> URLRouteDecision {
         let scheme = url.scheme?.lowercased() ?? ""
+        if isBlockedAppScheme(scheme) {
+            return .block
+        }
         if inAppSchemes.contains(scheme) {
             return .allowInApp
         }

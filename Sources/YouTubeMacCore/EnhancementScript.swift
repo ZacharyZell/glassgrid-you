@@ -12,10 +12,67 @@ public enum EnhancementScript {
 
         return """
         (() => {
+            function isYouTubeTVHost() {
+                return location.hostname.toLowerCase() === 'tv.youtube.com';
+            }
+
+            function isStandardYouTubeHost() {
+                return !isYouTubeTVHost() && /(^|\\.)(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)$/i.test(location.hostname);
+            }
+
+            function isWebCompanionHost() {
+                return !isYouTubeTVHost() && !isStandardYouTubeHost();
+            }
+
+            function isCompanionAuthPage() {
+                if (!isWebCompanionHost()) return false;
+                const host = location.hostname.toLowerCase();
+                if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts)\\./i.test(host)) return true;
+                if (/(^|\\.)(accounts\\.google\\.[a-z.]+|accounts\\.youtube\\.com|idmsa\\.apple\\.com|appleid\\.apple\\.com|registerdisney\\.go\\.com|sp\\.auth\\.adobe\\.com|(na|eu|fe)\\.account\\.amazon\\.com|auth\\.hulu\\.com|auth\\.max\\.com|sso\\.crunchyroll\\.com|id\\.nfl\\.com|ids\\.mlb\\.com|identity\\.nba\\.com|id\\.peacocktv\\.com|identity\\.sling\\.com|passport\\.twitch\\.tv|id\\.twitch\\.tv)$/i.test(host)) return true;
+                const path = location.pathname.toLowerCase();
+                const normSegs = path.split('/').filter(Boolean).map((s) => s.replace(/\\.(html|htm|php|aspx)$/i, ''));
+                const strippedRegion = (normSegs.length >= 2 && normSegs[0] === 'region' && /^[a-z]{2,3}$/.test(normSegs[1]))
+                    ? normSegs.slice(2)
+                    : normSegs;
+                if (/(^|\\.)(amazon\\.[a-z.]+|primevideo\\.com)$/i.test(host)) {
+                    if (strippedRegion[0] === 'ap' || strippedRegion[0] === 'ax') return true;
+                    if (strippedRegion[0] === 'gp' && strippedRegion[1] === 'video' && (strippedRegion[2] === 'auth' || strippedRegion[2] === 'splash')) return true;
+                    if (strippedRegion[0] === 'gp' && strippedRegion[1] === 'sign-in') return true;
+                    if (strippedRegion.includes('auth-redirect')) return true;
+                }
+                const authTokens = new Set([
+                    'signin', 'sign-in', 'sign_in', 'oauth', 'oauth2', 'authorize',
+                    'servicelogin', 'auth-redirect', 'mfa', 'cvf', 'captcha', 'challenge',
+                    'signout', 'sign-out', 'logout', 'log-out', 'register', 'reset-password'
+                ]);
+                for (let i = 0; i < normSegs.length; i += 1) {
+                    if (authTokens.has(normSegs[i])) return true;
+                    if (i + 1 < normSegs.length) {
+                        const pair = normSegs[i] + '/' + normSegs[i + 1];
+                        if (pair === 'oauth/callback' || pair === 'oauth2/callback' || pair === 'auth/callback' || pair === 'sso/callback' || pair === 'auth/return') {
+                            return true;
+                        }
+                    }
+                }
+                const afterLocale = (normSegs.length >= 1 && /^([a-z]{2}(-[a-z]{2}|-\\d{3})?)$/i.test(normSegs[0]) && !['ap', 'ax', 'gp', 'tv', 'v1', 'v2'].includes(normSegs[0]))
+                    ? normSegs.slice(1)
+                    : normSegs;
+                if (afterLocale[0] === 'login') return true;
+                if (afterLocale.length >= 2 && ['web', 'account', 'accounts', 'auth', 'sso', 'user'].includes(afterLocale[0]) && afterLocale[1] === 'login') return true;
+                const query = (location.search || '').toLowerCase();
+                if (query && (query.includes('servicelogin') || query.includes('openid.mode=checkid_setup') || query.includes('openid.mode=checkid_immediate') || (query.includes('oauth') && query.includes('client_id=')))) {
+                    return true;
+                }
+                return false;
+            }
+            if (isCompanionAuthPage()) return;
+
             const initialConfig = \(configJSON);
             window.__ytmacConfig = initialConfig;
 
             const styleText = `\(styleText)`;
+            const cleanBoxStyleText = `\(cleanBoxCSSRules.replacingOccurrences(of: "`", with: "\\`"))`;
+            const CLEANBOX_PLAYER_SELECTORS = \(encodeCleanBoxProfilesJSON());
             const SHORTS_CARD_SELECTOR = [
                 'ytd-reel-shelf-renderer',
                 'ytd-video-renderer',
@@ -41,23 +98,442 @@ public enum EnhancementScript {
                 document.head.appendChild(styleEl);
             }
 
+            function ensureCleanBoxStyleElement() {
+                if (!isWebCompanionHost() || isCompanionAuthPage() || !document.head || document.getElementById('ytmac-cleanbox-style')) return;
+                const styleEl = document.createElement('style');
+                styleEl.id = 'ytmac-cleanbox-style';
+                styleEl.textContent = cleanBoxStyleText;
+                document.head.appendChild(styleEl);
+            }
+
+            let activeCleanBoxState = { root: null, iframe: null, video: null, ancestors: [] };
+            let lastCleanBoxEligible = false;
+            let lastCleanBoxActive = false;
+            let cleanBoxSettleTimer1 = null;
+            let cleanBoxSettleTimer2 = null;
+            let cleanBoxCloseTimer1 = null;
+            let cleanBoxCloseTimer2 = null;
+
+            function clearCleanBoxSettleTimers() {
+                if (cleanBoxSettleTimer1) { clearTimeout(cleanBoxSettleTimer1); cleanBoxSettleTimer1 = null; }
+                if (cleanBoxSettleTimer2) { clearTimeout(cleanBoxSettleTimer2); cleanBoxSettleTimer2 = null; }
+            }
+
+            function clearCleanBoxCloseTimers() {
+                if (cleanBoxCloseTimer1) { clearTimeout(cleanBoxCloseTimer1); cleanBoxCloseTimer1 = null; }
+                if (cleanBoxCloseTimer2) { clearTimeout(cleanBoxCloseTimer2); cleanBoxCloseTimer2 = null; }
+            }
+
+            function stripCleanBoxAttributes() {
+                const tagged = document.querySelectorAll('[data-ytmac-cb]');
+                for (let i = 0; i < tagged.length; i += 1) {
+                    tagged[i].removeAttribute('data-ytmac-cb');
+                }
+                activeCleanBoxState = { root: null, iframe: null, video: null, ancestors: [] };
+            }
+
+            function releaseCompanionCleanBox(stripStyle, suppressResize) {
+                if (document.fullscreenElement || document.webkitFullscreenElement) return false;
+                const rootEl = document.documentElement;
+                const wasActive = Boolean(rootEl && rootEl.dataset.ytmacCleanBox === 'true');
+                stripCleanBoxAttributes();
+                if (rootEl) {
+                    if (stripStyle) {
+                        delete rootEl.dataset.ytmacCleanBox;
+                    } else {
+                        setDatasetFlag(rootEl, 'ytmacCleanBox', false);
+                    }
+                }
+                if (stripStyle) {
+                    const styleEl = document.getElementById('ytmac-cleanbox-style');
+                    if (styleEl) styleEl.remove();
+                }
+                lastCleanBoxActive = false;
+                if (wasActive && !suppressResize) {
+                    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+                }
+                return wasActive;
+            }
+
+            function isCleanBoxWatchPage() {
+                if (!isWebCompanionHost() || isCompanionAuthPage()) return false;
+                const host = location.hostname.toLowerCase();
+                const path = location.pathname.toLowerCase();
+                const normSegs = path.split('/').filter(Boolean).map((s) => s.replace(/\\.(html|htm|php|aspx)$/i, ''));
+
+                if (host === 'clips.twitch.tv') {
+                    return normSegs.length >= 1 ? { serviceID: 'twitch', type: 'watch' } : { serviceID: 'twitch', type: 'browse' };
+                }
+                if (host === 'twitch.tv' || host.endsWith('.twitch.tv')) {
+                    const reserved = new Set([
+                        'directory', 'browse', 'following', 'search', 'settings', 'subscriptions',
+                        'inventory', 'drops', 'wallet', 'turbo', 'downloads', 'jobs', 'p',
+                        'login', 'signup', 'activate', 'videos', 'popout', 'moderator',
+                        'u', 'team', 'store', 'prime', 'bits', 'friends', 'messages',
+                        'payments', 'security', 'privacy', 'terms', 'products', 'broadcast',
+                        'creatorcamp', 'redeem', 'gift', 'clip', 'clips'
+                    ]);
+                    if (normSegs.length >= 2 && normSegs[0] === 'videos') return { serviceID: 'twitch', type: 'watch' };
+                    if (normSegs.length >= 3 && normSegs[1] === 'clip') return { serviceID: 'twitch', type: 'watch' };
+                    if (normSegs.length === 1 && !reserved.has(normSegs[0])) return { serviceID: 'twitch', type: 'watch' };
+                    return { serviceID: 'twitch', type: 'browse' };
+                }
+                if (host === 'crunchyroll.com' || host.endsWith('.crunchyroll.com')) {
+                    const afterLoc = (normSegs.length >= 1 && /^([a-z]{2}(-[a-z]{2}|-\\d{3})?)$/i.test(normSegs[0])) ? normSegs.slice(1) : normSegs;
+                    return (afterLoc.length >= 2 && afterLoc[0] === 'watch')
+                        ? { serviceID: 'crunchyroll', type: 'watch' }
+                        : { serviceID: 'crunchyroll', type: 'browse' };
+                }
+                if (host === 'primevideo.com' || host.endsWith('.primevideo.com') || /(^|\\.)amazon\\.[a-z.]+$/i.test(host)) {
+                    return { serviceID: 'primevideo', type: 'overlaySDK' };
+                }
+                if (host === 'tv.apple.com') {
+                    return { serviceID: 'appletv', type: 'overlaySDK' };
+                }
+                if (host === 'espn.com' || host.endsWith('.espn.com') || host === 'espn.go.com' || host.endsWith('.espn.go.com')) {
+                    return (path.startsWith('/watch/player') || path.startsWith('/espnplus/player') || path.startsWith('/video/clip'))
+                        ? { serviceID: 'espn', type: 'watch' }
+                        : { serviceID: 'espn', type: 'browse' };
+                }
+                if (host === 'nfl.com' || host.endsWith('.nfl.com')) {
+                    const ok = path.startsWith('/plus/games/') || path.startsWith('/plus/live/') || path.startsWith('/plus/episodes/') || path.startsWith('/plus/replays/') || path.startsWith('/network/watch/');
+                    return { serviceID: 'nfl', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'mlb.com' || host.endsWith('.mlb.com')) {
+                    const ok = (normSegs.length >= 2 && normSegs[0] === 'tv' && (normSegs[1].startsWith('g') || normSegs[1].startsWith('c')))
+                        || path.startsWith('/live-stream-games/') || path.startsWith('/video/');
+                    return { serviceID: 'mlb', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'nba.com' || host.endsWith('.nba.com')) {
+                    const ok = path.startsWith('/watch/event/') || path.startsWith('/watch/video/') || path.startsWith('/watch/league-pass');
+                    return { serviceID: 'nba', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'peacocktv.com' || host.endsWith('.peacocktv.com')) {
+                    const ok = path.startsWith('/watch/playback') || path.startsWith('/watch/asset');
+                    return { serviceID: 'peacock', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'paramountplus.com' || host.endsWith('.paramountplus.com')) {
+                    const ok = (normSegs.length >= 3 && normSegs[0] === 'shows' && normSegs[2] === 'video')
+                        || (normSegs.length >= 2 && normSegs[0] === 'movies' && normSegs[1] === 'video')
+                        || path.startsWith('/video/') || path.startsWith('/live-tv/');
+                    return { serviceID: 'paramount', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'fubo.tv' || host.endsWith('.fubo.tv')) {
+                    const ok = path.startsWith('/p/watch') || path.startsWith('/p/live') || path.startsWith('/p/dvr/');
+                    return { serviceID: 'fubo', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'sling.com' || host.endsWith('.sling.com')) {
+                    const ok = path.startsWith('/1/program/') || path.startsWith('/1/channel/') || path.startsWith('/1/asset/') || path.startsWith('/1/franchise/') || normSegs.includes('watch');
+                    return { serviceID: 'sling', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'disneyplus.com' || host.endsWith('.disneyplus.com')) {
+                    const ok = path.startsWith('/play/') || path.startsWith('/video/');
+                    return { serviceID: 'disneyplus', type: ok ? 'watch' : 'browse' };
+                }
+                if (host === 'hulu.com' || host.endsWith('.hulu.com')) {
+                    return { serviceID: 'hulu', type: path.startsWith('/watch/') ? 'watch' : 'browse' };
+                }
+                if (host === 'play.max.com' || host === 'max.com' || host.endsWith('.max.com') || host === 'hbomax.com' || host.endsWith('.hbomax.com')) {
+                    return { serviceID: 'max', type: (path.startsWith('/video/watch') || path.startsWith('/player')) ? 'watch' : 'browse' };
+                }
+                if (host === 'netflix.com' || host.endsWith('.netflix.com')) {
+                    return { serviceID: 'netflix', type: path.startsWith('/watch/') ? 'watch' : 'browse' };
+                }
+                return { serviceID: '_generic', type: 'generic' };
+            }
+
+            function climbLightHost(node) {
+                let cur = node;
+                let guard = 0;
+                while (cur && guard < 12) {
+                    guard += 1;
+                    const rn = typeof cur.getRootNode === 'function' ? cur.getRootNode() : null;
+                    if (rn && rn.host) {
+                        cur = rn.host;
+                    } else {
+                        break;
+                    }
+                }
+                return cur;
+            }
+
+            function isAmbientTrailerVideo(v) {
+                if (!v) return true;
+                if (v.loop && v.muted && (!Number.isFinite(v.duration) || v.duration <= 180)) return true;
+                if (v.getAttribute && v.getAttribute('aria-hidden') === 'true') return true;
+                return false;
+            }
+
+            function hasVisibleExternalModal(playerRoot) {
+                try {
+                    const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+                    for (let i = 0; i < dialogs.length; i += 1) {
+                        const d = dialogs[i];
+                        if (!d || !d.isConnected) continue;
+                        if (playerRoot && (playerRoot.contains(d) || d.contains(playerRoot))) continue;
+                        const cs = getComputedStyle(d);
+                        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0.05) continue;
+                        const r = d.getBoundingClientRect();
+                        if (r.width >= 200 && r.height >= 120) return true;
+                    }
+                } catch (_) {}
+                return false;
+            }
+
+            function resolveGenericPlayerBox(lightVideo) {
+                if (!lightVideo || !lightVideo.getBoundingClientRect) return null;
+                const baseRect = lightVideo.getBoundingClientRect();
+                if (baseRect.width < 120 || baseRect.height < 68) return lightVideo;
+                let best = lightVideo;
+                let cur = lightVideo.parentElement;
+                for (let depth = 0; cur && depth < 10; depth += 1, cur = cur.parentElement) {
+                    const tag = (cur.tagName || '').toLowerCase();
+                    if (tag === 'body' || tag === 'html' || tag === 'main') break;
+                    if (cur.id === 'root' || cur.id === 'app' || cur.id === '__next') break;
+                    if (cur.querySelector && cur.querySelector('nav, header[role="banner"], footer, [data-a-target="chat-scroller"]')) break;
+                    if (cur.querySelectorAll && cur.querySelectorAll('a').length > 12) break;
+                    const r = cur.getBoundingClientRect();
+                    if (r.width <= baseRect.width * 1.18 + 24 && r.height <= baseRect.height * 1.25 + 80) {
+                        best = cur;
+                    } else {
+                        break;
+                    }
+                }
+                return best;
+            }
+
+            function findCleanBoxIframe(profile, minW, minH) {
+                const selectors = (profile && profile.iframeSelectors) || [];
+                const allowedSuffixes = (profile && profile.allowedIframeHostSuffixes) || [];
+                const checkCandidate = (frame) => {
+                    if (!frame || !frame.isConnected) return false;
+                    const inline = frame.style;
+                    if (inline && (inline.display === 'none' || inline.visibility === 'hidden' || inline.opacity === '0')) return false;
+                    const cs = getComputedStyle(frame);
+                    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+                    const r = frame.getBoundingClientRect();
+                    const already = activeCleanBoxState.iframe === frame && document.documentElement.dataset.ytmacCleanBox === 'true';
+                    if (!already && (r.width < minW || r.height < minH)) return false;
+                    try {
+                        const u = new URL(frame.src || '', location.href);
+                        const h = (u.hostname || '').toLowerCase();
+                        if (!h) return false;
+                        if (allowedSuffixes.length > 0 && !allowedSuffixes.some((s) => h === s || h.endsWith('.' + s))) {
+                            return false;
+                        }
+                    } catch (_) {
+                        return false;
+                    }
+                    return true;
+                };
+                for (let i = 0; i < selectors.length; i += 1) {
+                    const list = document.querySelectorAll(selectors[i]);
+                    for (let j = 0; j < list.length; j += 1) {
+                        if (checkCandidate(list[j])) return list[j];
+                    }
+                }
+                const allFrames = document.querySelectorAll('iframe');
+                for (let i = 0; i < allFrames.length; i += 1) {
+                    if (checkCandidate(allFrames[i])) return allFrames[i];
+                }
+                return null;
+            }
+
+            function evaluateCompanionCleanBoxCandidate(cfg) {
+                const none = { eligible: false, activate: false, root: null, iframe: null, video: null };
+                if (!isWebCompanionHost() || isCompanionAuthPage()) return none;
+                const route = isCleanBoxWatchPage();
+                if (!route || route.type === 'browse') return none;
+
+                const isCompactSurface = Boolean(cfg && (cfg.miniPlayerActive || cfg.multiviewTileActive));
+                const minW = isCompactSurface ? 100 : 180;
+                const minH = isCompactSurface ? 56 : 100;
+                const profile = CLEANBOX_PLAYER_SELECTORS[route.serviceID] || null;
+                const isCatalog = route.serviceID !== '_generic';
+                const wasCleanBox = document.documentElement.dataset.ytmacCleanBox === 'true';
+
+                if (route.serviceID === '_generic') {
+                    if (!(cfg && (cfg.miniPlayerActive || cfg.multiviewTileActive || cfg.focusModeActive))) {
+                        return none;
+                    }
+                }
+
+                let resolvedRoot = null;
+                let resolvedIframe = null;
+                let resolvedVideo = null;
+
+                if (profile && profile.strategy === 'companionIframe') {
+                    const iframe = findCleanBoxIframe(profile, isCompactSurface ? 100 : 240, isCompactSurface ? 56 : 135);
+                    if (!iframe) return none;
+                    resolvedIframe = iframe;
+                    for (let i = 0; i < profile.playerSelectors.length; i += 1) {
+                        const match = iframe.closest(profile.playerSelectors[i]);
+                        if (match && match !== document.body && match !== document.documentElement && !match.querySelector('nav, header[role="banner"]')) {
+                            resolvedRoot = match;
+                            break;
+                        }
+                    }
+                    if (!resolvedRoot) {
+                        resolvedRoot = iframe;
+                    }
+                } else {
+                    const video = findPrimaryWebVideo();
+                    if (!video || !video.isConnected) return none;
+                    const hasMedia = Boolean(video.src || video.currentSrc || video.readyState > 0 || (video.querySelector && video.querySelector('source[src]')));
+                    if (!hasMedia || isAmbientTrailerVideo(video)) return none;
+                    const lightEl = climbLightHost(video);
+                    if (!lightEl || !lightEl.isConnected) return none;
+                    if (typeof lightEl.closest === 'function' && lightEl.closest('[data-a-target="front-page-carousel"], .persistent-player')) {
+                        return none;
+                    }
+                    const vRect = lightEl.getBoundingClientRect();
+                    const reqW = route.serviceID === '_generic' ? (isCompactSurface ? 100 : 320) : minW;
+                    const reqH = route.serviceID === '_generic' ? (isCompactSurface ? 56 : 180) : minH;
+                    if (!(wasCleanBox && video.readyState > 0) && (vRect.width < reqW || vRect.height < reqH)) {
+                        return none;
+                    }
+                    if (route.serviceID === '_generic' && video.readyState < 2) {
+                        return none;
+                    }
+
+                    if (profile && Array.isArray(profile.playerSelectors)) {
+                        for (let i = 0; i < profile.playerSelectors.length; i += 1) {
+                            const sel = profile.playerSelectors[i];
+                            const cand = (typeof lightEl.closest === 'function') ? lightEl.closest(sel) : null;
+                            if (cand && cand !== document.body && cand !== document.documentElement) {
+                                if (cand.querySelector && cand.querySelector('nav, header[role="banner"], [data-a-target="chat-scroller"]')) {
+                                    continue;
+                                }
+                                resolvedRoot = cand;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (route.type === 'overlaySDK') {
+                        if (!resolvedRoot) return none;
+                        const s = resolvedRoot.style;
+                        if (s && (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0')) return none;
+                        const cs = getComputedStyle(resolvedRoot);
+                        if (cs.display === 'none' || cs.visibility === 'hidden') return none;
+                        const r = resolvedRoot.getBoundingClientRect();
+                        if (!(wasCleanBox && video.readyState > 0) && (r.width < reqW || r.height < reqH)) return none;
+                    } else if (!resolvedRoot) {
+                        resolvedRoot = resolveGenericPlayerBox(lightEl);
+                    }
+
+                    if (!resolvedRoot) return none;
+                    if (video.getRootNode && video.getRootNode() === document) {
+                        resolvedVideo = video;
+                    }
+                }
+
+                if (hasVisibleExternalModal(resolvedRoot)) {
+                    return none;
+                }
+
+                const wantBySurface = Boolean(cfg && (cfg.miniPlayerActive || cfg.multiviewTileActive || cfg.focusModeActive || (isCatalog && cfg.cleanWebChrome)));
+                const activate = wantBySurface && Boolean(cfg && cfg.cleanBoxStreamingPlayers) && !Boolean(cfg && cfg.cleanBoxBypassed);
+                return {
+                    eligible: true,
+                    activate,
+                    root: resolvedRoot,
+                    iframe: resolvedIframe,
+                    video: resolvedVideo
+                };
+            }
+
+            function syncCompanionCleanBox(reason) {
+                if (!isWebCompanionHost()) {
+                    lastCleanBoxEligible = false;
+                    return false;
+                }
+                if (isCompanionAuthPage()) {
+                    lastCleanBoxEligible = false;
+                    const changed = releaseCompanionCleanBox(true, true);
+                    if (changed) emitMediaState(true);
+                    return false;
+                }
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    return lastCleanBoxActive;
+                }
+
+                const cfg = window.__ytmacConfig || initialConfig;
+                const cand = evaluateCompanionCleanBoxCandidate(cfg);
+                lastCleanBoxEligible = cand.eligible;
+
+                const rootEl = document.documentElement;
+                if (!cand.activate || !cand.root) {
+                    const wasActive = releaseCompanionCleanBox(false, true);
+                    if (wasActive) {
+                        requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+                        if (reason !== 'configOnly') emitMediaState(true);
+                    }
+                    return false;
+                }
+
+                ensureCleanBoxStyleElement();
+                const targetChanged = activeCleanBoxState.root !== cand.root
+                    || activeCleanBoxState.iframe !== cand.iframe
+                    || activeCleanBoxState.video !== cand.video;
+                const wasActive = Boolean(rootEl && rootEl.dataset.ytmacCleanBox === 'true');
+
+                if (targetChanged || !wasActive) {
+                    stripCleanBoxAttributes();
+                    cand.root.setAttribute('data-ytmac-cb', 'player');
+                    if (cand.iframe) {
+                        cand.iframe.setAttribute('data-ytmac-cb', 'iframe');
+                    }
+                    if (cand.video && cand.video !== cand.root) {
+                        cand.video.setAttribute('data-ytmac-cb', 'video');
+                    }
+                    const ancestors = [];
+                    let cur = cand.root.parentElement;
+                    while (cur && cur !== document.body && cur !== document.documentElement) {
+                        cur.setAttribute('data-ytmac-cb', 'ancestor');
+                        ancestors.push(cur);
+                        cur = cur.parentElement;
+                    }
+                    activeCleanBoxState = {
+                        root: cand.root,
+                        iframe: cand.iframe,
+                        video: cand.video,
+                        ancestors
+                    };
+                }
+
+                if (rootEl) {
+                    setDatasetFlag(rootEl, 'ytmacCleanBox', true);
+                }
+                lastCleanBoxActive = true;
+
+                if (!wasActive) {
+                    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+                    if (reason !== 'configOnly') emitMediaState(true);
+                }
+                return true;
+            }
+
+            window.__ytmacSyncCleanBox = (reason) => syncCompanionCleanBox(reason || 'manual');
+
+            function scheduleCleanBoxSettleTimers() {
+                if (!isWebCompanionHost() || isCompanionAuthPage()) return;
+                clearCleanBoxSettleTimers();
+                cleanBoxSettleTimer1 = setTimeout(() => {
+                    cleanBoxSettleTimer1 = null;
+                    syncCompanionCleanBox('settle1');
+                }, 650);
+                cleanBoxSettleTimer2 = setTimeout(() => {
+                    cleanBoxSettleTimer2 = null;
+                    syncCompanionCleanBox('settle2');
+                }, 1500);
+            }
+
             function setDatasetFlag(root, key, enabled) {
                 const value = enabled ? 'true' : 'false';
                 if (root.dataset[key] !== value) {
                     root.dataset[key] = value;
                 }
-            }
-
-            function isYouTubeTVHost() {
-                return location.hostname.toLowerCase() === 'tv.youtube.com';
-            }
-
-            function isStandardYouTubeHost() {
-                return !isYouTubeTVHost() && /(^|\\.)(youtube\\.com|youtu\\.be|youtube-nocookie\\.com)$/i.test(location.hostname);
-            }
-
-            function isWebCompanionHost() {
-                return !isYouTubeTVHost() && !isStandardYouTubeHost();
             }
 
             function isWatchPage() {
@@ -83,20 +559,43 @@ public enum EnhancementScript {
             function collectVideos(root, depth) {
                 const results = [];
                 if (!root || depth > 4) return results;
+                const visitedShadow = new Set();
+                const pushNested = (host) => {
+                    if (!host || !host.shadowRoot || visitedShadow.has(host)) return;
+                    visitedShadow.add(host);
+                    const nested = collectVideos(host.shadowRoot, depth + 1);
+                    for (let j = 0; j < nested.length; j += 1) {
+                        results.push(nested[j]);
+                    }
+                };
                 try {
                     const direct = root.querySelectorAll ? root.querySelectorAll('video') : [];
                     for (let i = 0; i < direct.length; i += 1) {
                         results.push(direct[i]);
                     }
                     if (depth < 4 && root.querySelectorAll) {
+                        const priorityHosts = root.querySelectorAll('apple-tv-plus-player, amp-video-player, amp-video-player-internal, disney-web-player, video-js, media-controller, shaka-player');
+                        for (let i = 0; i < priorityHosts.length; i += 1) {
+                            pushNested(priorityHosts[i]);
+                        }
+                        if (root === document && document.body && document.body.children) {
+                            const bodyKids = document.body.children;
+                            for (let i = 0; i < bodyKids.length; i += 1) {
+                                pushNested(bodyKids[i]);
+                            }
+                        }
                         const allEls = root.querySelectorAll('*');
                         const limit = Math.min(allEls.length, 600);
                         for (let i = 0; i < limit; i += 1) {
-                            const sr = allEls[i].shadowRoot;
-                            if (sr) {
-                                const nested = collectVideos(sr, depth + 1);
-                                for (let j = 0; j < nested.length; j += 1) {
-                                    results.push(nested[j]);
+                            pushNested(allEls[i]);
+                        }
+                        if (allEls.length > 600) {
+                            let customChecked = 0;
+                            for (let i = 600; i < allEls.length && customChecked < 300; i += 1) {
+                                const el = allEls[i];
+                                if (el && el.tagName && el.tagName.indexOf('-') !== -1) {
+                                    customChecked += 1;
+                                    pushNested(el);
                                 }
                             }
                         }
@@ -387,7 +886,10 @@ public enum EnhancementScript {
                 const prevOnWatch = root.dataset.ytmacOnWatch === 'true';
                 const prevTilePlayer = root.dataset.ytmacTilePlayer === 'true';
                 const onWatch = !isWeb && isWatchPageWithPlayer();
-                const tilePlayer = !isWeb && Boolean(cfg.miniPlayerActive || cfg.multiviewTileActive);
+                const bypassed = Boolean(cfg.cleanBoxBypassed);
+                const tilePlayer = !isWeb && Boolean(cfg.miniPlayerActive || (cfg.multiviewTileActive && !bypassed));
+                const ytCleanBox = isStdYT && onWatch && Boolean(cfg.cleanBoxStreamingPlayers && !bypassed && cfg.focusModeActive);
+                const yttvCleanBox = isYTTV && onWatch && Boolean(cfg.cleanBoxStreamingPlayers && !bypassed && (cfg.miniPlayerActive || cfg.multiviewTileActive || cfg.focusModeActive));
 
                 // Force YouTube-only flags to false on tv.youtube.com and third-party Companion web hosts.
                 setDatasetFlag(root, 'ytmacHideShorts', isStdYT && cfg.hideShorts);
@@ -405,6 +907,9 @@ public enum EnhancementScript {
                 setDatasetFlag(root, 'ytmacRedirectShorts', isStdYT && cfg.redirectShortsToWatch);
 
                 if (isStdYT) {
+                    setDatasetFlag(root, 'ytmacCleanBox', ytCleanBox);
+                    lastCleanBoxEligible = onWatch;
+                    lastCleanBoxActive = ytCleanBox || (tilePlayer && onWatch);
                     applyTheme(cfg);
                     if (cfg.autoTheaterMode && !document.cookie.includes('wide=1')) {
                         document.cookie = 'wide=1; path=/; domain=.youtube.com; max-age=31536000; SameSite=Lax';
@@ -412,6 +917,10 @@ public enum EnhancementScript {
                     if (tilePlayer && onWatch && (!prevOnWatch || !prevTilePlayer)) {
                         scheduleTileWatchResizeSync();
                     }
+                } else if (isYTTV) {
+                    setDatasetFlag(root, 'ytmacCleanBox', yttvCleanBox);
+                    lastCleanBoxEligible = onWatch;
+                    lastCleanBoxActive = yttvCleanBox;
                 }
             }
 
@@ -976,7 +1485,9 @@ public enum EnhancementScript {
                     playbackRate: 1.0,
                     isHomeFeedEmpty,
                     airPlayAvailable: false,
-                    isAirPlayActive: false
+                    isAirPlayActive: false,
+                    isCleanBoxActive: Boolean(lastCleanBoxActive),
+                    isCleanBoxEligible: Boolean(lastCleanBoxEligible)
                 } : (() => {
                     const isPiP = document.pictureInPictureElement === video ||
                         (typeof video.webkitPresentationMode === 'string' && video.webkitPresentationMode === 'picture-in-picture');
@@ -1010,7 +1521,9 @@ public enum EnhancementScript {
                         playbackRate: rate,
                         isHomeFeedEmpty,
                         airPlayAvailable: hasVideo && Boolean(airPlayTargetAvailable),
-                        isAirPlayActive
+                        isAirPlayActive,
+                        isCleanBoxActive: Boolean(lastCleanBoxActive),
+                        isCleanBoxEligible: Boolean(lastCleanBoxEligible)
                     };
                 })();
 
@@ -1032,6 +1545,8 @@ public enum EnhancementScript {
                     payload.isHomeFeedEmpty,
                     payload.airPlayAvailable,
                     payload.isAirPlayActive,
+                    payload.isCleanBoxActive,
+                    payload.isCleanBoxEligible,
                     secTime,
                     secDur
                 ].join('|');
@@ -1204,7 +1719,8 @@ public enum EnhancementScript {
                     }
                 } catch (_) {}
 
-                const sig = vid + '|' + structured.length + '|' + (structured.length ? structured[0].title : '') + '|' + description.length;
+                const cappedDescription = description ? description.slice(0, 16384) : '';
+                const sig = vid + '|' + structured.length + '|' + (structured.length ? structured[0].title : '') + '|' + cappedDescription.length;
                 if (sig === lastEmittedChaptersSig) return;
                 lastEmittedChaptersSig = sig;
 
@@ -1212,7 +1728,7 @@ public enum EnhancementScript {
                     event: 'chaptersUpdated',
                     videoId: vid,
                     chapters: structured,
-                    description: structured.length >= 2 ? '' : description
+                    description: cappedDescription
                 });
             }
 
@@ -1239,7 +1755,15 @@ public enum EnhancementScript {
             window.__ytmacApplyConfigOnly = () => {
                 ensureStyleElement();
                 const cfg = window.__ytmacConfig || initialConfig;
+                const prevActive = lastCleanBoxActive;
+                const prevEligible = lastCleanBoxEligible;
                 applyDatasetConfig(cfg);
+                if (isWebCompanionHost()) {
+                    syncCompanionCleanBox('configOnly');
+                }
+                if (prevActive !== lastCleanBoxActive || prevEligible !== lastCleanBoxEligible) {
+                    emitMediaState(true);
+                }
                 if (cfg.hideShorts && isStandardYouTubeHost()) {
                     markShortsElements();
                 }
@@ -1273,7 +1797,12 @@ public enum EnhancementScript {
 
             window.__ytmacApplyRuntime = () => {
                 ensureStyleElement();
-                applyDatasetConfig(window.__ytmacConfig || initialConfig);
+                const cfg = window.__ytmacConfig || initialConfig;
+                applyDatasetConfig(cfg);
+                if (isWebCompanionHost()) {
+                    syncCompanionCleanBox('runtime');
+                    scheduleCleanBoxSettleTimers();
+                }
                 maybeRedirectShorts();
                 markShortsElements();
                 schedulePostNavigationShortsPass();
@@ -1303,6 +1832,11 @@ public enum EnhancementScript {
                         lastMutedVideoId = '';
                         if (sponsorState.videoId !== nextVideoId) {
                             sponsorState = { videoId: '', segments: [], skippedIndices: new Set() };
+                        }
+                        if (isWebCompanionHost()) {
+                            clearCleanBoxSettleTimers();
+                            clearCleanBoxCloseTimers();
+                            releaseCompanionCleanBox(isCompanionAuthPage(), true);
                         }
                     }
                     window.__ytmacApplyRuntime();
@@ -1342,7 +1876,11 @@ public enum EnhancementScript {
                 const handleCapturedVideoEvent = (ev) => {
                     const target = (ev && typeof ev.composedPath === 'function' && ev.composedPath()[0]) || (ev && ev.target);
                     if (!target || target.tagName !== 'VIDEO') return;
-                    if (isWebCompanionHost() || boundVideo !== target) {
+                    if (isWebCompanionHost()) {
+                        bindVideoListeners();
+                        syncCompanionCleanBox('video:' + (ev.type || ''));
+                        emitMediaState(true);
+                    } else if (boundVideo !== target) {
                         bindVideoListeners();
                         emitMediaState(true);
                     }
@@ -1350,6 +1888,37 @@ public enum EnhancementScript {
                 window.addEventListener('play', handleCapturedVideoEvent, true);
                 window.addEventListener('playing', handleCapturedVideoEvent, true);
                 window.addEventListener('loadedmetadata', handleCapturedVideoEvent, true);
+                window.addEventListener('pause', handleCapturedVideoEvent, true);
+                window.addEventListener('emptied', handleCapturedVideoEvent, true);
+                window.addEventListener('ended', handleCapturedVideoEvent, true);
+
+                const scheduleOverlayCloseRecheck = () => {
+                    if (!isWebCompanionHost() || !activeCleanBoxState.root) return;
+                    clearCleanBoxCloseTimers();
+                    cleanBoxCloseTimer1 = setTimeout(() => {
+                        cleanBoxCloseTimer1 = null;
+                        syncCompanionCleanBox('overlayCheck1');
+                    }, 150);
+                    cleanBoxCloseTimer2 = setTimeout(() => {
+                        cleanBoxCloseTimer2 = null;
+                        syncCompanionCleanBox('overlayCheck2');
+                    }, 500);
+                };
+                window.addEventListener('click', scheduleOverlayCloseRecheck, true);
+                window.addEventListener('keydown', (ev) => {
+                    if (ev && ev.key === 'Escape') {
+                        scheduleOverlayCloseRecheck();
+                    }
+                }, true);
+
+                const handleFullscreenChange = () => {
+                    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+                    if (isWebCompanionHost()) {
+                        syncCompanionCleanBox('fullscreenExit');
+                    }
+                };
+                document.addEventListener('fullscreenchange', handleFullscreenChange, true);
+                document.addEventListener('webkitfullscreenchange', handleFullscreenChange, true);
 
                 // Prevent WebKit HTML5 native drag-and-drop from hijacking YouTube / YouTube TV scrubber bars.
                 window.addEventListener('dragstart', (ev) => {
@@ -1390,8 +1959,8 @@ public enum EnhancementScript {
         let resizeLine = triggerResize ? "\nrequestAnimationFrame(() => window.dispatchEvent(new Event('resize')));" : ""
         return """
         (() => {
-            window.__ytmacConfig = \(configJSON);
             if (typeof window.__ytmacApplyConfigOnly === 'function') {
+                window.__ytmacConfig = \(configJSON);
                 window.__ytmacApplyConfigOnly();
             }\(resizeLine)
         })();
@@ -1460,16 +2029,36 @@ public enum EnhancementScript {
             const collectVids = (root, depth) => {
                 const out = [];
                 if (!root || depth > 4) return out;
+                const seen = new Set();
+                const pushHost = (host) => {
+                    if (!host || !host.shadowRoot || seen.has(host)) return;
+                    seen.add(host);
+                    const sub = collectVids(host.shadowRoot, depth + 1);
+                    for (let j = 0; j < sub.length; j += 1) out.push(sub[j]);
+                };
                 try {
                     const list = root.querySelectorAll ? root.querySelectorAll('video') : [];
                     for (let i = 0; i < list.length; i += 1) out.push(list[i]);
                     if (depth < 4 && root.querySelectorAll) {
+                        const priority = root.querySelectorAll('apple-tv-plus-player, amp-video-player, amp-video-player-internal, disney-web-player, video-js, media-controller, shaka-player');
+                        for (let i = 0; i < priority.length; i += 1) pushHost(priority[i]);
+                        if (root === document && document.body && document.body.children) {
+                            const kids = document.body.children;
+                            for (let i = 0; i < kids.length; i += 1) pushHost(kids[i]);
+                        }
                         const els = root.querySelectorAll('*');
                         const cap = Math.min(els.length, 600);
                         for (let i = 0; i < cap; i += 1) {
-                            if (els[i].shadowRoot) {
-                                const sub = collectVids(els[i].shadowRoot, depth + 1);
-                                for (let j = 0; j < sub.length; j += 1) out.push(sub[j]);
+                            pushHost(els[i]);
+                        }
+                        if (els.length > 600) {
+                            let customChecked = 0;
+                            for (let i = 600; i < els.length && customChecked < 300; i += 1) {
+                                const el = els[i];
+                                if (el && el.tagName && el.tagName.indexOf('-') !== -1) {
+                                    customChecked += 1;
+                                    pushHost(el);
+                                }
                             }
                         }
                     }
@@ -1505,6 +2094,26 @@ public enum EnhancementScript {
         } else {
             v.pause();
         }
+        return true;
+    })();
+    """
+
+    public static let playScript = """
+    (() => {
+        \(resolveMainVideoSnippet)
+        if (!v) return false;
+        if (v.paused || v.ended) {
+            try {
+                if (p && typeof p.playVideo === 'function') {
+                    p.playVideo();
+                } else {
+                    v.play().catch(() => {});
+                }
+            } catch (_) {
+                v.play().catch(() => {});
+            }
+        }
+        if (typeof window.__ytmacEmitStateNow === 'function') window.__ytmacEmitStateNow();
         return true;
     })();
     """
@@ -1736,6 +2345,194 @@ public enum EnhancementScript {
 
     /// Triggers WebKit's native element-level AirPlay target picker when supported, returning a structured
     /// status string (`'ok'`, `'mse_unsupported'`, `'unavailable'`, or `'no_video'`) so UI never fails silently.
+    public static let teardownCompanionCleanBoxScript = """
+    (() => {
+        const root = document.documentElement;
+        if (root) delete root.dataset.ytmacCleanBox;
+        const tagged = document.querySelectorAll('[data-ytmac-cb]');
+        for (let i = 0; i < tagged.length; i += 1) {
+            tagged[i].removeAttribute('data-ytmac-cb');
+        }
+        const styleEl = document.getElementById('ytmac-cleanbox-style');
+        if (styleEl) styleEl.remove();
+        return true;
+    })();
+    """
+
+    /// One-shot Clean-Box re-evaluation hook invoked on main frame when a subframe player detects active `<video>`.
+    public static let syncCompanionCleanBoxScript = """
+    (() => {
+        if (typeof window.__ytmacSyncCleanBox === 'function') {
+            return Boolean(window.__ytmacSyncCleanBox('subframe'));
+        }
+        return false;
+    })();
+    """
+
+    /// Lightweight `forMainFrameOnly: false` media telemetry & control bridge strictly for allowlisted cross-origin player iframes.
+    /// Zero CSS, zero observers, zero DOM polling; returns immediately in non-subframes or disallowed origins.
+    public static func subframeMediaBridgeScript() -> String {
+        let quotedSuffixes = CleanBoxRules.allAllowedPlayerIframeHostSuffixes
+            .map { "\"\(escapeJSString($0))\"" }
+            .joined(separator: ", ")
+
+        return """
+        (() => {
+            if (window === window.top) return;
+            const host = (location.hostname || '').toLowerCase();
+            if (!host) return;
+            if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts)\\./i.test(host)) return;
+            if (/(doubleclick\\.net|googlesyndication\\.com|imasdk\\.googleapis\\.com|adservice\\.google\\.com|amazon-adsystem\\.com)$/i.test(host)) return;
+            const allowedSuffixes = [\(quotedSuffixes)];
+            if (!allowedSuffixes.some((s) => host === s || host.endsWith('.' + s))) return;
+            if (window.innerWidth < 100 || window.innerHeight < 56) return;
+
+            function getSubframeVideo() {
+                const list = document.querySelectorAll('video');
+                let best = null;
+                let bestArea = -1;
+                for (let i = 0; i < list.length; i += 1) {
+                    const v = list[i];
+                    if (!v || !v.isConnected) continue;
+                    const hasMedia = Boolean(v.src || v.currentSrc || v.readyState > 0 || (v.querySelector && v.querySelector('source[src]')));
+                    if (!hasMedia) continue;
+                    const r = v.getBoundingClientRect();
+                    const area = Math.max(0, r.width) * Math.max(0, r.height);
+                    if (!v.paused && !v.ended && v.readyState >= 2) return v;
+                    if (area >= bestArea) { best = v; bestArea = area; }
+                }
+                return best;
+            }
+
+            window.__ytmacGetMainVideo = getSubframeVideo;
+
+            let lastProgMuteAt = 0;
+            let lastMutedState = null;
+            let lastTimeSent = 0;
+            let lastSig = '';
+            let bound = null;
+            let airPlayAvail = false;
+
+            window.__ytmacMarkProgrammaticMute = () => {
+                lastProgMuteAt = Date.now();
+            };
+
+            function emitSubframeState(force) {
+                const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
+                if (!handler) return;
+                const now = Date.now();
+                if (!force && now - lastTimeSent < 1000) return;
+                const v = getSubframeVideo();
+                const hasVideo = Boolean(v && (v.src || v.currentSrc || v.readyState > 0));
+                const isMuted = Boolean(v && (v.muted || v.volume === 0));
+                const isPlaying = Boolean(hasVideo && v && !v.paused && !v.ended && v.readyState >= 2);
+                const currentTime = (v && Number.isFinite(v.currentTime)) ? v.currentTime : 0;
+                const duration = (v && Number.isFinite(v.duration)) ? v.duration : 0;
+                const playbackRate = (v && Number.isFinite(v.playbackRate) && v.playbackRate > 0) ? v.playbackRate : 1.0;
+                const isPiP = Boolean(v && (document.pictureInPictureElement === v || v.webkitPresentationMode === 'picture-in-picture'));
+                const isAirPlayActive = Boolean(hasVideo && v && v.webkitCurrentPlaybackTargetIsWireless);
+
+                const sig = [
+                    hasVideo, isPlaying, isMuted, isPiP,
+                    Math.round(playbackRate * 100),
+                    airPlayAvail, isAirPlayActive,
+                    Math.floor(currentTime), Math.floor(duration)
+                ].join('|');
+                if (sig === lastSig && !force) return;
+                lastSig = sig;
+                lastTimeSent = now;
+                handler.postMessage({
+                    subframeMedia: true,
+                    hasVideo,
+                    isPlaying,
+                    isMuted,
+                    isPiP,
+                    playbackRate,
+                    airPlayAvailable: hasVideo && airPlayAvail,
+                    isAirPlayActive,
+                    currentTime,
+                    duration
+                });
+            }
+
+            window.__ytmacEmitStateNow = () => emitSubframeState(true);
+
+            function bindSubframeVideo() {
+                const v = getSubframeVideo();
+                if (v === bound) return;
+                bound = v;
+                if (!v) {
+                    airPlayAvail = false;
+                    emitSubframeState(true);
+                    return;
+                }
+                try {
+                    v.setAttribute('x-webkit-airplay', 'allow');
+                    if ('disableRemotePlayback' in v) v.disableRemotePlayback = false;
+                } catch (_) {}
+                lastMutedState = Boolean(v.muted || v.volume === 0);
+                v.addEventListener('webkitplaybacktargetavailabilitychanged', (ev) => {
+                    airPlayAvail = Boolean(ev && ev.availability === 'available');
+                    emitSubframeState(true);
+                });
+                v.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => emitSubframeState(true));
+                for (const evt of ['play', 'playing', 'pause', 'ended', 'seeked', 'loadedmetadata', 'durationchange', 'volumechange', 'ratechange', 'emptied']) {
+                    v.addEventListener(evt, () => {
+                        const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
+                        if (evt === 'ended' && handler) {
+                            handler.postMessage({ event: 'videoEnded', urlString: location.href });
+                        } else if (evt === 'volumechange') {
+                            const nowMuted = Boolean(v.muted || v.volume === 0);
+                            if ((Date.now() - lastProgMuteAt > 500) && lastMutedState === true && nowMuted === false && handler) {
+                                handler.postMessage({ event: 'userUnmuted', urlString: location.href });
+                            }
+                            lastMutedState = nowMuted;
+                        }
+                        emitSubframeState(true);
+                    }, { passive: true });
+                }
+                v.addEventListener('timeupdate', () => emitSubframeState(false), { passive: true });
+                emitSubframeState(true);
+            }
+
+            if (!window.__ytmacSubframeInit) {
+                window.__ytmacSubframeInit = true;
+                const onCapture = (ev) => {
+                    const target = ev && ev.target;
+                    if (!target || target.tagName !== 'VIDEO') return;
+                    bindSubframeVideo();
+                    emitSubframeState(true);
+                };
+                window.addEventListener('play', onCapture, true);
+                window.addEventListener('playing', onCapture, true);
+                window.addEventListener('loadedmetadata', onCapture, true);
+                window.addEventListener('emptied', onCapture, true);
+                window.addEventListener('pagehide', () => {
+                    const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
+                    if (handler) {
+                        handler.postMessage({
+                            subframeMedia: true,
+                            hasVideo: false,
+                            isPlaying: false,
+                            isMuted: false,
+                            isPiP: false,
+                            playbackRate: 1.0,
+                            airPlayAvailable: false,
+                            isAirPlayActive: false,
+                            currentTime: 0,
+                            duration: 0
+                        });
+                    }
+                });
+            }
+
+            bindSubframeVideo();
+        })();
+        """
+    }
+
+    /// Triggers WebKit's native element-level AirPlay target picker when supported, returning a structured
+    /// status string (`'ok'`, `'mse_unsupported'`, `'unavailable'`, or `'no_video'`) so UI never fails silently.
     public static let showAirPlayPickerScript = """
     (() => {
         \(resolveMainVideoSnippet)
@@ -1823,6 +2620,26 @@ public enum EnhancementScript {
             .replacingOccurrences(of: "\r", with: "\\r")
     }
 
+    static func encodeCleanBoxProfilesJSON() -> String {
+        let companionProfiles = CleanBoxRules.allProfiles.filter {
+            $0.serviceID != "youtube" && $0.serviceID != "yttv"
+        }
+        let entries = companionProfiles.map { prof -> String in
+            let pSels = prof.playerSelectors.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
+            let iSels = prof.iframeSelectors.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
+            let aHosts = prof.allowedIframeHostSuffixes.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
+            return """
+            "\(escapeJSString(prof.serviceID))": {
+              "strategy": "\(escapeJSString(prof.strategy.rawValue))",
+              "playerSelectors": [\(pSels)],
+              "iframeSelectors": [\(iSels)],
+              "allowedIframeHostSuffixes": [\(aHosts)]
+            }
+            """
+        }.joined(separator: ",\n")
+        return "{\n\(entries)\n}"
+    }
+
     static func encodeConfigJSON(_ config: DistractionFreeConfig) -> String {
         let boolString: (Bool) -> String = { $0 ? "true" : "false" }
         let safeQuality = escapeJSString(config.preferredQuality.youtubeQualityLevel)
@@ -1848,10 +2665,80 @@ public enum EnhancementScript {
           "appearance": "\(safeAppearance)",
           "focusModeActive": \(boolString(config.focusModeActive)),
           "miniPlayerActive": \(boolString(config.miniPlayerActive)),
-          "multiviewTileActive": \(boolString(config.multiviewTileActive))
+          "multiviewTileActive": \(boolString(config.multiviewTileActive)),
+          "cleanBoxStreamingPlayers": \(boolString(config.cleanBoxStreamingPlayers)),
+          "cleanBoxBypassed": \(boolString(config.cleanBoxBypassed))
         }
         """
     }
+
+    static let cleanBoxCSSRules = """
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"],
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] body {
+        overflow: hidden !important;
+        background: #000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="ancestor"] {
+        transform: none !important;
+        translate: none !important;
+        scale: none !important;
+        rotate: none !important;
+        perspective: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        contain: none !important;
+        content-visibility: visible !important;
+        container-type: normal !important;
+        will-change: auto !important;
+        clip-path: none !important;
+        -webkit-clip-path: none !important;
+        mask: none !important;
+        -webkit-mask: none !important;
+        isolation: auto !important;
+        mix-blend-mode: normal !important;
+        overflow: visible !important;
+        z-index: auto !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="player"] {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        min-width: 100vw !important;
+        min-height: 100vh !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        transform: none !important;
+        z-index: 2147483640 !important;
+        background: #000 !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="iframe"] {
+        width: 100% !important;
+        height: 100% !important;
+        border: 0 !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="video"] {
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+    }
+    """
 
     static let cssRules = """
     /* Subtle macOS-native web polish */
@@ -2025,8 +2912,12 @@ public enum EnhancementScript {
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] body,
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"],
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] body,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"],
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] body,
     html[data-ytmac-host="yttv"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"],
-    html[data-ytmac-host="yttv"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] body {
+    html[data-ytmac-host="yttv"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] body,
+    html[data-ytmac-host="yttv"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"],
+    html[data-ytmac-host="yttv"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] body {
         overflow: hidden !important;
         background: #000 !important;
     }
@@ -2036,16 +2927,34 @@ public enum EnhancementScript {
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #secondary,
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #guide,
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] ytd-mini-guide-renderer,
+    html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #panels-full-bleed-container,
+    html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #chat-container,
+    html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] ytd-live-chat-frame,
+    html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #chat,
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #masthead-container,
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #below,
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #secondary,
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #guide,
-    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] ytd-mini-guide-renderer {
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] ytd-mini-guide-renderer,
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #panels-full-bleed-container,
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #chat-container,
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] ytd-live-chat-frame,
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #chat,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #masthead-container,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #below,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #secondary,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #guide,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] ytd-mini-guide-renderer,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #panels-full-bleed-container,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #chat-container,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] ytd-live-chat-frame,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #chat {
         display: none !important;
     }
 
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #movie_player,
-    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #movie_player {
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #movie_player,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #movie_player {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
@@ -2064,7 +2973,9 @@ public enum EnhancementScript {
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #movie_player .html5-video-container,
     html[data-ytmac-mini-player="true"][data-ytmac-on-watch="true"] #movie_player video.html5-main-video,
     html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #movie_player .html5-video-container,
-    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #movie_player video.html5-main-video {
+    html[data-ytmac-host="youtube"][data-ytmac-tile-player="true"][data-ytmac-on-watch="true"] #movie_player video.html5-main-video,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #movie_player .html5-video-container,
+    html[data-ytmac-host="youtube"][data-ytmac-clean-box="true"][data-ytmac-on-watch="true"] #movie_player video.html5-main-video {
         width: 100% !important;
         height: 100% !important;
         left: 0 !important;

@@ -1,3 +1,4 @@
+import AppIntents
 import AppKit
 import SwiftUI
 import YouTubeMacCore
@@ -12,8 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.servicesProvider = self
-        coordinator?.settings.applyAppearance()
-        flushPendingURLs()
+        if coordinator == nil, let active = AppCoordinator.sharedActive {
+            attachCoordinator(active)
+        } else {
+            coordinator?.settings.applyAppearance()
+            flushPendingURLs()
+        }
+        coordinator?.agentBridge.startServersIfEnabled()
+        GlassGridShortcutsProvider.updateAppShortcutParameters()
     }
 
     @objc func openYouTubeURLService(
@@ -229,7 +236,15 @@ private struct WindowSceneRootView: View {
 @main
 struct YouTubeMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var coordinator = AppCoordinator()
+    @State private var coordinator: AppCoordinator
+
+    init() {
+        let coord = AppCoordinator()
+        AppCoordinator.sharedActive = coord
+        _coordinator = State(initialValue: coord)
+        let bridge = coord.agentBridge
+        AppDependencyManager.shared.add(key: "GlassGridAgentBridge", dependency: bridge)
+    }
 
     var body: some Scene {
         WindowGroup("GlassGrid You", id: "main", for: UUID.self) { $windowID in
@@ -488,11 +503,15 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("p", modifiers: [.command, .shift])
             .disabled(!activeMediaStatus.hasVideo)
 
-            Button((targetSnapshot?.isMiniPlayer ?? false) ? "Exit Mini-Player" : "Mini-Player") {
+            Button(
+                (targetSnapshot?.isMiniPlayer ?? false)
+                    ? ((targetSnapshot?.isFloatingMultiviewGrid ?? false) ? "Return Floating Grid" : "Exit Mini-Player")
+                    : ((targetSnapshot?.isMultiviewActive ?? false) ? "Float Multiview Grid" : "Mini-Player")
+            ) {
                 coordinator.commandTarget?.toggleMiniPlayer()
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
-            .disabled(targetSnapshot == nil || (!(targetSnapshot?.isMiniPlayer ?? false) && !(targetSnapshot?.canPopOutActiveTab ?? false)))
+            .disabled(targetSnapshot == nil || (!(targetSnapshot?.isMiniPlayer ?? false) && !(targetSnapshot?.canPopOutActiveContent ?? false)))
 
             Button((targetSnapshot?.alwaysOnTop ?? false) ? "Disable Always on Top" : "Always on Top") {
                 coordinator.commandTarget?.toggleAlwaysOnTop()
@@ -511,6 +530,17 @@ struct YouTubeMacApp: App {
             }
             .keyboardShortcut("t", modifiers: [.command, .option])
             .disabled(targetSnapshot == nil)
+
+            let cleanBypassed = targetSnapshot?.selectedTab?.isCleanBoxBypassed ?? false
+            let cleanControlAvailable = (targetSnapshot?.settings.cleanBoxStreamingPlayers ?? false)
+                && (targetSnapshot?.selectedTab?.routingMode == .companion)
+                && ((targetSnapshot?.selectedTab?.mediaStatus.isCleanBoxActive ?? false) || cleanBypassed)
+                && !(targetSnapshot?.isMultiviewActive ?? false)
+            Button(cleanBypassed ? "Restore Clean-Box Video" : "Show Full Page") {
+                coordinator.commandTarget?.toggleCleanBoxForActiveTab()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(targetSnapshot == nil || !cleanControlAvailable)
 
             Divider()
 

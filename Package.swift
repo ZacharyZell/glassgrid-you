@@ -14,6 +14,10 @@ let package = Package(
         .executable(
             name: "YouTubeMac",
             targets: ["YouTubeMac"]
+        ),
+        .executable(
+            name: "glassgrid",
+            targets: ["GlassGridCLI"]
         )
     ],
     dependencies: [
@@ -29,6 +33,10 @@ let package = Package(
                 "YouTubeMacCore",
                 .product(name: "Sparkle", package: "Sparkle")
             ]
+        ),
+        .executableTarget(
+            name: "GlassGridCLI",
+            dependencies: ["YouTubeMacCore"]
         ),
         .testTarget(
             name: "YouTubeMacCoreTests",

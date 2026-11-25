@@ -417,6 +417,18 @@ private struct MenuBarActiveControllerView: View {
 
                 Spacer(minLength: 4)
 
+                if controller.isFloatingMultiviewGrid {
+                    Text("Floating")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(AppleTheme.accent)
+                        .padding(.horizontal, 6)
+                        .frame(height: 20)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(AppleTheme.accent.opacity(0.14))
+                        )
+                }
+
                 Button {
                     controller.muteAllMultiviewTiles()
                 } label: {
@@ -611,8 +623,10 @@ private struct MenuBarActiveControllerView: View {
                     AppleIconButton(
                         systemImage: controller.isMiniPlayer ? "arrow.up.left.and.arrow.down.right" : "rectangle.inset.bottomright.filled",
                         isActive: controller.isMiniPlayer,
-                        isDisabled: !controller.isMiniPlayer && !controller.canPopOutActiveTab,
-                        helpText: controller.isMiniPlayer ? "Return to Full Window" : "Mini-Player"
+                        isDisabled: !controller.isMiniPlayer && !controller.canPopOutActiveContent,
+                        helpText: controller.isMiniPlayer
+                            ? (controller.isFloatingMultiviewGrid ? "Return Floating Grid to Window" : "Return to Full Window")
+                            : (controller.isMultiviewActive ? "Float Multiview Grid" : "Mini-Player")
                     ) {
                         if controller.isMiniPlayer {
                             openOrFocusMainWindow()

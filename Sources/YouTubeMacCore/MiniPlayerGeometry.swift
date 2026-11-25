@@ -1,6 +1,12 @@
 import CoreGraphics
 import Foundation
 
+/// Active presentation mode inside the always-on-top Floating Mini-Player panel.
+public enum MiniPlayerMode: String, Codable, Equatable, Hashable, Sendable {
+    case single
+    case multiviewGrid
+}
+
 /// Curated 16:9 Floating Mini-Player size presets.
 public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
     case compact
@@ -40,11 +46,51 @@ public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Curated 16:9 Floating Multiview Grid Mini-Player size presets.
+public enum MiniPlayerGridSizePreset: String, CaseIterable, Identifiable, Sendable {
+    case compact
+    case standard
+    case large
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .compact: return "Compact (540×304)"
+        case .standard: return "Standard (680×383)"
+        case .large: return "Large (880×495)"
+        }
+    }
+
+    public var shortTitle: String {
+        switch self {
+        case .compact: return "Compact"
+        case .standard: return "Standard"
+        case .large: return "Large"
+        }
+    }
+
+    public var size: CGSize {
+        switch self {
+        case .compact: return CGSize(width: 540, height: 304)
+        case .standard: return CGSize(width: 680, height: 383)
+        case .large: return CGSize(width: 880, height: 495)
+        }
+    }
+
+    public static func closest(to size: CGSize) -> MiniPlayerGridSizePreset {
+        Self.allCases.min { lhs, rhs in
+            abs(lhs.size.width - size.width) < abs(rhs.size.width - size.width)
+        } ?? .standard
+    }
+}
+
 /// Pure, deterministic AppKit-coordinate geometry helpers for Floating Mini-Player magnetic corner snapping
 /// and edge-anchored size preset transitions.
 public enum MiniPlayerGeometry {
     public static let defaultCornerInset: CGFloat = 20
     public static let defaultSnapThreshold: CGFloat = 48
+    public static let gridMinimumSize = CGSize(width: 440, height: 248)
 
     /// Snaps `frame` to the nearest `visibleFrame` corner (at `inset`) ONLY when within `snapThreshold`
     /// points of that corner, preserving `frame.size` (16:9 aspect ratio) and never fighting mid-screen placements.
@@ -98,6 +144,35 @@ public enum MiniPlayerGeometry {
     ) -> CGRect {
         let maxW = max(300, visibleFrame.width - inset * 2)
         let maxH = max(169, visibleFrame.height - inset * 2)
+        let targetW = min(preset.size.width, maxW)
+        let targetH = min((targetW * 9.0 / 16.0).rounded(), maxH)
+
+        let closerToRight = (visibleFrame.maxX - current.maxX) <= (current.minX - visibleFrame.minX)
+        let closerToTop = (visibleFrame.maxY - current.maxY) <= (current.minY - visibleFrame.minY)
+
+        let rawX = closerToRight ? (current.maxX - targetW) : current.minX
+        let rawY = closerToTop ? (current.maxY - targetH) : current.minY
+
+        let minX = visibleFrame.minX + 8
+        let maxX = max(minX, visibleFrame.maxX - targetW - 8)
+        let minY = visibleFrame.minY + 8
+        let maxY = max(minY, visibleFrame.maxY - targetH - 8)
+
+        let clampedX = min(max(rawX, minX), maxX)
+        let clampedY = min(max(rawY, minY), maxY)
+        return CGRect(x: clampedX.rounded(), y: clampedY.rounded(), width: targetW.rounded(), height: targetH.rounded())
+    }
+
+    /// Resizes `current` to a Floating Multiview Grid `preset` while anchoring to the nearest horizontal
+    /// and vertical screen edges and clamping cleanly within `visibleFrame` at `gridMinimumSize` (`440×248`).
+    public static func resizedGridFrame(
+        from current: CGRect,
+        to preset: MiniPlayerGridSizePreset,
+        in visibleFrame: CGRect,
+        inset: CGFloat = defaultCornerInset
+    ) -> CGRect {
+        let maxW = max(gridMinimumSize.width, visibleFrame.width - inset * 2)
+        let maxH = max(gridMinimumSize.height, visibleFrame.height - inset * 2)
         let targetW = min(preset.size.width, maxW)
         let targetH = min((targetW * 9.0 / 16.0).rounded(), maxH)
 

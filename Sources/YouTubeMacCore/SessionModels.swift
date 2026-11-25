@@ -100,6 +100,9 @@ public enum SessionRestorationFilter {
         if YouTubeURLRouter.isGoogleAuthHost(host) {
             return false
         }
+        if StreamingServiceCatalog.isTransientAuthURL(url) {
+            return false
+        }
         if routingMode == .companion {
             return true
         }

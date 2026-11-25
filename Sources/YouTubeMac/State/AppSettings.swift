@@ -32,6 +32,8 @@ public final class AppSettings {
         static let isSidebarVisible = "ytmac.isSidebarVisible"
         static let showHomeShelf = "ytmac.showHomeShelf"
         static let savedMiniPlayerFrame = "ytmac.savedMiniPlayerFrame"
+        static let savedMiniPlayerGridFrame = "ytmac.savedMiniPlayerGridFrame"
+        static let cleanBoxStreamingPlayers = "ytmac.cleanBoxStreamingPlayers"
         static let startupDestination = "ytmac.startupDestination"
         static let appearance = "ytmac.appearance"
         static let pinnedItems = "ytmac.pinnedItems"
@@ -50,6 +52,12 @@ public final class AppSettings {
         static let enabledStreamingServiceIDs = "ytmac.enabledStreamingServiceIDs"
         static let signedInStreamingServiceIDs = "ytmac.signedInStreamingServiceIDs"
         static let miniPlayerOpacity = "ytmac.miniPlayerOpacity"
+        static let agentControlEnabled = "ytmac.agentControlEnabled"
+        static let agentPermissionLevel = "ytmac.agentPermissionLevel"
+        static let agentShowHUDToasts = "ytmac.agentShowHUDToasts"
+        static let allowURLSchemeActions = "ytmac.allowURLSchemeActions"
+        static let agentHTTPServerEnabled = "ytmac.agentHTTPServerEnabled"
+        static let agentHTTPPort = "ytmac.agentHTTPPort"
     }
 
     @ObservationIgnored
@@ -76,6 +84,12 @@ public final class AppSettings {
     @ObservationIgnored
     var onMiniPlayerOpacityDidChange: ((Double) -> Void)?
 
+    @ObservationIgnored
+    var onAgentSettingsDidChange: (() -> Void)?
+
+    @ObservationIgnored
+    var onShortcutsParametersDidChange: (() -> Void)?
+
     public var hideShorts: Bool {
         didSet {
             guard hideShorts != oldValue else { return }
@@ -96,6 +110,14 @@ public final class AppSettings {
         didSet {
             guard cleanWebChrome != oldValue else { return }
             defaults.set(cleanWebChrome, forKey: Keys.cleanWebChrome)
+            onWebConfigDidChange?()
+        }
+    }
+
+    public var cleanBoxStreamingPlayers: Bool {
+        didSet {
+            guard cleanBoxStreamingPlayers != oldValue else { return }
+            defaults.set(cleanBoxStreamingPlayers, forKey: Keys.cleanBoxStreamingPlayers)
             onWebConfigDidChange?()
         }
     }
@@ -273,6 +295,7 @@ public final class AppSettings {
         didSet {
             guard savedMultiviewPresets != oldValue else { return }
             saveMultiviewPresets()
+            onShortcutsParametersDidChange?()
         }
     }
 
@@ -351,6 +374,57 @@ public final class AppSettings {
         didSet {
             guard enabledStreamingServiceIDs != oldValue else { return }
             defaults.set(enabledStreamingServiceIDs, forKey: Keys.enabledStreamingServiceIDs)
+            onShortcutsParametersDidChange?()
+        }
+    }
+
+    public var agentControlEnabled: Bool {
+        didSet {
+            guard agentControlEnabled != oldValue else { return }
+            defaults.set(agentControlEnabled, forKey: Keys.agentControlEnabled)
+            onAgentSettingsDidChange?()
+        }
+    }
+
+    public var agentPermissionLevel: AgentPermissionLevel {
+        didSet {
+            guard agentPermissionLevel != oldValue else { return }
+            defaults.set(agentPermissionLevel.rawValue, forKey: Keys.agentPermissionLevel)
+        }
+    }
+
+    public var agentShowHUDToasts: Bool {
+        didSet {
+            guard agentShowHUDToasts != oldValue else { return }
+            defaults.set(agentShowHUDToasts, forKey: Keys.agentShowHUDToasts)
+        }
+    }
+
+    public var allowURLSchemeActions: Bool {
+        didSet {
+            guard allowURLSchemeActions != oldValue else { return }
+            defaults.set(allowURLSchemeActions, forKey: Keys.allowURLSchemeActions)
+        }
+    }
+
+    public var agentHTTPServerEnabled: Bool {
+        didSet {
+            guard agentHTTPServerEnabled != oldValue else { return }
+            defaults.set(agentHTTPServerEnabled, forKey: Keys.agentHTTPServerEnabled)
+            onAgentSettingsDidChange?()
+        }
+    }
+
+    public var agentHTTPPort: Int {
+        didSet {
+            let clamped = min(max(agentHTTPPort, 1024), 65535)
+            if agentHTTPPort != clamped {
+                agentHTTPPort = clamped
+                return
+            }
+            guard agentHTTPPort != oldValue else { return }
+            defaults.set(agentHTTPPort, forKey: Keys.agentHTTPPort)
+            onAgentSettingsDidChange?()
         }
     }
 
@@ -450,11 +524,32 @@ public final class AppSettings {
         }
     }
 
+    public var savedMiniPlayerGridFrame: NSRect? {
+        get {
+            guard let raw = defaults.string(forKey: Keys.savedMiniPlayerGridFrame) else {
+                return nil
+            }
+            let rect = NSRectFromString(raw)
+            return rect.width >= 440 && rect.height >= 248 ? rect : nil
+        }
+        set {
+            if let rect = newValue {
+                let encoded = NSStringFromRect(rect)
+                if defaults.string(forKey: Keys.savedMiniPlayerGridFrame) != encoded {
+                    defaults.set(encoded, forKey: Keys.savedMiniPlayerGridFrame)
+                }
+            } else if defaults.object(forKey: Keys.savedMiniPlayerGridFrame) != nil {
+                defaults.removeObject(forKey: Keys.savedMiniPlayerGridFrame)
+            }
+        }
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.hideShorts = defaults.object(forKey: Keys.hideShorts) as? Bool ?? true
         self.redirectShortsToWatch = defaults.object(forKey: Keys.redirectShortsToWatch) as? Bool ?? true
         self.cleanWebChrome = defaults.object(forKey: Keys.cleanWebChrome) as? Bool ?? true
+        self.cleanBoxStreamingPlayers = defaults.object(forKey: Keys.cleanBoxStreamingPlayers) as? Bool ?? true
         self.hideWebHeader = defaults.object(forKey: Keys.hideWebHeader) as? Bool ?? false
         self.autoTheaterMode = defaults.object(forKey: Keys.autoTheaterMode) as? Bool ?? true
         self.hideEndScreens = defaults.object(forKey: Keys.hideEndScreens) as? Bool ?? true
@@ -478,6 +573,18 @@ public final class AppSettings {
         self.multiviewAudioDuckingEnabled = defaults.object(forKey: Keys.multiviewAudioDuckingEnabled) as? Bool ?? false
         self.automaticallyChecksForUpdates = defaults.object(forKey: Keys.automaticallyChecksForUpdates) as? Bool ?? true
         self.hasCompletedStreamingOnboarding = defaults.object(forKey: Keys.hasCompletedStreamingOnboarding) as? Bool ?? false
+        self.agentControlEnabled = defaults.object(forKey: Keys.agentControlEnabled) as? Bool ?? false
+        if let rawTier = defaults.string(forKey: Keys.agentPermissionLevel),
+           let parsedTier = AgentPermissionLevel(rawValue: rawTier) {
+            self.agentPermissionLevel = parsedTier
+        } else {
+            self.agentPermissionLevel = .playbackAndNavigation
+        }
+        self.agentShowHUDToasts = defaults.object(forKey: Keys.agentShowHUDToasts) as? Bool ?? true
+        self.allowURLSchemeActions = defaults.object(forKey: Keys.allowURLSchemeActions) as? Bool ?? false
+        self.agentHTTPServerEnabled = defaults.object(forKey: Keys.agentHTTPServerEnabled) as? Bool ?? false
+        let storedPort = defaults.object(forKey: Keys.agentHTTPPort) as? Int ?? 41773
+        self.agentHTTPPort = min(max(storedPort, 1024), 65535)
 
         if let savedServices = defaults.stringArray(forKey: Keys.enabledStreamingServiceIDs), !savedServices.isEmpty {
             let validSet = Set(StreamingServiceCatalog.all.map(\.id))
@@ -607,7 +714,8 @@ public final class AppSettings {
         focusMode: Bool,
         miniPlayer: Bool,
         multiviewTile: Bool = false,
-        qualityOverride: PreferredVideoQuality? = nil
+        qualityOverride: PreferredVideoQuality? = nil,
+        cleanBoxBypassed: Bool = false
     ) -> DistractionFreeConfig {
         DistractionFreeConfig(
             hideShorts: hideShorts,
@@ -628,7 +736,9 @@ public final class AppSettings {
             appearance: appearance,
             focusModeActive: focusMode,
             miniPlayerActive: miniPlayer,
-            multiviewTileActive: multiviewTile
+            multiviewTileActive: multiviewTile,
+            cleanBoxStreamingPlayers: cleanBoxStreamingPlayers,
+            cleanBoxBypassed: cleanBoxBypassed
         )
     }
 

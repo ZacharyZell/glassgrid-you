@@ -42,11 +42,11 @@ Watch up to **4 simultaneous YouTube, YouTube TV, Twitch, live sports, and Compa
   <img src="docs/screenshots/multiview-quad-night.png" alt="GlassGrid You 2x2 Quad-Box Multiview playing four 4K streams simultaneously" width="100%" />
 </p>
 
-### 17-Service Streaming Hub, Sign-In Flow & Native macOS AirPlay
-Select from **17 built-in streaming services** across *Video & Live TV*, *Movies & Shows*, and *Live Sports* during the guided Liquid Glass onboarding intro (or anytime from the Sidebar **Services** section, **Add Screen** Multiview picker, or `⌘K`). Sign in cleanly with stock WebKit + native OAuth popup support, reset individual service cookies/site data with clear shared-SSO notices, and rely on honest **Safari DRM** badges with 1-click **Open in Safari** fallback for strict Safari-only SVODs. Cast supported HTML5/HLS videos with **Native AirPlay Video**, monitor live CoreAudio AirPlay audio output, or send your entire Multiview window to an AirPlay TV or external monitor in one click.
+### 18-Service Streaming Hub, Sign-In Flow & Native macOS AirPlay
+Select from **18 built-in streaming services** across *Video & Live TV*, *Movies & Shows*, and *Live Sports* during the guided Liquid Glass onboarding intro (or anytime from the Sidebar **Services** section, **Add Screen** Multiview picker, or `⌘K`). Sign in cleanly with stock WebKit + native OAuth popup support, reset individual service cookies/site data with clear shared-SSO notices, and rely on honest **Safari DRM** badges with 1-click **Open in Safari** fallback for strict Safari-only SVODs. Cast supported HTML5/HLS videos with **Native AirPlay Video**, monitor live CoreAudio AirPlay audio output, or send your entire Multiview window to an AirPlay TV or external monitor in one click.
 
 <p align="center">
-  <img src="docs/screenshots/services-onboarding-night.png" alt="GlassGrid You Streaming Service Onboarding sheet showing 17 curated services in Night Mode Liquid Glass" width="100%" />
+  <img src="docs/screenshots/services-onboarding-night.png" alt="GlassGrid You Streaming Service Onboarding sheet showing curated streaming services in Night Mode Liquid Glass" width="100%" />
 </p>
 
 ### Spotlight Command Palette (`⌘K`) & Day/Night Liquid Glass

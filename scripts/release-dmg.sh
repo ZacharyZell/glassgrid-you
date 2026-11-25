@@ -130,11 +130,17 @@ SPARKLE_FEED_URL="$SPARKLE_FEED_URL" \
 
 APP_BUNDLE="$ROOT_DIR/build/$APP_NAME.app"
 
-echo "==> Verifying Hardened Runtime flags on $APP_BUNDLE..."
+echo "==> Verifying Hardened Runtime flags on $APP_BUNDLE and embedded glassgrid..."
 CODESIGN_INFO="$(codesign -dvv "$APP_BUNDLE" 2>&1)"
 if ! grep -q "flags=.*runtime" <<< "$CODESIGN_INFO"; then
     echo "Error: Hardened Runtime flag not detected on $APP_BUNDLE" >&2
     echo "$CODESIGN_INFO" >&2
+    exit 1
+fi
+CLI_CODESIGN_INFO="$(codesign -dvv "$APP_BUNDLE/Contents/MacOS/glassgrid" 2>&1)"
+if ! grep -q "flags=.*runtime" <<< "$CLI_CODESIGN_INFO"; then
+    echo "Error: Hardened Runtime flag not detected on $APP_BUNDLE/Contents/MacOS/glassgrid" >&2
+    echo "$CLI_CODESIGN_INFO" >&2
     exit 1
 fi
 

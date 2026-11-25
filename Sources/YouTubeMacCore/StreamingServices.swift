@@ -87,12 +87,39 @@ public struct StreamingService: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-/// Single source of truth for GlassGrid You's 17 built-in streaming services,
+/// Single source of truth for GlassGrid You's 18 built-in streaming services,
 /// per-service site-data domain isolation, and passive sign-in navigation heuristics.
 public enum StreamingServiceCatalog {
     public static let defaultEnabledServiceIDs: [String] = ["youtube"]
 
-    /// All 17 major streaming services grouped across Video & Live TV, Movies & Shows, and Live Sports.
+    /// Explicit allowlist of canonical Amazon retail domains for Prime Video resolution (prevents substring spoofing).
+    public static let amazonRetailDomains: Set<String> = [
+        "amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp", "amazon.ca",
+        "amazon.fr", "amazon.it", "amazon.es", "amazon.com.au", "amazon.in",
+        "amazon.com.br", "amazon.com.mx", "amazon.nl", "amazon.se", "amazon.pl",
+        "amazon.sg", "amazon.ae", "amazon.sa"
+    ]
+
+    /// Shared third-party SSO / IdP hosts used across multiple streaming services.
+    public static let sharedThirdPartySSOHosts: Set<String> = [
+        "accounts.google.com", "accounts.youtube.com",
+        "idmsa.apple.com", "appleid.apple.com",
+        "sp.auth.adobe.com", "registerdisney.go.com", "cdn.registerdisney.go.com"
+    ]
+
+    /// Host prefixes belonging exclusively to authentication, SSO, or identity subdomains.
+    public static let authHostPrefixes: [String] = [
+        "auth.", "sso.", "login.", "signin.", "sign-in.",
+        "id.", "ids.", "identity.", "passport.", "accounts."
+    ]
+
+    private static let iso639LocaleCodes: Set<String> = [
+        "en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ar",
+        "ru", "hi", "id", "nl", "pl", "sv", "tr", "vi", "th", "uk",
+        "he", "cs", "da", "fi", "no", "nb", "el", "ro", "hu"
+    ]
+
+    /// All 18 major streaming services grouped across Video & Live TV, Movies & Shows, and Live Sports.
     public static let all: [StreamingService] = [
         // MARK: - Video & Live TV (Tier 1 Native WKWebView)
         StreamingService(
@@ -281,9 +308,9 @@ public enum StreamingServiceCatalog {
             subtitle: "TNF, originals & live channels",
             category: .moviesAndShows,
             homeURLString: "https://www.amazon.com/gp/video/storefront",
-            signInURLString: "https://www.amazon.com/ap/signin",
+            signInURLString: "https://www.amazon.com/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.com%2Fgp%2Fvideo%2Fstorefront&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=usflex&openid.mode=checkid_setup&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0",
             dataDomains: ["amazon.com", "primevideo.com"],
-            authHostHints: ["www.amazon.com"],
+            authHostHints: ["na.account.amazon.com", "eu.account.amazon.com", "fe.account.amazon.com"],
             routingMode: .companion,
             requiresStrictDRM: true,
             symbolName: "play.square.stack.fill",
@@ -363,15 +390,45 @@ public enum StreamingServiceCatalog {
             homeURLString: "https://www.netflix.com/browse",
             signInURLString: "https://www.netflix.com/login",
             dataDomains: ["netflix.com", "nflxso.net"],
-            authHostHints: ["www.netflix.com"],
+            authHostHints: [],
             routingMode: .companion,
             requiresStrictDRM: true,
             symbolName: "popcorn.fill",
             monogram: "N",
             accentHexStart: "#8C0910",
             accentHexEnd: "#E50914"
+        ),
+        StreamingService(
+            id: "crunchyroll",
+            name: "Crunchyroll",
+            subtitle: "Anime series, simulcasts & films",
+            category: .moviesAndShows,
+            homeURLString: "https://www.crunchyroll.com/",
+            signInURLString: "https://www.crunchyroll.com/login",
+            dataDomains: ["crunchyroll.com", "crunchyrollsvc.com", "vrv.co"],
+            authHostHints: ["sso.crunchyroll.com"],
+            routingMode: .companion,
+            requiresStrictDRM: true,
+            symbolName: "play.tv.fill",
+            monogram: "CR",
+            accentHexStart: "#C24600",
+            accentHexEnd: "#F47521"
         )
     ]
+
+    /// Union of dedicated auth/SSO hosts declared across the catalog and third-party SSO providers.
+    public static var dedicatedAuthHosts: Set<String> {
+        var hosts = sharedThirdPartySSOHosts
+        for svc in all {
+            for hint in svc.authHostHints {
+                let clean = normalizeDomain(hint)
+                if !clean.isEmpty {
+                    hosts.insert(clean)
+                }
+            }
+        }
+        return hosts
+    }
 
     public static func service(id: String) -> StreamingService? {
         all.first { $0.id == id }
@@ -390,20 +447,25 @@ public enum StreamingServiceCatalog {
 
     /// Finds the canonical streaming service matching a URL's host (preferring `tv.youtube.com` before `youtube.com`).
     public static func service(matchingURL url: URL?) -> StreamingService? {
-        guard let host = url?.host?.lowercased(), !host.isEmpty else { return nil }
+        guard let rawHost = url?.host, !rawHost.isEmpty else { return nil }
+        let host = normalizeDomain(rawHost)
+        guard !host.isEmpty else { return nil }
         if host == "tv.youtube.com" {
             return service(id: "yttv")
         }
         if YouTubeURLRouter.isYouTubeHost(host) {
             return service(id: "youtube")
         }
-        for svc in all where svc.id != "youtube" && svc.id != "yttv" {
-            if let homeHost = svc.homeURL.host?.lowercased(),
+        if isAmazonOrPrimeVideoHost(host) {
+            return service(id: "primevideo")
+        }
+        for svc in all where svc.id != "youtube" && svc.id != "yttv" && svc.id != "primevideo" {
+            if let homeHost = svc.homeURL.host.map(normalizeDomain),
                host == homeHost || host.hasSuffix("." + homeHost) {
                 return svc
             }
             for domain in svc.dataDomains where domain != "google.com" && domain != "disney.com" && domain != "adobe.com" {
-                let clean = domain.lowercased()
+                let clean = normalizeDomain(domain)
                 if host == clean || host.hasSuffix("." + clean) {
                     return svc
                 }
@@ -412,10 +474,197 @@ public enum StreamingServiceCatalog {
         return nil
     }
 
+    /// Strict exact/subdomain check against canonical Amazon retail storefronts and `primevideo.com`.
+    public static func isAmazonOrPrimeVideoHost(_ host: String) -> Bool {
+        let lower = normalizeDomain(host)
+        guard !lower.isEmpty else { return false }
+        if lower == "primevideo.com" || lower.hasSuffix(".primevideo.com") {
+            return true
+        }
+        return amazonRetailDomains.contains { lower == $0 || lower.hasSuffix("." + $0) }
+    }
+
+    /// Returns true if `host` is a shared multi-provider SSO domain (Google, Apple, Adobe Pass, MyDisney).
+    public static func isSharedThirdPartySSOHost(_ host: String) -> Bool {
+        let lower = normalizeDomain(host)
+        guard !lower.isEmpty else { return false }
+        if YouTubeURLRouter.isGoogleAuthHost(lower) {
+            return true
+        }
+        return sharedThirdPartySSOHosts.contains { lower == $0 || lower.hasSuffix("." + $0) }
+    }
+
+    /// Returns true when `host` belongs to a dedicated authentication/SSO/IdP endpoint.
+    public static func isDedicatedAuthHost(_ host: String) -> Bool {
+        let lower = normalizeDomain(host)
+        guard !lower.isEmpty else { return false }
+        if YouTubeURLRouter.isGoogleAuthHost(lower) {
+            return true
+        }
+        if dedicatedAuthHosts.contains(where: { lower == $0 || lower.hasSuffix("." + $0) }) {
+            return true
+        }
+        return authHostPrefixes.contains { lower.hasPrefix($0) }
+    }
+
+    /// Strips optional web file extensions (`.html`, `.htm`, `.php`, `.aspx`) before matching auth/logout tokens.
+    public static func stripOptionalWebExtension(_ segment: String) -> String {
+        let lower = segment.lowercased()
+        for ext in [".html", ".htm", ".php", ".aspx"] where lower.hasSuffix(ext) {
+            return String(lower.dropLast(ext.count))
+        }
+        return lower
+    }
+
+    /// Strips a single leading ISO-639-1 (`en`, `es`, `pt`, ...) or BCP-47 (`es-es`, `pt-br`, `es-419`) locale path segment.
+    /// Restricts strictly to an explicit language allowlist so 2-letter route roots (`ap`, `ax`, `gp`) are never stripped.
+    public static func stripLeadingLocaleSegment(_ segments: [String]) -> ArraySlice<String> {
+        guard let first = segments.first?.lowercased(), !first.isEmpty else {
+            return segments[...]
+        }
+        if iso639LocaleCodes.contains(first) {
+            return segments.dropFirst()
+        }
+        let parts = first.split(separator: "-", omittingEmptySubsequences: false)
+        if parts.count == 2 {
+            let lang = String(parts[0])
+            let region = String(parts[1])
+            let isRegionLetters = region.count == 2 && region.unicodeScalars.allSatisfy { $0.value >= 97 && $0.value <= 122 }
+            let isRegionDigits = region.count == 3 && region.unicodeScalars.allSatisfy { $0.value >= 48 && $0.value <= 57 }
+            if iso639LocaleCodes.contains(lang) && (isRegionLetters || isRegionDigits) {
+                return segments.dropFirst()
+            }
+        }
+        return segments[...]
+    }
+
+    /// Returns true when `url` is a transient authentication, OAuth, OpenID, MFA/CVF, or logout step
+    /// that must not be treated as a signed-in landing page or persisted in session restoration.
+    public static func isTransientAuthURL(_ url: URL) -> Bool {
+        guard let rawHost = url.host, !rawHost.isEmpty else { return false }
+        let host = normalizeDomain(rawHost)
+        if isDedicatedAuthHost(host) {
+            return true
+        }
+
+        let standardizedPath = url.standardized.path.lowercased()
+        let rawSegments = standardizedPath.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        let normSegments = rawSegments.map(stripOptionalWebExtension)
+
+        if isAmazonOrPrimeVideoHost(host) {
+            let amzSegs = stripAmazonRegionPrefix(normSegments)
+            if let first = amzSegs.first, first == "ap" || first == "ax" {
+                return true
+            }
+            if amzSegs.count >= 3 && amzSegs[0] == "gp" && amzSegs[1] == "video" && (amzSegs[2] == "auth" || amzSegs[2] == "splash") {
+                return true
+            }
+            if amzSegs.count >= 2 && amzSegs[0] == "gp" && amzSegs[1] == "sign-in" {
+                return true
+            }
+            if amzSegs.contains("auth-redirect") {
+                return true
+            }
+            if amzSegs.contains(where: { ["signin", "sign-in", "sign_in", "signout", "sign-out"].contains($0) }) {
+                return true
+            }
+        }
+
+        let authTokens: Set<String> = [
+            "signin", "sign-in", "sign_in", "oauth", "oauth2",
+            "authorize", "servicelogin", "auth-redirect", "mfa",
+            "signout", "sign-out", "logout", "log-out"
+        ]
+        if normSegments.contains(where: { authTokens.contains($0) }) {
+            return true
+        }
+
+        let afterLocale = Array(stripLeadingLocaleSegment(normSegments))
+        if afterLocale.first == "login" {
+            return true
+        }
+        if afterLocale.count >= 2,
+           ["web", "account", "accounts", "auth", "sso", "user"].contains(afterLocale[0]),
+           afterLocale[1] == "login" {
+            return true
+        }
+
+        for i in 0..<max(0, normSegments.count - 1) {
+            let pair = (normSegments[i], normSegments[i + 1])
+            if pair == ("oauth", "callback")
+                || pair == ("oauth2", "callback")
+                || pair == ("auth", "callback")
+                || pair == ("sso", "callback")
+                || pair == ("auth", "return") {
+                return true
+            }
+        }
+
+        if let query = url.query?.lowercased() {
+            if query.contains("servicelogin")
+                || query.contains("openid.mode=checkid_setup")
+                || query.contains("openid.mode=checkid_immediate")
+                || (query.contains("oauth") && query.contains("client_id=")) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Single source of truth determining whether a `createWebViewWith` popup URL belongs to an auth/OAuth/SSO flow.
+    public static func isAuthOrOAuthPopupURL(_ url: URL) -> Bool {
+        if isTransientAuthURL(url) {
+            return true
+        }
+        let segments = url.standardized.path.lowercased()
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map { stripOptionalWebExtension(String($0)) }
+        let afterLocale = Array(stripLeadingLocaleSegment(segments))
+        return afterLocale.first == "auth"
+    }
+
+    /// Inspects non-expired cookie `(name, domain)` tuples (never values) to verify active server session cookies.
+    /// Returns `nil` for services that rely on URL-based auth-flow completion detection.
+    public static func hasAuthenticatedSessionCookie(
+        cookieEntries: [(name: String, domain: String)],
+        for service: StreamingService
+    ) -> Bool? {
+        guard service.id == "primevideo" else {
+            return nil
+        }
+        let exactNames: Set<String> = [
+            "at-main", "sess-at-main",
+            "at-main-av", "sess-at-main-av",
+            "at-av", "sess-at-av"
+        ]
+        for entry in cookieEntries {
+            guard matchesCookieDomain(entry.domain, for: service) else { continue }
+            let name = entry.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if exactNames.contains(name) || name.hasPrefix("at-acb") || name.hasPrefix("sess-at-acb") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func stripAmazonRegionPrefix(_ segments: [String]) -> ArraySlice<String> {
+        guard segments.count >= 2, segments[0] == "region" else {
+            return segments[...]
+        }
+        let cc = segments[1]
+        if (2...3).contains(cc.count) && cc.unicodeScalars.allSatisfy({ $0.value >= 97 && $0.value <= 122 }) {
+            return segments.dropFirst(2)
+        }
+        return segments[...]
+    }
+
     /// Strict domain match for `WKWebsiteDataRecord.displayName` (never uses `.contains()` to prevent accidental cross-service nukes).
     public static func matchesDataRecord(displayName: String, for service: StreamingService) -> Bool {
         let normalized = normalizeDomain(displayName)
         guard !normalized.isEmpty else { return false }
+        if service.id == "primevideo" && isAmazonOrPrimeVideoHost(normalized) {
+            return true
+        }
         return service.dataDomains.contains { rawDomain in
             let domain = normalizeDomain(rawDomain)
             guard !domain.isEmpty else { return false }
@@ -443,32 +692,49 @@ public enum StreamingServiceCatalog {
     /// Conservative passive heuristic detecting when an embedded sign-in web view has completed login
     /// and landed on an authenticated home/browse path (never claims sign-in while still on login/auth/OAuth routes).
     public static func isLikelySignedInNavigation(url: URL?, for service: StreamingService) -> Bool {
-        guard let url, let host = url.host?.lowercased(), !host.isEmpty else { return false }
-        let path = url.path.lowercased()
-        let query = (url.query ?? "").lowercased()
+        guard let url, let rawHost = url.host, !rawHost.isEmpty else { return false }
+        guard !isTransientAuthURL(url) else { return false }
 
-        // Never treat dedicated auth/SSO/OAuth hosts or paths as signed-in destinations.
-        let authHostFragments = [
-            "accounts.google.com", "accounts.youtube.com",
-            "passport.", "id.", "ids.", "identity.", "auth.",
-            "idmsa.apple.com", "appleid.apple.com",
-            "sp.auth.adobe.com", "registerdisney.go.com"
-        ]
-        if authHostFragments.contains(where: { host == $0 || host.hasPrefix($0) || host.hasSuffix("." + $0) }) {
+        let host = normalizeDomain(rawHost)
+        let path = url.standardized.path.lowercased()
+        let rawSegments = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        let normSegments = rawSegments.map(stripOptionalWebExtension)
+
+        if service.id == "primevideo" {
+            guard isAmazonOrPrimeVideoHost(host) else { return false }
+            let amzSegs = Array(stripAmazonRegionPrefix(normSegments))
+            if amzSegs.first == "splash" || amzSegs.first == "offers" {
+                return false
+            }
+            if amzSegs.count >= 2 && amzSegs[0] == "offers" && amzSegs[1] == "nonprimehomepage" {
+                return false
+            }
+            if amzSegs.count >= 3 && amzSegs[0] == "gp" && amzSegs[1] == "video" && (amzSegs[2] == "splash" || amzSegs[2] == "offers") {
+                return false
+            }
+            if path.hasPrefix("/gp/video") || path.contains("/video/") {
+                return true
+            }
+            let isPrimeVideoHost = host == "primevideo.com" || host.hasSuffix(".primevideo.com")
+            if isPrimeVideoHost && amzSegs.isEmpty {
+                return true
+            }
+            if let first = amzSegs.first {
+                let allowedPrimeRoutes: Set<String> = ["storefront", "mystuff", "watchlist", "profiles", "detail", "livetv"]
+                if allowedPrimeRoutes.contains(first) {
+                    return true
+                }
+                if isPrimeVideoHost && ["home", "sports", "watch"].contains(first) {
+                    return true
+                }
+            }
             return false
         }
 
-        let authPathTokens = [
-            "/login", "/signin", "/sign-in", "/sign_in", "/ap/signin",
-            "/oauth", "/authorize", "/account/signin", "/account/sign-in",
-            "/welcome", "/ServiceLogin".lowercased(), "/servicelogin", "/v3/signin"
-        ]
-        if authPathTokens.contains(where: { path.contains($0) }) || query.contains("servicelogin") {
-            return false
-        }
-
-        guard let homeHost = service.homeURL.host?.lowercased() else { return false }
-        let hostMatchesHome = (host == homeHost || host.hasSuffix("." + homeHost))
+        guard let rawHomeHost = service.homeURL.host else { return false }
+        let normalizedHomeHost = normalizeDomain(rawHomeHost)
+        let bareHomeHost = normalizedHomeHost.hasPrefix("www.") ? String(normalizedHomeHost.dropFirst(4)) : normalizedHomeHost
+        let hostMatchesHome = (host == bareHomeHost || host.hasSuffix("." + bareHomeHost))
         guard hostMatchesHome else { return false }
 
         // Require authenticated-looking landing paths for services whose home URL also serves logged-out walls.
@@ -483,8 +749,16 @@ public enum StreamingServiceCatalog {
             return path.hasPrefix("/watch")
         case "paramount":
             return path.hasPrefix("/home") || path.hasPrefix("/shows") || path.hasPrefix("/live-tv")
-        case "primevideo":
-            return path.hasPrefix("/gp/video") || path.contains("/video/")
+        case "crunchyroll":
+            let afterLocale = Array(stripLeadingLocaleSegment(normSegments))
+            let loggedOutRoutes: Set<String> = [
+                "login", "register", "reset-password", "welcome",
+                "freetrial", "premium", "offer", "try", "auth", "callback", "oauth"
+            ]
+            if let first = afterLocale.first, loggedOutRoutes.contains(first) {
+                return false
+            }
+            return true
         case "yttv":
             return host == "tv.youtube.com"
         case "youtube":

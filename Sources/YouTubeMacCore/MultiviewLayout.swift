@@ -437,6 +437,9 @@ public enum MultiviewGridLayout {
     public static let maxTiles: Int = 4
     public static let defaultPadding: CGFloat = 10
     public static let defaultSpacing: CGFloat = 10
+    public static let floatingMiniPlayerPadding: CGFloat = 6
+    public static let floatingMiniPlayerSpacing: CGFloat = 6
+    public static let floatingTileCornerRadius: CGFloat = 10
 
     /// Returns true if tile `index` is a large primary / 2-up slot eligible for up to 1080p quality.
     public static func isPrimarySlot(index: Int, count: Int, mode: MultiviewLayoutMode) -> Bool {

@@ -26,7 +26,7 @@ public final class AppController {
     public var focusModeActive: Bool = false
     public var alwaysOnTop: Bool = false
     public var isSidebarVisible: Bool
-    public var poppedOutTabID: UUID?
+    public var poppedOutTabIDs: [UUID] = []
 
     public var multiviewTabIDs: [UUID] = []
     public var multiviewAudioTabID: UUID?
@@ -113,6 +113,12 @@ public final class AppController {
     private var sponsorFetchTasks: [UUID: Task<Void, Never>] = [:]
 
     @ObservationIgnored
+    private var signInCheckTasks: [UUID: Task<Void, Never>] = [:]
+
+    @ObservationIgnored
+    private var signInCheckServiceIDs: [UUID: String] = [:]
+
+    @ObservationIgnored
     private var toastDismissTask: Task<Void, Never>?
 
     @ObservationIgnored
@@ -162,7 +168,11 @@ public final class AppController {
         self.settings = resolvedSettings
         self.isSidebarVisible = resolvedSettings.isSidebarVisible
         self.fallbackFloatingMiniPlayer = coordinator == nil
-            ? FloatingMiniPlayerController(initialSavedFrame: resolvedSettings.savedMiniPlayerFrame)
+            ? FloatingMiniPlayerController(
+                initialSavedFrame: resolvedSettings.savedMiniPlayerFrame,
+                initialSavedGridFrame: resolvedSettings.savedMiniPlayerGridFrame,
+                initialOpacity: resolvedSettings.miniPlayerOpacity
+            )
             : nil
 
         let placeholderID = UUID()
@@ -263,11 +273,27 @@ public final class AppController {
     }
 
     public var isMiniPlayer: Bool {
-        poppedOutTabID != nil
+        !poppedOutTabIDs.isEmpty
+    }
+
+    public var isFloatingMultiviewGrid: Bool {
+        poppedOutTabIDs.count >= 2
+    }
+
+    public var poppedOutTabID: UUID? {
+        poppedOutTabIDs.count == 1 ? poppedOutTabIDs.first : nil
+    }
+
+    public var poppedOutTabs: [BrowserTab] {
+        poppedOutTabIDs.compactMap { id in tabs.first(where: { $0.id == id }) }
+    }
+
+    public func isTabPoppedOut(_ id: UUID) -> Bool {
+        poppedOutTabIDs.contains(id)
     }
 
     public var isSelectedTabPoppedOut: Bool {
-        poppedOutTabID != nil && selectedTabID == poppedOutTabID
+        poppedOutTabIDs.contains(selectedTabID)
     }
 
     public var isSleepTimerActive: Bool {
@@ -294,6 +320,10 @@ public final class AppController {
 
     public var anyTabInFullscreen: Bool {
         tabs.contains(where: \.isInFullscreen)
+    }
+
+    public var hasLiveFullscreenTab: Bool {
+        anyTabInFullscreen || tabs.contains { $0.webView.fullscreenState != .notInFullscreen }
     }
 
     public var isMultiviewActive: Bool {
@@ -377,9 +407,20 @@ public final class AppController {
         activeMediaTab?.chapters ?? []
     }
 
-    public var canPopOutActiveTab: Bool {
+    public var canPopOutMultiviewGrid: Bool {
+        isMultiviewActive && !hasLiveFullscreenTab && multiviewTabs.contains(where: { $0.mediaStatus.hasVideo })
+    }
+
+    public var canPopOutActiveContent: Bool {
+        if isMultiviewActive {
+            return canPopOutMultiviewGrid
+        }
         guard let candidate = activeMediaTab else { return false }
         return canPopOut(tab: candidate)
+    }
+
+    public var canPopOutActiveTab: Bool {
+        canPopOutActiveContent
     }
 
     public var isCurrentPagePinned: Bool {
@@ -417,7 +458,7 @@ public final class AppController {
         if !isMultiviewActive, select, let leaving = selectedTab {
             if settings.autoMiniPlayerOnLeave,
                !targetIsWatch,
-               poppedOutTabID == nil,
+               !isMiniPlayer,
                shouldAutoPopOut(tab: leaving) {
                 popOutToMiniPlayer(tab: leaving, reason: .leftPage)
             } else if targetIsWatch && leaving.mediaStatus.isPlaying {
@@ -442,9 +483,16 @@ public final class AppController {
                     multiviewAudioTabID = next.audioTabID
                     selectedTabID = tab.id
                     syncOmniboxToSelectedTab()
+                    if isFloatingMultiviewGrid {
+                        poppedOutTabIDs = multiviewTabIDs
+                        syncFloatingMultiviewGrid()
+                    }
                     applyConfigToAllTabs()
                     applyMultiviewAudioFocus(unmuteAudioTab: false)
                 } else {
+                    if isFloatingMultiviewGrid {
+                        dockMiniPlayer(selectTab: false, focusMain: true)
+                    }
                     // Already at 4 tiles and user explicitly opened/selected a new tab: cleanly exit Multiview to it.
                     exitMultiview(focusTabID: tab.id, showFeedback: false)
                 }
@@ -472,13 +520,16 @@ public final class AppController {
     }
 
     public func closeTab(id: UUID) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
 
         if let closingTab = tabs.first(where: { $0.id == id }) {
             flushWatchProgress(for: closingTab)
         }
         sponsorFetchTasks[id]?.cancel()
         sponsorFetchTasks.removeValue(forKey: id)
+        signInCheckTasks[id]?.cancel()
+        signInCheckTasks.removeValue(forKey: id)
+        signInCheckServiceIDs.removeValue(forKey: id)
 
         if tabs.count <= 1 {
             // In multi-window mode, closing the sole tab of a secondary window closes that window cleanly.
@@ -487,12 +538,12 @@ public final class AppController {
                 return
             }
             // Standard macOS single-window behavior: restore mini-player cleanly, pause active video, then hide window.
-            if id == poppedOutTabID {
+            if isTabPoppedOut(id) {
                 let detached = floatingMiniPlayer.detachAndHide()
-                poppedOutTabID = nil
+                poppedOutTabIDs = []
                 poppedOutReason = nil
                 coordinator?.releaseMiniPlayerOwnership(for: windowID)
-                if let tab = detached ?? tabs.first(where: { $0.id == id }) {
+                if let tab = detached.first ?? tabs.first(where: { $0.id == id }) {
                     tab.needsPostAttachResize = true
                     tab.pauseAllPlayback()
                     tab.applyConfig(configForTab(id: tab.id), force: true)
@@ -504,11 +555,88 @@ public final class AppController {
             return
         }
 
-        if id == poppedOutTabID {
+        let wasFloatingGrid = isFloatingMultiviewGrid && isTabPoppedOut(id)
+        if !wasFloatingGrid && poppedOutTabID == id {
             floatingMiniPlayer.detachAndHide()
-            poppedOutTabID = nil
+            poppedOutTabIDs = []
             poppedOutReason = nil
             coordinator?.releaseMiniPlayerOwnership(for: windowID)
+        }
+
+        if wasFloatingGrid {
+            let result = MultiviewReducer.removeTile(id, from: multiviewState)
+            let closingReason = poppedOutReason ?? .manual
+            if let survivingID = result.remainingSingleTabID {
+                // Transition 2->1 cleanly BEFORE tearing down the closed tab so its WKWebView
+                // is detached from FloatingMiniPlayerController before teardown() runs.
+                multiviewTabIDs = []
+                multiviewAudioTabID = nil
+                soloMultiviewTabID = nil
+                hoveredMultiviewTileID = nil
+                selectedTabID = survivingID
+
+                if let survivor = tabs.first(where: { $0.id == survivingID }), survivor.id != id, canPopOut(tab: survivor) {
+                    poppedOutTabIDs = [survivor.id]
+                    poppedOutReason = closingReason
+                    if survivor.mediaStatus.hasVideo {
+                        survivor.setAudioLevel(muted: false, volumePercent: 100)
+                    }
+                    presentSingleFloatingMiniPlayer(for: survivor)
+                } else {
+                    _ = floatingMiniPlayer.detachAndHide()
+                    poppedOutTabIDs = []
+                    poppedOutReason = nil
+                    coordinator?.releaseMiniPlayerOwnership(for: windowID)
+                    if let survivor = tabs.first(where: { $0.id == survivingID }), survivor.id != id {
+                        survivor.needsPostAttachResize = true
+                        ensureTabLoaded(survivor)
+                        if survivor.mediaStatus.hasVideo {
+                            survivor.setAudioLevel(muted: false, volumePercent: 100)
+                        }
+                    }
+                }
+
+                if let idx = tabs.firstIndex(where: { $0.id == id }) {
+                    let removed = tabs.remove(at: idx)
+                    closedTabURLs.append(removed.pendingLazyURL ?? removed.url)
+                    if closedTabURLs.count > 20 { closedTabURLs.removeFirst() }
+                    removed.teardown()
+                }
+
+                restoreSidebarAfterMultiviewIfNeeded()
+                syncBackForwardGestures()
+                syncOmniboxToSelectedTab()
+                applyConfigToAllTabs()
+                scheduleSessionSave()
+                return
+            } else {
+                multiviewTabIDs = result.state.tabIDs
+                multiviewAudioTabID = result.state.audioTabID
+                soloMultiviewTabID = result.state.soloTabID
+                if hoveredMultiviewTileID == id {
+                    hoveredMultiviewTileID = nil
+                }
+                if selectedTabID == id {
+                    selectedTabID = result.state.audioTabID ?? result.state.tabIDs.first ?? id
+                    syncOmniboxToSelectedTab()
+                }
+                poppedOutTabIDs = multiviewTabIDs
+                syncFloatingMultiviewGrid()
+                if let idx = tabs.firstIndex(where: { $0.id == id }) {
+                    let removed = tabs.remove(at: idx)
+                    closedTabURLs.append(removed.pendingLazyURL ?? removed.url)
+                    if closedTabURLs.count > 20 { closedTabURLs.removeFirst() }
+                    removed.teardown()
+                }
+                if !multiviewTabIDs.contains(selectedTabID), let fallbackID = multiviewAudioTabID ?? multiviewTabIDs.first {
+                    selectedTabID = fallbackID
+                    syncOmniboxToSelectedTab()
+                }
+                applyConfigToAllTabs()
+                applyMultiviewAudioFocus(unmuteAudioTab: true)
+                scheduleSessionSave()
+                return
+            }
         }
 
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
@@ -569,7 +697,14 @@ public final class AppController {
     }
 
     public func closeOtherTabs(keepingID id: UUID) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
+
+        if isFloatingMultiviewGrid || (isMiniPlayer && poppedOutTabID != id) {
+            floatingMiniPlayer.detachAndHide()
+            poppedOutTabIDs = []
+            poppedOutReason = nil
+            coordinator?.releaseMiniPlayerOwnership(for: windowID)
+        }
 
         if isMultiviewActive {
             multiviewTabIDs = []
@@ -580,16 +715,13 @@ public final class AppController {
             syncBackForwardGestures()
         }
 
-        if let popped = poppedOutTabID, popped != id {
-            floatingMiniPlayer.detachAndHide()
-            poppedOutTabID = nil
-            poppedOutReason = nil
-        }
-
         let toClose = tabs.filter { $0.id != id }
         for tab in toClose {
             sponsorFetchTasks[tab.id]?.cancel()
             sponsorFetchTasks.removeValue(forKey: tab.id)
+            signInCheckTasks[tab.id]?.cancel()
+            signInCheckTasks.removeValue(forKey: tab.id)
+            signInCheckServiceIDs.removeValue(forKey: tab.id)
             closedTabURLs.append(tab.pendingLazyURL ?? tab.url)
             tab.teardown()
         }
@@ -610,11 +742,19 @@ public final class AppController {
     }
 
     public func selectTab(id: UUID) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         guard let targetTab = tabs.first(where: { $0.id == id }) else { return }
 
-        // Clicking back on a popped-out tab smoothly docks it back into the main window.
-        if id == poppedOutTabID {
+        if isFloatingMultiviewGrid {
+            ensureTabLoaded(targetTab)
+            if multiviewTabIDs.contains(id) {
+                focusMultiviewAudio(tabID: id, showFeedback: false)
+                scheduleSessionSave()
+                return
+            }
+            dockMiniPlayer(selectTab: false, focusMain: false)
+        } else if id == poppedOutTabID {
+            // Clicking back on a single popped-out tab smoothly docks it back into the main window.
             dockMiniPlayer(selectTab: true, focusMain: false)
             return
         }
@@ -640,7 +780,7 @@ public final class AppController {
 
         // If leaving a playing watch tab for another tab, float the playing video as a pop-up.
         if settings.autoMiniPlayerOnLeave,
-           poppedOutTabID == nil,
+           !isMiniPlayer,
            let leaving = selectedTab,
            leaving.id != id,
            shouldAutoPopOut(tab: leaving) {
@@ -693,7 +833,13 @@ public final class AppController {
             finalURL = url
         }
 
-        // If the selected tab is currently popped out, navigate a docked tab instead so the pop-up keeps playing.
+        // If the Multiview grid is currently floating, dock it back cleanly before navigating so
+        // `poppedOutTabIDs == multiviewTabIDs` invariant is preserved and the user stays oriented.
+        if isFloatingMultiviewGrid {
+            dockMiniPlayer(selectTab: true, focusMain: true)
+        }
+
+        // If the selected tab is currently popped out (single mode), navigate a docked tab instead so the pop-up keeps playing.
         if let current = selectedTab, current.id == poppedOutTabID {
             if let docked = tabs.first(where: { $0.id != poppedOutTabID }) {
                 selectedTabID = docked.id
@@ -711,7 +857,7 @@ public final class AppController {
         if !isMultiviewActive,
            settings.autoMiniPlayerOnLeave,
            !navigatingToWatch,
-           poppedOutTabID == nil,
+           !isMiniPlayer,
            let current = selectedTab,
            shouldAutoPopOut(tab: current) {
             popOutToMiniPlayer(tab: current, reason: .leftPage)
@@ -941,7 +1087,7 @@ public final class AppController {
     }
 
     public func openFolderInMultiview(id: UUID) {
-        guard !anyTabInFullscreen,
+        guard !hasLiveFullscreenTab,
               let folder = settings.pinnedFolders.first(where: { $0.id == id }) else {
             return
         }
@@ -992,7 +1138,7 @@ public final class AppController {
     }
 
     public func openFolderInTabs(id: UUID) {
-        guard !anyTabInFullscreen,
+        guard !hasLiveFullscreenTab,
               let folder = settings.pinnedFolders.first(where: { $0.id == id }) else {
             return
         }
@@ -1039,7 +1185,7 @@ public final class AppController {
     }
 
     public func moveTab(fromID: UUID, toID: UUID) {
-        guard !anyTabInFullscreen,
+        guard !hasLiveFullscreenTab,
               fromID != toID,
               let fromIdx = tabs.firstIndex(where: { $0.id == fromID }),
               let toIdx = tabs.firstIndex(where: { $0.id == toID }) else {
@@ -1052,9 +1198,9 @@ public final class AppController {
 
     public func canPutTabToSleep(id: UUID) -> Bool {
         guard id != selectedTabID,
-              id != poppedOutTabID,
+              !isTabPoppedOut(id),
               !isTabInMultiview(id),
-              !anyTabInFullscreen,
+              !hasLiveFullscreenTab,
               let tab = tabs.first(where: { $0.id == id }),
               !tab.isSleeping,
               tab.pendingLazyURL == nil,
@@ -1136,9 +1282,9 @@ public final class AppController {
     }
 
     public func enterMultiview(with explicitTabIDs: [UUID]? = nil) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
 
-        if poppedOutTabID != nil {
+        if isMiniPlayer {
             dockMiniPlayer(selectTab: false, focusMain: false)
         }
 
@@ -1214,7 +1360,11 @@ public final class AppController {
 
     public func exitMultiview(focusTabID: UUID? = nil, showFeedback: Bool = true) {
         guard isMultiviewActive else { return }
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab, !floatingMiniPlayer.hasLiveFullscreenTab else { return }
+
+        if isFloatingMultiviewGrid {
+            dockMiniPlayer(selectTab: false, focusMain: false)
+        }
 
         let targetID: UUID
         if let focusTabID, tabs.contains(where: { $0.id == focusTabID }) {
@@ -1260,6 +1410,9 @@ public final class AppController {
     public func setMultiviewLayoutMode(_ mode: MultiviewLayoutMode, showFeedback: Bool = true) {
         guard multiviewLayoutMode != mode else { return }
         multiviewLayoutMode = mode
+        if isFloatingMultiviewGrid {
+            syncFloatingMultiviewGrid()
+        }
         if isMultiviewActive {
             applyConfigToAllTabs()
         }
@@ -1286,7 +1439,7 @@ public final class AppController {
     }
 
     public func addTileToMultiview(url: URL? = nil, routingMode: TabRoutingMode? = nil) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         let targetURL = url ?? settings.startupDestination.url
         let resolvedMode = routingMode ?? YouTubeURLRouter.preferredRoutingMode(for: targetURL)
 
@@ -1327,6 +1480,10 @@ public final class AppController {
         multiviewAudioTabID = next.audioTabID
         selectedTabID = newTab.id
         syncOmniboxToSelectedTab()
+        if isFloatingMultiviewGrid {
+            poppedOutTabIDs = multiviewTabIDs
+            syncFloatingMultiviewGrid()
+        }
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: false)
         scheduleSessionSave()
@@ -1338,7 +1495,7 @@ public final class AppController {
     }
 
     public func openCompanionTile(url: URL) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
         if isMultiviewActive && !canAddMultiviewTile {
             createTab(url: url, select: true, routingMode: mode)
@@ -1389,9 +1546,9 @@ public final class AppController {
     }
 
     public func addExistingTabToMultiview(id: UUID) {
-        guard !anyTabInFullscreen, tabs.contains(where: { $0.id == id }) else { return }
+        guard !hasLiveFullscreenTab, tabs.contains(where: { $0.id == id }) else { return }
 
-        if id == poppedOutTabID {
+        if poppedOutTabID == id {
             dockMiniPlayer(selectTab: false, focusMain: false)
         }
 
@@ -1422,19 +1579,24 @@ public final class AppController {
             addedTab.setBackForwardGesturesEnabled(false)
         }
         syncOmniboxToSelectedTab()
+        if isFloatingMultiviewGrid {
+            poppedOutTabIDs = multiviewTabIDs
+            syncFloatingMultiviewGrid()
+        }
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: false)
         showHUD(icon: "square.grid.2x2", message: "Added to Multiview (\(multiviewTabIDs.count)/\(MultiviewGridLayout.maxTiles))")
     }
 
     public func removeTileFromMultiview(id: UUID, closeTabIfMultiple: Bool = false) {
-        guard isMultiviewActive, multiviewTabIDs.contains(id), !anyTabInFullscreen else { return }
+        guard isMultiviewActive, multiviewTabIDs.contains(id), !hasLiveFullscreenTab else { return }
 
         if closeTabIfMultiple && tabs.count > 1 {
             closeTab(id: id)
             return
         }
 
+        let wasFloatingGrid = isFloatingMultiviewGrid
         if let removedTab = tabs.first(where: { $0.id == id }) {
             removedTab.needsPostAttachResize = true
             removedTab.setAudioLevel(muted: false, volumePercent: 100)
@@ -1442,6 +1604,31 @@ public final class AppController {
         }
         let result = MultiviewReducer.removeTile(id, from: multiviewState)
         if let survivingID = result.remainingSingleTabID {
+            if wasFloatingGrid {
+                let prevReason = poppedOutReason ?? .manual
+                multiviewTabIDs = []
+                multiviewAudioTabID = nil
+                soloMultiviewTabID = nil
+                hoveredMultiviewTileID = nil
+                restoreSidebarAfterMultiviewIfNeeded()
+                syncBackForwardGestures()
+                selectedTabID = survivingID
+                syncOmniboxToSelectedTab()
+                if let survivor = tabs.first(where: { $0.id == survivingID }), canPopOut(tab: survivor) {
+                    poppedOutTabIDs = [survivor.id]
+                    poppedOutReason = prevReason
+                    survivor.setAudioLevel(muted: false, volumePercent: 100)
+                    presentSingleFloatingMiniPlayer(for: survivor)
+                    applyConfigToAllTabs()
+                } else {
+                    dockMiniPlayer(selectTab: false, focusMain: false)
+                    if let survivor = tabs.first(where: { $0.id == survivingID }), survivor.mediaStatus.hasVideo {
+                        survivor.setAudioLevel(muted: false, volumePercent: 100)
+                    }
+                    applyConfigToAllTabs()
+                }
+                return
+            }
             exitMultiview(focusTabID: survivingID, showFeedback: true)
             return
         }
@@ -1456,6 +1643,10 @@ public final class AppController {
             selectedTabID = result.state.audioTabID ?? result.state.tabIDs.first ?? selectedTabID
             syncOmniboxToSelectedTab()
         }
+        if wasFloatingGrid {
+            poppedOutTabIDs = multiviewTabIDs
+            syncFloatingMultiviewGrid()
+        }
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: true)
     }
@@ -1463,7 +1654,10 @@ public final class AppController {
     // MARK: - Zero-Latency Multiview Solo & Live Stream Sync
 
     public func toggleMultiviewSolo(tabID: UUID? = nil) {
-        guard isMultiviewActive, !anyTabInFullscreen else { return }
+        guard isMultiviewActive, !hasLiveFullscreenTab else { return }
+        if isFloatingMultiviewGrid {
+            dockMiniPlayer(selectTab: false, focusMain: true)
+        }
         let targetID = tabID ?? soloMultiviewTabID ?? multiviewAudioTabID ?? selectedTabID
         guard multiviewTabIDs.contains(targetID) else { return }
 
@@ -1499,7 +1693,7 @@ public final class AppController {
     }
 
     public func exitMultiviewSolo(showFeedback: Bool = true) {
-        guard isMultiviewSoloActive, !anyTabInFullscreen else { return }
+        guard isMultiviewSoloActive, !hasLiveFullscreenTab else { return }
         soloMultiviewTabID = nil
         applyConfigToAllTabs()
         let currentTiles = multiviewTabs
@@ -1516,7 +1710,7 @@ public final class AppController {
 
     public func nudgeMultiviewTile(id: UUID, seconds: Double) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        tab.evaluate(EnhancementScript.seekByScript(seconds: seconds))
+        tab.seekBy(seconds: seconds)
         let sign = seconds >= 0 ? "+" : ""
         let formatted = seconds.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(seconds))" : String(format: "%.1f", seconds)
         showHUD(icon: "clock.arrow.2.circlepath", message: "Sync \(sign)\(formatted)s")
@@ -1533,7 +1727,7 @@ public final class AppController {
     public func presentStreamingOnboardingIfNeeded() {
         guard isPrimaryWindow,
               !settings.hasCompletedStreamingOnboarding,
-              !anyTabInFullscreen,
+              !hasLiveFullscreenTab,
               !isMiniPlayer,
               coordinator?.hasAutoPresentedOnboardingThisSession == false else {
             return
@@ -1545,7 +1739,7 @@ public final class AppController {
     }
 
     public func openStreamingServicesSetup(step: Int = 1, focusServiceID: String? = nil) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         onboardingInitialStep = min(max(step, 1), 2)
         onboardingFocusServiceID = focusServiceID
         isOnboardingPresented = true
@@ -1564,7 +1758,7 @@ public final class AppController {
     }
 
     public func openStreamingService(_ service: StreamingService, inNewTab: Bool = false) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         if isMultiviewActive {
             if canAddMultiviewTile {
                 addStreamingServiceToMultiview(service)
@@ -1584,7 +1778,7 @@ public final class AppController {
     }
 
     public func addStreamingServiceToMultiview(_ service: StreamingService) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         if isMultiviewSoloActive {
             soloMultiviewTabID = nil
         }
@@ -1602,9 +1796,106 @@ public final class AppController {
         }
     }
 
+    public func resetStreamingServiceDataAndWait(_ service: StreamingService) async {
+        await coordinator?.resetServiceData(for: service)
+    }
+
     public func resetStreamingServiceData(_ service: StreamingService) {
         Task { @MainActor [weak self] in
-            await self?.coordinator?.resetServiceData(for: service)
+            await self?.resetStreamingServiceDataAndWait(service)
+        }
+    }
+
+    public func cancelSignInCheckTasks(forServiceID serviceID: String? = nil) {
+        if let serviceID {
+            let matchingTabIDs = signInCheckServiceIDs.compactMap { $0.value == serviceID ? $0.key : nil }
+            for tabID in matchingTabIDs {
+                signInCheckTasks[tabID]?.cancel()
+                signInCheckTasks.removeValue(forKey: tabID)
+                signInCheckServiceIDs.removeValue(forKey: tabID)
+            }
+        } else {
+            for (_, task) in signInCheckTasks {
+                task.cancel()
+            }
+            signInCheckTasks.removeAll()
+            signInCheckServiceIDs.removeAll()
+        }
+    }
+
+    @discardableResult
+    public func evaluateSignInCompletion(
+        for service: StreamingService,
+        url: URL?,
+        fromAuthFlow: Bool,
+        refreshIdleTabsOnNewSignIn: Bool = false,
+        excludingTabID: UUID? = nil
+    ) async -> Bool {
+        guard StreamingServiceCatalog.isLikelySignedInNavigation(url: url, for: service) else {
+            return false
+        }
+
+        let resetGen = coordinator?.resetGeneration(for: service.id) ?? 0
+        let now = Date()
+        let rawCookies = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
+        guard !Task.isCancelled, (coordinator?.resetGeneration(for: service.id) ?? 0) == resetGen else {
+            return false
+        }
+
+        let entries: [(name: String, domain: String)] = rawCookies.compactMap { cookie in
+            if let expires = cookie.expiresDate, expires <= now {
+                return nil
+            }
+            return (name: cookie.name, domain: cookie.domain)
+        }
+
+        let isSignedIn: Bool
+        if let cookieVerdict = StreamingServiceCatalog.hasAuthenticatedSessionCookie(cookieEntries: entries, for: service) {
+            isSignedIn = cookieVerdict
+        } else {
+            isSignedIn = fromAuthFlow
+        }
+
+        guard isSignedIn else { return false }
+
+        let wasSignedIn = settings.isServiceSignedIn(service.id)
+        settings.setServiceSignedIn(service.id, signedIn: true)
+        if !wasSignedIn && refreshIdleTabsOnNewSignIn {
+            coordinator?.refreshIdleTabs(for: service, excludingTabID: excludingTabID)
+        }
+        return true
+    }
+
+    private func handleTabDidFinishNavigation(tabID: UUID, url: URL) {
+        guard !isWindowTornDown,
+              let tab = tabs.first(where: { $0.id == tabID }),
+              !tab.isSleeping,
+              tab.pendingLazyURL == nil,
+              let service = StreamingServiceCatalog.service(matchingURL: url) else {
+            return
+        }
+        let fromAuthFlow = (tab.authFlowServiceID == service.id)
+        guard fromAuthFlow || service.id == "primevideo" else {
+            return
+        }
+
+        signInCheckTasks[tabID]?.cancel()
+        signInCheckServiceIDs[tabID] = service.id
+        signInCheckTasks[tabID] = Task { @MainActor [weak self, weak tab] in
+            guard let self, let tab else { return }
+            let confirmed = await self.evaluateSignInCompletion(
+                for: service,
+                url: url,
+                fromAuthFlow: fromAuthFlow,
+                refreshIdleTabsOnNewSignIn: fromAuthFlow,
+                excludingTabID: tabID
+            )
+            guard !Task.isCancelled else { return }
+            self.signInCheckTasks.removeValue(forKey: tabID)
+            self.signInCheckServiceIDs.removeValue(forKey: tabID)
+            if confirmed && tab.authFlowServiceID == service.id {
+                tab.authFlowServiceID = nil
+            }
         }
     }
 
@@ -1620,7 +1911,7 @@ public final class AppController {
     }
 
     public func openAirPlayPopover() {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         airPlayVideoHint = nil
         coordinator?.refreshConnectedDisplays()
         coordinator?.refreshAudioOutputStatus()
@@ -1664,7 +1955,10 @@ public final class AppController {
 
     public func moveWindowToDisplay(id: UInt32) {
         // Hard invariant: never move or resize the NSWindow while any tab is in WebKit fullscreen.
-        guard !anyTabInFullscreen, let window = mainWindow else { return }
+        guard !hasLiveFullscreenTab, let window = mainWindow else { return }
+        if isFloatingMultiviewGrid {
+            dockMiniPlayer(selectTab: false, focusMain: false)
+        }
         coordinator?.refreshConnectedDisplays()
         guard let display = coordinator?.connectedDisplays.first(where: { $0.id == id }) else { return }
 
@@ -1685,16 +1979,24 @@ public final class AppController {
         multiviewAudioTabID = next.audioTabID
         selectedTabID = id
         syncOmniboxToSelectedTab()
+        if isFloatingMultiviewGrid {
+            poppedOutTabIDs = multiviewTabIDs
+            syncFloatingMultiviewGrid()
+        }
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: true)
         showHUD(icon: "arrow.up.left.and.arrow.down.right", message: "Promoted to Main Tile")
     }
 
     public func moveMultiviewTile(id: UUID, by delta: Int) {
-        guard isMultiviewActive, !anyTabInFullscreen, multiviewTabIDs.contains(id) else { return }
+        guard isMultiviewActive, !hasLiveFullscreenTab, multiviewTabIDs.contains(id) else { return }
         let next = MultiviewReducer.moveTile(id, by: delta, in: multiviewState)
         guard next.tabIDs != multiviewTabIDs else { return }
         multiviewTabIDs = next.tabIDs
+        if isFloatingMultiviewGrid {
+            poppedOutTabIDs = multiviewTabIDs
+            syncFloatingMultiviewGrid()
+        }
         applyConfigToAllTabs()
     }
 
@@ -1704,6 +2006,9 @@ public final class AppController {
         multiviewAudioTabID = next.audioTabID
         selectedTabID = tabID
         syncOmniboxToSelectedTab()
+        if isFloatingMultiviewGrid {
+            syncFloatingMultiviewGrid()
+        }
         applyMultiviewAudioFocus(unmuteAudioTab: true)
         if showFeedback, let slot = multiviewSlotNumber(for: tabID) {
             let title = tabs.first(where: { $0.id == tabID })?.displayTitle ?? "Stream \(slot)"
@@ -1737,9 +2042,12 @@ public final class AppController {
     public func navigateMultiviewTileToBrowse(id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         selectedTabID = id
+        tab.isCleanBoxBypassed = false
         let destination: URL
         if YouTubeURLRouter.isYouTubeTVHost(tab.url.host), let yttvLive = URL(string: "https://tv.youtube.com/live") {
             destination = yttvLive
+        } else if let service = StreamingServiceCatalog.service(matchingURL: tab.url) {
+            destination = service.homeURL
         } else {
             destination = SidebarDestination.home.url
         }
@@ -1833,11 +2141,11 @@ public final class AppController {
     // MARK: - Playback, Floating Pop-Up Mini-Player & Distraction-Free Controls
 
     public func togglePlayPause() {
-        activeMediaTab?.evaluate(EnhancementScript.togglePlayPauseScript)
+        activeMediaTab?.togglePlayPause()
     }
 
     public func seek(by seconds: Double) {
-        activeMediaTab?.evaluate(EnhancementScript.seekByScript(seconds: seconds))
+        activeMediaTab?.seekBy(seconds: seconds)
     }
 
     /// Deterministically seeks the active media tab to an absolute timestamp, optimistically updating
@@ -1848,7 +2156,7 @@ public final class AppController {
         guard duration.isFinite, duration > 0, duration < 86400 else { return }
         let clamped = min(max(seconds.isFinite ? seconds : 0, 0), duration)
         tab.timeline.update(currentTime: clamped, duration: duration)
-        tab.evaluate(EnhancementScript.seekToScript(seconds: clamped))
+        tab.seekTo(seconds: clamped)
     }
 
     public func toggleMute(tabID: UUID? = nil) {
@@ -1870,7 +2178,9 @@ public final class AppController {
 
     public func togglePictureInPicture() {
         guard let tab = activeMediaTab, tab.mediaStatus.hasVideo else { return }
-        tab.evaluate(EnhancementScript.togglePictureInPictureScript)
+        Task { @MainActor in
+            _ = await tab.togglePictureInPicture()
+        }
     }
 
     public func toggleTheaterMode() {
@@ -1880,10 +2190,29 @@ public final class AppController {
     public func setPlaybackRate(_ rate: Double, showFeedback: Bool = true) {
         guard let tab = activeMediaTab, tab.mediaStatus.hasVideo else { return }
         let clamped = min(max(rate.isFinite ? rate : 1.0, 0.25), 4.0)
-        tab.evaluate(EnhancementScript.setPlaybackRateScript(rate: clamped))
+        tab.setPlaybackRate(clamped)
         if showFeedback {
             showHUD(icon: "gauge.with.dots.needle.67percent", message: "Speed \(MediaStatus.formatPlaybackRate(clamped))")
         }
+    }
+
+    public func toggleCleanBoxForActiveTab() {
+        let targetID = isMultiviewActive ? (multiviewAudioTabID ?? selectedTabID) : selectedTabID
+        toggleCleanBox(forTabID: targetID)
+    }
+
+    public func toggleCleanBox(forTabID tabID: UUID) {
+        guard settings.cleanBoxStreamingPlayers,
+              let tab = tabs.first(where: { $0.id == tabID }),
+              tab.mediaStatus.isCleanBoxActive || tab.isCleanBoxBypassed else {
+            return
+        }
+        tab.isCleanBoxBypassed.toggle()
+        tab.applyConfig(configForTab(id: tab.id), force: true)
+        showHUD(
+            icon: tab.isCleanBoxBypassed ? "rectangle.inset.filled.and.person.filled" : "rectangle.inset.filled",
+            message: tab.isCleanBoxBypassed ? "Showing Full Page" : "Clean-Box Video"
+        )
     }
 
     public func stepPlaybackRate(by delta: Double) {
@@ -1952,55 +2281,72 @@ public final class AppController {
     }
 
     public func toggleMiniPlayer() {
-        if poppedOutTabID != nil {
+        if isMiniPlayer {
             dockMiniPlayer(selectTab: true, focusMain: true)
             return
         }
-
-        guard let targetTab = activeMediaTab, canPopOut(tab: targetTab) else {
-            return
-        }
-        if isMultiviewActive {
-            exitMultiview(focusTabID: targetTab.id, showFeedback: false)
-        }
-        popOutToMiniPlayer(tab: targetTab, reason: .manual)
+        popOutActiveContentToMiniPlayer(reason: .manual)
     }
 
-    public func popOutToMiniPlayer(tab: BrowserTab, reason: PopOutReason) {
-        guard canPopOut(tab: tab) else {
-            return
+    @discardableResult
+    public func popOutActiveContentToMiniPlayer(reason: PopOutReason) -> Bool {
+        guard !hasLiveFullscreenTab else { return false }
+        if isMultiviewActive {
+            return popOutMultiviewToMiniPlayer(reason: reason)
+        }
+        guard let targetTab = activeMediaTab, canPopOut(tab: targetTab) else {
+            return false
+        }
+        return popOutToMiniPlayer(tab: targetTab, reason: reason)
+    }
+
+    @discardableResult
+    public func popOutToMiniPlayer(tab: BrowserTab, reason: PopOutReason) -> Bool {
+        guard canPopOut(tab: tab), !hasLiveFullscreenTab else {
+            return false
         }
 
-        // Always exit Multiview cleanly before floating a video so hybrid Multiview + Mini-Player states cannot occur.
+        // Always exit Multiview cleanly before floating a single video so hybrid Multiview + Mini-Player states cannot occur.
         if isMultiviewActive {
             exitMultiview(focusTabID: tab.id, showFeedback: false)
         }
 
-        if let existingID = poppedOutTabID, existingID != tab.id {
+        if isMiniPlayer && (isFloatingMultiviewGrid || poppedOutTabID != tab.id) {
             dockMiniPlayer(selectTab: false, focusMain: false)
+        }
+
+        if let coordinator, !coordinator.prepareMiniPlayerOwnership(for: windowID) {
+            return false
         }
 
         tab.needsPostAttachResize = false
         tab.cancelPostAttachResize()
-        coordinator?.prepareMiniPlayerOwnership(for: windowID)
-        poppedOutTabID = tab.id
+        if tab.isCleanBoxBypassed {
+            tab.isCleanBoxBypassed = false
+        }
+        poppedOutTabIDs = [tab.id]
         poppedOutReason = reason
+        presentSingleFloatingMiniPlayer(for: tab)
+        tab.applyConfig(configForTab(id: tab.id), force: true)
+        return true
+    }
 
+    private func presentSingleFloatingMiniPlayer(for tab: BrowserTab) {
         floatingMiniPlayer.show(
             tab: tab,
             allSpaces: settings.miniPlayerAllSpaces,
             opacity: settings.miniPlayerOpacity,
             onSeek: { [weak tab] seconds in
-                tab?.evaluate(EnhancementScript.seekByScript(seconds: seconds))
+                tab?.seekBy(seconds: seconds)
             },
             onTogglePlay: { [weak tab] in
-                tab?.evaluate(EnhancementScript.togglePlayPauseScript)
+                tab?.togglePlayPause()
             },
             onToggleMute: { [weak tab] in
                 tab?.toggleMute()
             },
             onSetPlaybackRate: { [weak tab] rate in
-                tab?.evaluate(EnhancementScript.setPlaybackRateScript(rate: rate))
+                tab?.setPlaybackRate(rate)
             },
             onAirPlayResult: { [weak self] result in
                 self?.handleAirPlayPickerResult(result)
@@ -2015,26 +2361,147 @@ public final class AppController {
                 self?.closeMiniPlayerPopup()
             }
         )
-        tab.applyConfig(configForTab(id: tab.id), force: true)
+    }
+
+    @discardableResult
+    public func popOutMultiviewToMiniPlayer(reason: PopOutReason) -> Bool {
+        let gridTabs = multiviewTabs
+        guard isMultiviewActive,
+              gridTabs.count >= 2,
+              !hasLiveFullscreenTab,
+              !floatingMiniPlayer.hasLiveFullscreenTab,
+              gridTabs.contains(where: { $0.mediaStatus.hasVideo }) else {
+            return false
+        }
+
+        if isMiniPlayer && !isFloatingMultiviewGrid {
+            dockMiniPlayer(selectTab: false, focusMain: false)
+        }
+
+        if let coordinator, !coordinator.prepareMiniPlayerOwnership(for: windowID) {
+            return false
+        }
+
+        soloMultiviewTabID = nil
+        hoveredMultiviewTileID = nil
+        hoveredMultiviewDividerID = nil
+        activeMultiviewDividerDragID = nil
+
+        for tab in gridTabs {
+            tab.needsPostAttachResize = false
+            tab.cancelPostAttachResize()
+            if tab.isCleanBoxBypassed {
+                tab.isCleanBoxBypassed = false
+            }
+        }
+
+        poppedOutTabIDs = multiviewTabIDs
+        poppedOutReason = reason
+
+        floatingMiniPlayer.showGrid(
+            tabs: gridTabs,
+            audioTabID: multiviewAudioTabID ?? gridTabs.first?.id,
+            layoutMode: multiviewLayoutMode,
+            splitRatios: multiviewSplitRatios,
+            allSpaces: settings.miniPlayerAllSpaces,
+            opacity: settings.miniPlayerOpacity,
+            onFocusAudio: { [weak self] tabID in
+                self?.focusMultiviewAudio(tabID: tabID, showFeedback: false)
+            },
+            onCycleLayout: { [weak self] in
+                self?.cycleMultiviewLayoutMode()
+            },
+            onSelectLayout: { [weak self] mode in
+                self?.setMultiviewLayoutMode(mode, showFeedback: true)
+            },
+            onToggleMuteAll: { [weak self] in
+                self?.toggleMuteAllFromFloatingGrid()
+            },
+            onTogglePlayActive: { [weak self] in
+                self?.multiviewAudioTab?.togglePlayPause()
+            },
+            onPlayAll: { [weak self] in
+                guard let self else { return }
+                for tab in self.multiviewTabs { tab.playMedia() }
+            },
+            onPauseAll: { [weak self] in
+                guard let self else { return }
+                for tab in self.multiviewTabs { tab.pauseMedia() }
+            },
+            onDock: { [weak self] in
+                self?.dockMiniPlayer(selectTab: true, focusMain: true)
+            },
+            onClose: { [weak self] in
+                self?.closeMiniPlayerPopup()
+            }
+        )
+        applyConfigToAllTabs()
+        return true
+    }
+
+    func syncFloatingMultiviewGrid() {
+        guard isFloatingMultiviewGrid,
+              !hasLiveFullscreenTab,
+              !floatingMiniPlayer.hasLiveFullscreenTab else {
+            return
+        }
+        let gridTabs = multiviewTabs
+        guard gridTabs.count >= 2 else { return }
+        floatingMiniPlayer.syncGrid(
+            tabs: gridTabs,
+            audioTabID: multiviewAudioTabID ?? gridTabs.first?.id,
+            layoutMode: multiviewLayoutMode,
+            splitRatios: multiviewSplitRatios
+        )
+    }
+
+    private func toggleMuteAllFromFloatingGrid() {
+        guard isMultiviewActive else { return }
+        let currentlyAllMuted = multiviewTabs.allSatisfy { !$0.mediaStatus.hasVideo || $0.mediaStatus.isMuted }
+        if currentlyAllMuted {
+            applyMultiviewAudioFocus(unmuteAudioTab: true)
+        } else {
+            muteAllMultiviewTiles()
+        }
+    }
+
+    public func applyFloatingMiniPlayerSizePreset(_ rawPreset: String) {
+        if isFloatingMultiviewGrid, let preset = MiniPlayerGridSizePreset(rawValue: rawPreset) {
+            floatingMiniPlayer.applyGridSizePreset(preset)
+        } else if isMiniPlayer, let preset = MiniPlayerSizePreset(rawValue: rawPreset) {
+            floatingMiniPlayer.applySizePreset(preset)
+        }
     }
 
     public func dockMiniPlayer(selectTab: Bool = true, focusMain: Bool = false) {
-        guard let poppedID = poppedOutTabID else { return }
-        if let existing = tabs.first(where: { $0.id == poppedID }),
-           existing.isInFullscreen || existing.webView.fullscreenState != .notInFullscreen {
-            return
-        }
+        guard isMiniPlayer else { return }
+        guard !hasLiveFullscreenTab, !floatingMiniPlayer.hasLiveFullscreenTab else { return }
 
-        let detachedTab = floatingMiniPlayer.detachAndHide()
-        poppedOutTabID = nil
+        let returningIDs = poppedOutTabIDs
+        let wasGrid = returningIDs.count >= 2
+        let detachedTabs = floatingMiniPlayer.detachAndHide()
+        poppedOutTabIDs = []
         poppedOutReason = nil
         coordinator?.releaseMiniPlayerOwnership(for: windowID)
 
-        if let tab = detachedTab ?? tabs.first(where: { $0.id == poppedID }) {
-            tab.needsPostAttachResize = true
-            tab.applyConfig(configForTab(id: tab.id), force: true)
-            if selectTab {
-                selectedTabID = tab.id
+        let detachedByID = Dictionary(uniqueKeysWithValues: detachedTabs.map { ($0.id, $0) })
+        for tabID in returningIDs {
+            if let tab = detachedByID[tabID] ?? tabs.first(where: { $0.id == tabID }) {
+                tab.needsPostAttachResize = true
+                tab.applyConfig(configForTab(id: tab.id), force: true)
+            }
+        }
+
+        if selectTab {
+            if wasGrid {
+                let focusID = (multiviewAudioTabID.flatMap { id in returningIDs.contains(id) ? id : nil })
+                    ?? returningIDs.first
+                if let focusID {
+                    selectedTabID = focusID
+                    syncOmniboxToSelectedTab()
+                }
+            } else if let firstID = returningIDs.first {
+                selectedTabID = firstID
                 syncOmniboxToSelectedTab()
             }
         }
@@ -2044,18 +2511,27 @@ public final class AppController {
     }
 
     public func closeMiniPlayerPopup() {
-        guard let poppedID = poppedOutTabID else { return }
-        if let existing = tabs.first(where: { $0.id == poppedID }),
-           existing.isInFullscreen || existing.webView.fullscreenState != .notInFullscreen {
-            return
-        }
+        guard isMiniPlayer else { return }
+        guard !hasLiveFullscreenTab, !floatingMiniPlayer.hasLiveFullscreenTab else { return }
 
-        let detachedTab = floatingMiniPlayer.detachAndHide()
-        poppedOutTabID = nil
+        let closingIDs = poppedOutTabIDs
+        let wasGrid = closingIDs.count >= 2
+        let detachedTabs = floatingMiniPlayer.detachAndHide()
+        poppedOutTabIDs = []
         poppedOutReason = nil
         coordinator?.releaseMiniPlayerOwnership(for: windowID)
 
-        if let tab = detachedTab ?? tabs.first(where: { $0.id == poppedID }) {
+        let detachedByID = Dictionary(uniqueKeysWithValues: detachedTabs.map { ($0.id, $0) })
+        if wasGrid {
+            for tabID in closingIDs {
+                if let tab = detachedByID[tabID] ?? tabs.first(where: { $0.id == tabID }) {
+                    tab.needsPostAttachResize = true
+                    tab.pauseMedia()
+                    tab.applyConfig(configForTab(id: tab.id), force: true)
+                }
+            }
+        } else if let poppedID = closingIDs.first,
+                  let tab = detachedByID[poppedID] ?? tabs.first(where: { $0.id == poppedID }) {
             tab.needsPostAttachResize = true
             tab.pauseMedia()
             tab.applyConfig(configForTab(id: tab.id), force: true)
@@ -2099,6 +2575,11 @@ public final class AppController {
         // Ignore clicks inside our own Settings window, MenuBarExtra popover, or app menus.
         guard !NSApp.isActive else { return }
         guard !NSApp.isHidden else { return }
+        guard !hasLiveFullscreenTab,
+              coordinator?.hasAnyWindowInLiveFullscreen != true,
+              !floatingMiniPlayer.hasLiveFullscreenTab else {
+            return
+        }
         guard let window = mainWindow,
               isMainWindowVisible,
               window.isVisible,
@@ -2110,13 +2591,31 @@ public final class AppController {
         let snapshot = captureMainWindowOcclusionSnapshot(for: window)
         let ownPID = ProcessInfo.processInfo.processIdentifier
 
-        if poppedOutTabID == nil {
-            guard !isMultiviewActive,
-                  settings.autoMiniPlayerOnLeave,
-                  let candidate = activeMediaTab,
-                  shouldAutoPopOut(tab: candidate) else {
+        if !isMiniPlayer {
+            guard settings.autoMiniPlayerOnLeave else { return }
+            if let coordinator,
+               let ownerID = coordinator.floatingMiniPlayerOwnerWindowID,
+               ownerID != windowID {
                 return
             }
+            if let coordinator,
+               let activeID = coordinator.activeWindowID,
+               activeID != windowID,
+               let activeCtrl = coordinator.openWindows.first(where: { $0.windowID == activeID }),
+               activeCtrl.nowPlayingStatus.isPlaying {
+                return
+            }
+
+            let canAutoFloatMultiview = isMultiviewActive
+                && multiviewTabs.contains(where: { $0.mediaStatus.isPlaying && !$0.mediaStatus.isPiP })
+                && canPopOutMultiviewGrid
+            let singleCandidate: BrowserTab? = isMultiviewActive
+                ? nil
+                : activeMediaTab.flatMap { shouldAutoPopOut(tab: $0) ? $0 : nil }
+            guard canAutoFloatMultiview || singleCandidate != nil else {
+                return
+            }
+
             let isObstructed = WindowOcclusionCalculator.shouldAutoPopOutWhenInactive(
                 isWindowVisible: true,
                 isOnActiveSpace: snapshot.isOnActiveSpace,
@@ -2126,7 +2625,11 @@ public final class AppController {
                 ownPID: ownPID
             )
             if isObstructed {
-                popOutToMiniPlayer(tab: candidate, reason: .leftApp)
+                if canAutoFloatMultiview {
+                    popOutMultiviewToMiniPlayer(reason: .leftApp)
+                } else if let candidate = singleCandidate {
+                    popOutToMiniPlayer(tab: candidate, reason: .leftApp)
+                }
             }
         } else if poppedOutReason == .leftApp {
             guard !floatingMiniPlayer.isInteractingWithPanel else { return }
@@ -2288,7 +2791,7 @@ public final class AppController {
     }
 
     public func presentFindBar() {
-        guard !anyTabInFullscreen && !isSelectedTabPoppedOut else { return }
+        guard !hasLiveFullscreenTab && !isSelectedTabPoppedOut else { return }
         if isCommandPalettePresented {
             dismissCommandPalette(refocusWebView: false)
         }
@@ -2326,7 +2829,7 @@ public final class AppController {
     }
 
     public func findNextOnPage() {
-        guard !anyTabInFullscreen && !isSelectedTabPoppedOut else { return }
+        guard !hasLiveFullscreenTab && !isSelectedTabPoppedOut else { return }
         if !isFindBarPresented {
             presentFindBar()
             return
@@ -2366,9 +2869,9 @@ public final class AppController {
         guard !isWindowTornDown else { return }
         isWindowTornDown = true
 
-        if poppedOutTabID != nil {
+        if isMiniPlayer {
             _ = floatingMiniPlayer.detachAndHide()
-            poppedOutTabID = nil
+            poppedOutTabIDs = []
             poppedOutReason = nil
             coordinator?.releaseMiniPlayerOwnership(for: windowID)
         }
@@ -2408,6 +2911,7 @@ public final class AppController {
             task.cancel()
         }
         sponsorFetchTasks.removeAll()
+        cancelSignInCheckTasks()
     }
 
     // MARK: - Command Palette, Saved Multiview Presets & Drag-and-Drop
@@ -2421,7 +2925,7 @@ public final class AppController {
     }
 
     public func presentCommandPalette() {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
         if isFindBarPresented {
             dismissFindBar()
         }
@@ -2644,7 +3148,7 @@ public final class AppController {
             CommandPaletteActionDescriptor(
                 action: .manageStreamingServices,
                 title: "Manage Streaming Services & Sign-In Hub…",
-                keywords: "services onboarding login sign in netflix hulu disney espn twitch peacock paramount",
+                keywords: "services onboarding login sign in prime amazon crunchyroll anime netflix hulu disney espn twitch peacock paramount",
                 systemImage: "square.grid.3x3.square",
                 isFeaturedWhenEmpty: false
             )
@@ -2697,7 +3201,7 @@ public final class AppController {
 
         case .openPinnedFolder(let folderID):
             let count = pins(inFolder: folderID).count
-            if (2...MultiviewGridLayout.maxTiles).contains(count) && !anyTabInFullscreen {
+            if (2...MultiviewGridLayout.maxTiles).contains(count) && !hasLiveFullscreenTab {
                 openFolderInMultiview(id: folderID)
             } else {
                 openFolderInTabs(id: folderID)
@@ -2848,10 +3352,9 @@ public final class AppController {
             return nil
         }
 
-        let rawResult: Any?
-        do {
-            rawResult = try await tab.webView.evaluateJavaScript(EnhancementScript.captureVideoFrameScript)
-        } catch {
+        let outcome = await tab.captureVideoFrame()
+        let rawResult = outcome.result
+        guard let rawResult else {
             showHUD(icon: "exclamationmark.triangle", message: "Unable to Capture Video Frame")
             return nil
         }
@@ -2883,18 +3386,22 @@ public final class AppController {
             }
             return image
         case "cors_fallback":
-            let x = (dict["x"] as? NSNumber)?.doubleValue ?? 0
-            let y = (dict["y"] as? NSNumber)?.doubleValue ?? 0
-            let w = (dict["width"] as? NSNumber)?.doubleValue ?? 0
-            let h = (dict["height"] as? NSNumber)?.doubleValue ?? 0
-            let rawRect = CGRect(x: x, y: y, width: w, height: h)
-            let clippedRect = rawRect.intersection(tab.webView.bounds)
-            guard !clippedRect.isNull, !clippedRect.isEmpty else {
-                showHUD(icon: "exclamationmark.triangle", message: "Video Frame Not Visible")
-                return nil
-            }
             let snapshotConfig = WKSnapshotConfiguration()
-            snapshotConfig.rect = clippedRect
+            if outcome.usedSubframe && !tab.mediaStatus.isCleanBoxActive {
+                snapshotConfig.rect = tab.webView.bounds
+            } else {
+                let x = (dict["x"] as? NSNumber)?.doubleValue ?? 0
+                let y = (dict["y"] as? NSNumber)?.doubleValue ?? 0
+                let w = (dict["width"] as? NSNumber)?.doubleValue ?? 0
+                let h = (dict["height"] as? NSNumber)?.doubleValue ?? 0
+                let rawRect = CGRect(x: x, y: y, width: w, height: h)
+                let clippedRect = rawRect.intersection(tab.webView.bounds)
+                guard !clippedRect.isNull, !clippedRect.isEmpty else {
+                    showHUD(icon: "exclamationmark.triangle", message: "Video Frame Not Visible")
+                    return nil
+                }
+                snapshotConfig.rect = clippedRect
+            }
             do {
                 return try await tab.webView.takeSnapshot(configuration: snapshotConfig)
             } catch {
@@ -2940,7 +3447,7 @@ public final class AppController {
     }
 
     public func launchMultiviewPreset(_ preset: MultiviewPreset) {
-        guard !anyTabInFullscreen else { return }
+        guard !hasLiveFullscreenTab else { return }
 
         let validEntries: [(url: URL, mode: TabRoutingMode)] = preset.urlStrings.prefix(MultiviewGridLayout.maxTiles).compactMap { raw in
             guard let url = URL(string: raw) else { return nil }
@@ -3066,11 +3573,11 @@ public final class AppController {
     }
 
     func reloadAllTabsToStartupDestination() {
+        if isMiniPlayer {
+            dockMiniPlayer(selectTab: true, focusMain: false)
+        }
         if isMultiviewActive {
             exitMultiview(focusTabID: selectedTabID, showFeedback: false)
-        }
-        if poppedOutTabID != nil {
-            dockMiniPlayer(selectTab: true, focusMain: false)
         }
         for tab in tabs {
             tab.load(settings.startupDestination.url)
@@ -3255,7 +3762,7 @@ public final class AppController {
                       !self.isCommandPalettePresented,
                       !self.isOnboardingPresented,
                       !self.isAirPlayPopoverPresented,
-                      !self.anyTabInFullscreen,
+                      !self.hasLiveFullscreenTab,
                       !(win.firstResponder is NSTextView) else {
                     return false
                 }
@@ -3433,6 +3940,10 @@ public final class AppController {
     }
 
     public func handleIncomingURL(_ url: URL) {
+        if AgentURLActionParser.isActionURL(url) {
+            coordinator?.agentBridge.handleActionURL(url)
+            return
+        }
         guard let targetURL = YouTubeURLRouter.resolveCustomSchemeURL(url) else {
             return
         }
@@ -3465,11 +3976,11 @@ public final class AppController {
         isSigningOutData = true
         defer { isSigningOutData = false }
 
+        if isMiniPlayer {
+            dockMiniPlayer(selectTab: true, focusMain: false)
+        }
         if isMultiviewActive {
             exitMultiview(focusTabID: selectedTabID, showFeedback: false)
-        }
-        if poppedOutTabID != nil {
-            dockMiniPlayer(selectTab: true, focusMain: false)
         }
 
         let store = WKWebsiteDataStore.default()
@@ -3528,7 +4039,10 @@ public final class AppController {
     // MARK: - Helpers
 
     private func shouldAutoPopOut(tab: BrowserTab) -> Bool {
-        guard !isMultiviewActive else { return false }
+        if isMultiviewActive {
+            guard canPopOutMultiviewGrid else { return false }
+            return multiviewTabs.contains { $0.mediaStatus.isPlaying && !$0.mediaStatus.isPiP }
+        }
         guard canPopOut(tab: tab) else { return false }
         guard tab.mediaStatus.isPlaying else { return false }
         guard !tab.mediaStatus.isPiP else { return false }
@@ -3536,6 +4050,7 @@ public final class AppController {
     }
 
     private func configForTab(id: UUID) -> DistractionFreeConfig {
+        let bypassed = tabs.first(where: { $0.id == id })?.isCleanBoxBypassed ?? false
         if isMultiviewActive, let slotIndex = multiviewTabIDs.firstIndex(of: id) {
             let isSoloed = (soloMultiviewTabID == id)
             let isPrimary = isSoloed || MultiviewGridLayout.isPrimarySlot(
@@ -3552,14 +4067,16 @@ public final class AppController {
                 )
             return settings.distractionFreeConfig(
                 focusMode: focusModeActive,
-                miniPlayer: poppedOutTabID == id,
+                miniPlayer: isTabPoppedOut(id),
                 multiviewTile: !isSoloed,
-                qualityOverride: clampedQuality
+                qualityOverride: clampedQuality,
+                cleanBoxBypassed: bypassed
             )
         }
         return settings.distractionFreeConfig(
             focusMode: focusModeActive,
-            miniPlayer: poppedOutTabID == id
+            miniPlayer: isTabPoppedOut(id),
+            cleanBoxBypassed: bypassed
         )
     }
 
@@ -3609,6 +4126,9 @@ public final class AppController {
         }
         tab.onURLDidChange = { [weak self] changedTabID, newURL in
             self?.handleTabURLDidChange(tabID: changedTabID, newURL: newURL)
+        }
+        tab.onDidFinishNavigation = { [weak self] finishedTabID, finishedURL in
+            self?.handleTabDidFinishNavigation(tabID: finishedTabID, url: finishedURL)
         }
         tab.onDidClickContent = { [weak self] clickedTabID in
             self?.handleTileClicked(tabID: clickedTabID)
@@ -3679,7 +4199,7 @@ public final class AppController {
         }
 
         // Prevent background tabs from auto-playing audio on load and hijacking the active video.
-        if startedTabID != selectedTabID && startedTabID != poppedOutTabID {
+        if startedTabID != selectedTabID && !isTabPoppedOut(startedTabID) {
             if let backgroundTab = tabs.first(where: { $0.id == startedTabID }) {
                 backgroundTab.pauseMedia()
             }
@@ -3692,8 +4212,10 @@ public final class AppController {
         }
 
         // If a different docked tab started playing while an auto-popped mini-player was floating, dock the stale panel cleanly.
-        if let poppedID = poppedOutTabID, poppedID != startedTabID {
-            poppedOutTab?.pauseMedia()
+        if !isTabPoppedOut(startedTabID), !poppedOutTabIDs.isEmpty {
+            for tab in poppedOutTabs {
+                tab.pauseMedia()
+            }
             if poppedOutReason != .manual {
                 dockMiniPlayer(selectTab: false, focusMain: false)
             }
@@ -3701,8 +4223,14 @@ public final class AppController {
     }
 
     private func handleTabURLDidChange(tabID: UUID, newURL: URL) {
-        if tabID == poppedOutTabID && !YouTubeURLRouter.isWatchURL(newURL) {
-            dockMiniPlayer(selectTab: true, focusMain: false)
+        if !isFloatingMultiviewGrid, tabID == poppedOutTabID {
+            let isCompanion = tabs.first(where: { $0.id == tabID })?.isCompanionTab ?? false
+            let shouldDock = isCompanion
+                ? StreamingServiceCatalog.isTransientAuthURL(newURL)
+                : !YouTubeURLRouter.isWatchURL(newURL)
+            if shouldDock {
+                dockMiniPlayer(selectTab: true, focusMain: false)
+            }
         }
         if let tab = tabs.first(where: { $0.id == tabID }) {
             refreshSponsorSegmentsIfNeeded(for: tab, url: newURL)

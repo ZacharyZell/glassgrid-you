@@ -522,6 +522,7 @@ struct MultiviewOverlayView: View {
         let isYTTV = YouTubeURLRouter.isYouTubeTVHost(tab.url.host)
         let isCompanion = tab.isCompanionTab
         let isSoloed = (controller.soloMultiviewTabID == tab.id)
+        let companionServiceName = isCompanion ? StreamingServiceCatalog.service(matchingURL: tab.url)?.name : nil
 
         // Strictly <= 5 compact icons in top-36pt pill (never encroaches on bottom 64pt video scrubber).
         HStack(spacing: 2) {
@@ -595,6 +596,21 @@ struct MultiviewOverlayView: View {
                             controller.moveMultiviewTile(id: tab.id, by: 1)
                         }
                     }
+                    Divider()
+                }
+                let showCleanBoxAction = controller.settings.cleanBoxStreamingPlayers
+                    && (tab.mediaStatus.isCleanBoxActive || tab.isCleanBoxBypassed)
+                if showCleanBoxAction {
+                    Button(tab.isCleanBoxBypassed ? "Clean-Box Video" : "Show Full Page") {
+                        controller.toggleCleanBox(forTabID: tab.id)
+                    }
+                }
+                if isCompanion {
+                    Button(companionServiceName.map { "Browse \($0)" } ?? "Browse Service Home") {
+                        controller.navigateMultiviewTileToBrowse(id: tab.id)
+                    }
+                }
+                if showCleanBoxAction || isCompanion {
                     Divider()
                 }
                 Button("Expand to Single View") {

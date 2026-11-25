@@ -83,7 +83,10 @@ public final class BrowserTab: NSObject, Identifiable {
     public var isInFullscreen: Bool = false
     public var loadError: TabLoadError?
     public var chapters: [VideoChapter] = []
+    public var videoDescription: String = ""
+    public var videoDescriptionWasTruncated: Bool = false
     public var isSleeping: Bool = false
+    public var isCleanBoxBypassed: Bool = false
     public var pageZoom: CGFloat = 1.0 {
         didSet {
             webView.pageZoom = pageZoom
@@ -121,6 +124,15 @@ public final class BrowserTab: NSObject, Identifiable {
     private var postAttachResizeTask: Task<Void, Never>?
 
     @ObservationIgnored
+    private var activeMediaFrameInfo: WKFrameInfo?
+
+    @ObservationIgnored
+    private var mainFrameMediaStatus: MediaStatus = .empty
+
+    @ObservationIgnored
+    private var subframeMediaStatus: MediaStatus?
+
+    @ObservationIgnored
     var configProvider: () -> DistractionFreeConfig
 
     @ObservationIgnored
@@ -152,6 +164,17 @@ public final class BrowserTab: NSObject, Identifiable {
 
     @ObservationIgnored
     var onWatchProgress: ((_ videoID: String, _ title: String, _ channel: String, _ channelURL: String, _ currentTime: Double, _ duration: Double, _ isNewVideoWatch: Bool) -> Void)?
+
+    @ObservationIgnored
+    var onDidFinishNavigation: ((UUID, URL) -> Void)?
+
+    @ObservationIgnored
+    public var authFlowServiceID: String?
+
+    @ObservationIgnored
+    private var lastKnownServiceID: String?
+
+    private static let maxOAuthPopups = 3
 
     @ObservationIgnored
     private var lastSavedWatchProgressTime: Date = .distantPast
@@ -207,10 +230,16 @@ public final class BrowserTab: NSObject, Identifiable {
         self.configProvider = configProvider
         self.routingPreferencesProvider = routingPreferencesProvider
         self.onOpenInNewTab = onOpenInNewTab
+        let initialServiceID = StreamingServiceCatalog.service(matchingURL: initialURL)?.id
+        self.lastKnownServiceID = initialServiceID
+        if StreamingServiceCatalog.isTransientAuthURL(initialURL) {
+            self.authFlowServiceID = initialServiceID
+        }
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.preferences.isElementFullscreenEnabled = true
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.allowsAirPlayForMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.applicationNameForUserAgent = Self.safariUserAgentSuffix
@@ -221,6 +250,13 @@ public final class BrowserTab: NSObject, Identifiable {
             forMainFrameOnly: true
         )
         configuration.userContentController.addUserScript(userScript)
+
+        let subframeScript = WKUserScript(
+            source: EnhancementScript.subframeMediaBridgeScript(),
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: false
+        )
+        configuration.userContentController.addUserScript(subframeScript)
 
         let webView = InteractiveWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
@@ -275,8 +311,22 @@ public final class BrowserTab: NSObject, Identifiable {
     public func load(_ targetURL: URL) {
         pendingLazyURL = nil
         isSleeping = false
+        isCleanBoxBypassed = false
         loadError = nil
         chapters = []
+        videoDescription = ""
+        videoDescriptionWasTruncated = false
+        mainFrameMediaStatus = .empty
+        clearSubframeMediaState()
+        if !StreamingServiceCatalog.isTransientAuthURL(targetURL) {
+            let nextServiceID = StreamingServiceCatalog.service(matchingURL: targetURL)?.id
+            if nextServiceID != authFlowServiceID {
+                authFlowServiceID = nil
+            }
+            lastKnownServiceID = nextServiceID
+        } else {
+            updateAuthFlowTracking(for: targetURL)
+        }
         url = targetURL
         webView.load(URLRequest(url: targetURL))
     }
@@ -295,8 +345,12 @@ public final class BrowserTab: NSObject, Identifiable {
         pendingLazyURL = preservedURL
         isSleeping = true
         pauseAllPlayback()
+        mainFrameMediaStatus = .empty
+        clearSubframeMediaState()
         mediaStatus = .empty
         chapters = []
+        videoDescription = ""
+        videoDescriptionWasTruncated = false
         loadError = nil
         timeline.update(currentTime: 0, duration: 0)
         if let blankURL = URL(string: "about:blank") {
@@ -370,6 +424,9 @@ public final class BrowserTab: NSObject, Identifiable {
 
     public func applyConfig(_ config: DistractionFreeConfig, force: Bool = false) {
         guard !isTornDown else { return }
+        if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webView.url ?? url) {
+            return
+        }
         if !force && config == lastAppliedConfig {
             return
         }
@@ -385,7 +442,7 @@ public final class BrowserTab: NSObject, Identifiable {
         postAttachResizeTask = nil
     }
 
-    public func schedulePostAttachResize(in container: NSView) {
+    public func schedulePostAttachResize(in container: NSView, useMultiviewSync: Bool = false) {
         cancelPostAttachResize()
         postAttachResizeTask = Task { @MainActor [weak self, weak container] in
             for delayMs in [80, 240] {
@@ -400,7 +457,11 @@ public final class BrowserTab: NSObject, Identifiable {
                       !self.webView.isHidden else {
                     return
                 }
-                self.evaluate(EnhancementScript.notifyViewportResizeScript)
+                if useMultiviewSync {
+                    self.evaluate(EnhancementScript.syncPlayerSizeScript)
+                } else {
+                    self.evaluate(EnhancementScript.notifyViewportResizeScript)
+                }
             }
             self?.postAttachResizeTask = nil
         }
@@ -411,8 +472,47 @@ public final class BrowserTab: NSObject, Identifiable {
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
+    public func evaluateMediaCommand(_ script: String) {
+        guard !isTornDown else { return }
+        if !mainFrameMediaStatus.hasVideo, let targetFrame = activeMediaFrameInfo {
+            webView.evaluateJavaScript(script, in: targetFrame, in: .page) { [weak self] result in
+                if case .failure = result {
+                    Task { @MainActor [weak self] in
+                        guard let self, !self.isTornDown else { return }
+                        self.clearSubframeMediaState()
+                        _ = try? await self.webView.evaluateJavaScript(script)
+                    }
+                }
+            }
+            return
+        }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    public func evaluateMediaCommandAsync(_ script: String) async -> (value: Any?, usedSubframe: Bool) {
+        guard !isTornDown else { return (nil, false) }
+        if !mainFrameMediaStatus.hasVideo, let targetFrame = activeMediaFrameInfo {
+            do {
+                let value = try await webView.evaluateJavaScript(script, in: targetFrame, contentWorld: .page)
+                return (value, true)
+            } catch {
+                clearSubframeMediaState()
+            }
+        }
+        let value = try? await webView.evaluateJavaScript(script)
+        return (value, false)
+    }
+
+    public func togglePlayPause() {
+        evaluateMediaCommand(EnhancementScript.togglePlayPauseScript)
+    }
+
+    public func playMedia() {
+        evaluateMediaCommand(EnhancementScript.playScript)
+    }
+
     public func pauseMedia() {
-        evaluate(EnhancementScript.pauseScript)
+        evaluateMediaCommand(EnhancementScript.pauseScript)
     }
 
     public func pauseAllPlayback() {
@@ -422,19 +522,36 @@ public final class BrowserTab: NSObject, Identifiable {
     }
 
     public func toggleMute() {
-        evaluate(EnhancementScript.toggleMuteScript)
+        evaluateMediaCommand(EnhancementScript.toggleMuteScript)
     }
 
     public func setMuted(_ muted: Bool) {
-        evaluate(EnhancementScript.setMutedScript(muted: muted))
+        evaluateMediaCommand(EnhancementScript.setMutedScript(muted: muted))
     }
 
     public func setAudioLevel(muted: Bool, volumePercent: Int) {
-        evaluate(EnhancementScript.setAudioLevelScript(muted: muted, volumePercent: volumePercent))
+        evaluateMediaCommand(EnhancementScript.setAudioLevelScript(muted: muted, volumePercent: volumePercent))
+    }
+
+    public func seekBy(seconds: Double) {
+        evaluateMediaCommand(EnhancementScript.seekByScript(seconds: seconds))
+    }
+
+    public func seekTo(seconds: Double) {
+        evaluateMediaCommand(EnhancementScript.seekToScript(seconds: seconds))
     }
 
     public func seekToLiveEdge() {
-        evaluate(EnhancementScript.seekToLiveEdgeScript)
+        evaluateMediaCommand(EnhancementScript.seekToLiveEdgeScript)
+    }
+
+    public func setPlaybackRate(_ rate: Double) {
+        evaluateMediaCommand(EnhancementScript.setPlaybackRateScript(rate: rate))
+    }
+
+    public func togglePictureInPicture() async -> Bool {
+        let result = await evaluateMediaCommandAsync(EnhancementScript.togglePictureInPictureScript)
+        return (result.value as? Bool) ?? false
     }
 
     public func syncPlayerSize() {
@@ -444,12 +561,14 @@ public final class BrowserTab: NSObject, Identifiable {
 
     public func showAirPlayPicker() async -> AirPlayPickerResult {
         guard !isTornDown else { return .noVideo }
-        do {
-            let raw = try await webView.evaluateJavaScript(EnhancementScript.showAirPlayPickerScript) as? String
-            return raw.flatMap(AirPlayPickerResult.init(rawValue:)) ?? .unavailable
-        } catch {
-            return .unavailable
-        }
+        let outcome = await evaluateMediaCommandAsync(EnhancementScript.showAirPlayPickerScript)
+        let raw = outcome.value as? String
+        return raw.flatMap(AirPlayPickerResult.init(rawValue:)) ?? .unavailable
+    }
+
+    public func captureVideoFrame() async -> (result: Any?, usedSubframe: Bool) {
+        let outcome = await evaluateMediaCommandAsync(EnhancementScript.captureVideoFrameScript)
+        return (result: outcome.value, usedSubframe: outcome.usedSubframe)
     }
 
     public func closeAllOAuthPopups() {
@@ -488,9 +607,13 @@ public final class BrowserTab: NSObject, Identifiable {
     }
 
     private func presentOAuthPopup(with configuration: WKWebViewConfiguration, title: String) -> WKWebView {
+        if let activeID = lastKnownServiceID ?? StreamingServiceCatalog.service(matchingURL: webView.url ?? url)?.id {
+            authFlowServiceID = activeID
+        }
         let popupSize = NSSize(width: 520, height: 680)
         let popupWebView = WKWebView(frame: NSRect(origin: .zero, size: popupSize), configuration: configuration)
         popupWebView.customUserAgent = webView.customUserAgent
+        popupWebView.navigationDelegate = self
         popupWebView.uiDelegate = self
 
         let popupWindow = NSWindow(
@@ -531,21 +654,20 @@ public final class BrowserTab: NSObject, Identifiable {
         return popupWebView
     }
 
-    private static func isOAuthPopupURL(_ url: URL) -> Bool {
-        let host = (url.host ?? "").lowercased()
-        let path = url.path.lowercased()
-        let authHosts = [
-            "accounts.google.com", "accounts.youtube.com",
-            "idmsa.apple.com", "appleid.apple.com",
-            "sp.auth.adobe.com", "registerdisney.go.com",
-            "passport.twitch.tv", "id.twitch.tv",
-            "identity.sling.com", "identity.nba.com", "ids.mlb.com", "id.nfl.com",
-            "auth.hulu.com", "auth.max.com"
-        ]
-        if authHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
-            return true
+    private func updateAuthFlowTracking(for targetURL: URL) {
+        if StreamingServiceCatalog.isTransientAuthURL(targetURL) {
+            if let host = targetURL.host, StreamingServiceCatalog.isSharedThirdPartySSOHost(host) {
+                authFlowServiceID = lastKnownServiceID
+                    ?? StreamingServiceCatalog.service(matchingURL: targetURL)?.id
+                    ?? authFlowServiceID
+            } else {
+                authFlowServiceID = StreamingServiceCatalog.service(matchingURL: targetURL)?.id
+                    ?? lastKnownServiceID
+                    ?? authFlowServiceID
+            }
+        } else if let svcID = StreamingServiceCatalog.service(matchingURL: targetURL)?.id {
+            lastKnownServiceID = svcID
         }
-        return path.contains("oauth") || path.contains("/login") || path.contains("/signin") || path.contains("/sign-in") || path.contains("/auth")
     }
 
     public func applySponsorSegments(videoID: String, segments: [SponsorSegment]) {
@@ -568,6 +690,7 @@ public final class BrowserTab: NSObject, Identifiable {
         // Pause active video & WebKit media BEFORE setting isTornDown so evaluate() executes cleanly.
         closeAllOAuthPopups()
         cancelPostAttachResize()
+        clearSubframeMediaState()
         pauseMedia()
         webView.pauseAllMediaPlayback(completionHandler: nil)
         isTornDown = true
@@ -590,6 +713,9 @@ public final class BrowserTab: NSObject, Identifiable {
         onFullscreenDidChange = nil
         onVideoEnded = nil
         onWatchProgress = nil
+        onDidFinishNavigation = nil
+        authFlowServiceID = nil
+        lastKnownServiceID = nil
     }
 
     private func installObservations() {
@@ -660,18 +786,79 @@ public final class BrowserTab: NSObject, Identifiable {
         }
     }
 
+    private func clearSubframeMediaState() {
+        activeMediaFrameInfo = nil
+        subframeMediaStatus = nil
+        recomputeMergedMediaStatus()
+        if !mainFrameMediaStatus.hasVideo {
+            timeline.update(currentTime: 0, duration: 0)
+        }
+    }
+
+    private func recomputeMergedMediaStatus() {
+        let resolved: MediaStatus
+        if mainFrameMediaStatus.hasVideo {
+            resolved = mainFrameMediaStatus
+        } else if let sub = subframeMediaStatus, sub.hasVideo {
+            resolved = MediaStatus(
+                hasVideo: true,
+                isPlaying: sub.isPlaying,
+                title: mainFrameMediaStatus.title.isEmpty ? title : mainFrameMediaStatus.title,
+                channel: mainFrameMediaStatus.channel,
+                channelURLString: mainFrameMediaStatus.channelURLString,
+                urlString: mainFrameMediaStatus.urlString.isEmpty ? url.absoluteString : mainFrameMediaStatus.urlString,
+                isMuted: sub.isMuted,
+                isPiP: sub.isPiP,
+                isTheater: mainFrameMediaStatus.isTheater,
+                isHDR: sub.isHDR || mainFrameMediaStatus.isHDR,
+                playbackRate: sub.playbackRate,
+                isHomeFeedEmpty: mainFrameMediaStatus.isHomeFeedEmpty,
+                airPlayAvailable: sub.airPlayAvailable,
+                isAirPlayActive: sub.isAirPlayActive,
+                isCleanBoxActive: mainFrameMediaStatus.isCleanBoxActive,
+                isCleanBoxEligible: mainFrameMediaStatus.isCleanBoxEligible || sub.hasVideo
+            )
+        } else {
+            resolved = mainFrameMediaStatus
+        }
+        if mediaStatus != resolved {
+            mediaStatus = resolved
+        }
+    }
+
     private func syncURLFromWebView() {
         guard !isSleeping && pendingLazyURL == nil else { return }
-        if let webURL = webView.url, webURL.scheme?.lowercased() != "about", url != webURL {
-            let oldVideoID = YouTubeURLRouter.extractVideoID(from: url)
-            let newVideoID = YouTubeURLRouter.extractVideoID(from: webURL)
-            if oldVideoID != newVideoID {
-                chapters = []
-            }
-            url = webURL
-            onURLDidChange?(id, webURL)
-            if let host = webURL.host, !YouTubeURLRouter.isStandardYouTubeHost(host) {
-                evaluate(EnhancementScript.notifyRouteChangedScript)
+        if let webURL = webView.url, webURL.scheme?.lowercased() != "about" {
+            updateAuthFlowTracking(for: webURL)
+            if url != webURL {
+                let oldVideoID = YouTubeURLRouter.extractVideoID(from: url)
+                let newVideoID = YouTubeURLRouter.extractVideoID(from: webURL)
+                if oldVideoID != newVideoID {
+                    chapters = []
+                    videoDescription = ""
+                    videoDescriptionWasTruncated = false
+                }
+                let oldPathKey = (url.host ?? "").lowercased() + "|" + url.path.lowercased() + "|" + (oldVideoID ?? "")
+                let newPathKey = (webURL.host ?? "").lowercased() + "|" + webURL.path.lowercased() + "|" + (newVideoID ?? "")
+                var didResetCleanBoxBypass = false
+                if oldPathKey != newPathKey {
+                    clearSubframeMediaState()
+                    if isCleanBoxBypassed {
+                        isCleanBoxBypassed = false
+                        didResetCleanBoxBypass = true
+                    }
+                }
+                url = webURL
+                onURLDidChange?(id, webURL)
+                if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
+                    updatedConfig.cleanBoxBypassed = false
+                    applyConfig(updatedConfig, force: true)
+                }
+                if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webURL) {
+                    evaluate(EnhancementScript.teardownCompanionCleanBoxScript)
+                } else if let host = webURL.host, !YouTubeURLRouter.isStandardYouTubeHost(host) {
+                    evaluate(EnhancementScript.notifyRouteChangedScript)
+                }
             }
         }
     }
@@ -685,6 +872,22 @@ extension BrowserTab: WKNavigationDelegate {
     ) {
         guard let targetURL = navigationAction.request.url else {
             decisionHandler(.allow)
+            return
+        }
+
+        // Block internal and third-party app-handoff schemes BEFORE subframe exemptions or popup routing.
+        if let scheme = targetURL.scheme, YouTubeURLRouter.isBlockedAppScheme(scheme) {
+            decisionHandler(.cancel)
+            return
+        }
+
+        // Dedicated OAuth popup branch: strict web scheme allowlist only (never parent routing or external open).
+        if webView !== self.webView {
+            if let scheme = targetURL.scheme, YouTubeURLRouter.isAllowedWebScheme(scheme) {
+                decisionHandler(.allow)
+            } else {
+                decisionHandler(.cancel)
+            }
             return
         }
 
@@ -720,6 +923,9 @@ extension BrowserTab: WKNavigationDelegate {
                 NSWorkspace.shared.open(externalURL)
                 decisionHandler(.cancel)
                 return
+            case .block:
+                decisionHandler(.cancel)
+                return
             }
         }
 
@@ -741,33 +947,52 @@ extension BrowserTab: WKNavigationDelegate {
         case .openExternal(let externalURL):
             NSWorkspace.shared.open(externalURL)
             decisionHandler(.cancel)
+        case .block:
+            decisionHandler(.cancel)
         }
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         loadError = nil
+        mainFrameMediaStatus = .empty
+        clearSubframeMediaState()
     }
 
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         loadError = nil
+        clearSubframeMediaState()
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         loadError = nil
         syncTitleFromWebView()
         syncURLFromWebView()
         applyConfig(configProvider(), force: true)
+        if !isSleeping && pendingLazyURL == nil {
+            onDidFinishNavigation?(id, webView.url ?? url)
+        }
     }
 
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        guard webView === self.webView else { return }
         handleNavigationFailure(error)
     }
 
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        guard webView === self.webView else { return }
         handleNavigationFailure(error)
     }
 
     public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if webView !== self.webView {
+            if oauthPopupWebViews[ObjectIdentifier(webView)] != nil {
+                cleanupOAuthPopup(for: webView)
+            }
+            return
+        }
         guard !isTornDown else { return }
         let now = Date()
         if now.timeIntervalSince(lastProcessTerminationAt) > 30 {
@@ -800,19 +1025,47 @@ extension BrowserTab: WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        guard let targetURL = navigationAction.request.url else {
+        let targetURL = navigationAction.request.url
+        let rawScheme = targetURL?.scheme?.lowercased() ?? ""
+        if targetURL != nil && !rawScheme.isEmpty && !YouTubeURLRouter.isAllowedWebScheme(rawScheme) {
             return nil
         }
 
-        // Preserve `window.opener` for OAuth/SSO/MVPD popups (Apple ID, Google OAuth, MyDisney, Adobe Pass).
-        if navigationAction.targetFrame == nil && Self.isOAuthPopupURL(targetURL) {
+        let isBlankOpen = targetURL == nil
+            || targetURL!.absoluteString.isEmpty
+            || targetURL!.absoluteString.lowercased() == "about:blank"
+        let currentURL = self.webView.url ?? self.url
+        let isAuthOrServiceContext = StreamingServiceCatalog.isTransientAuthURL(currentURL)
+            || StreamingServiceCatalog.service(matchingURL: currentURL) != nil
+
+        let isQualifyingPopup: Bool
+        if navigationAction.targetFrame == nil && oauthPopupWindows.count < Self.maxOAuthPopups {
+            if !isBlankOpen, let url = targetURL {
+                isQualifyingPopup = StreamingServiceCatalog.isAuthOrOAuthPopupURL(url)
+            } else {
+                isQualifyingPopup = isBlankOpen && isAuthOrServiceContext
+            }
+        } else {
+            isQualifyingPopup = false
+        }
+
+        // Preserve `window.opener` for OAuth/SSO/MVPD popups (Apple ID, Google OAuth, Amazon OpenID, Crunchyroll SSO).
+        if isQualifyingPopup {
             return presentOAuthPopup(with: configuration, title: "Sign In — GlassGrid You")
+        }
+
+        // Guardrail #2: Never allow nested popups or unprompted script window.open calls to spawn tabs or launch external apps.
+        guard webView === self.webView,
+              navigationAction.navigationType == .linkActivated,
+              let targetURL,
+              !isBlankOpen else {
+            return nil
         }
 
         let prefs = routingPreferencesProvider()
         let decision = YouTubeURLRouter.routeNavigation(
             url: targetURL,
-            currentPageURL: webView.url,
+            currentPageURL: self.webView.url,
             isUserLinkClick: true,
             openExternalLinksInBrowser: prefs.openExternalLinksInBrowser,
             redirectShortsToWatch: prefs.redirectShortsToWatch,
@@ -822,11 +1075,9 @@ extension BrowserTab: WKUIDelegate {
         switch decision {
         case .allowInApp:
             if let host = targetURL.host, YouTubeURLRouter.isGoogleAuthHost(host) {
-                webView.load(URLRequest(url: targetURL))
-            } else if routingMode == .companion,
-                      let path = targetURL.path.lowercased() as String?,
-                      (path.contains("oauth") || path.contains("login") || path.contains("signin") || path.contains("auth")) {
-                webView.load(URLRequest(url: targetURL))
+                self.webView.load(URLRequest(url: targetURL))
+            } else if routingMode == .companion, StreamingServiceCatalog.isTransientAuthURL(targetURL) {
+                self.webView.load(URLRequest(url: targetURL))
             } else {
                 onOpenInNewTab?(targetURL, true)
             }
@@ -834,6 +1085,8 @@ extension BrowserTab: WKUIDelegate {
             onOpenInNewTab?(rewritten, true)
         case .openExternal(let externalURL):
             NSWorkspace.shared.open(externalURL)
+        case .block:
+            break
         }
         return nil
     }
@@ -876,8 +1129,81 @@ extension BrowserTab: WKScriptMessageHandler {
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        guard message.name == EnhancementScript.messageHandlerName,
+        guard !isTornDown,
+              message.webView === self.webView,
+              message.name == EnhancementScript.messageHandlerName,
               let body = message.body as? [String: Any] else {
+            return
+        }
+
+        // Strict origin-scoped subframe bridge (Cross-origin players like Crunchyroll Vilos).
+        if !message.frameInfo.isMainFrame {
+            guard !isSleeping, pendingLazyURL == nil else { return }
+            let mainURL = webView.url ?? url
+            guard !StreamingServiceCatalog.isTransientAuthURL(mainURL) else { return }
+            let origin = message.frameInfo.securityOrigin
+            guard origin.protocol.lowercased() == "https",
+                  !origin.host.isEmpty else {
+                return
+            }
+            let originHost = origin.host.lowercased()
+            guard CleanBoxRules.isAllowedPlayerIframeHost(originHost, forMainFrameURL: mainURL) else {
+                return
+            }
+
+            if let event = body["event"] as? String {
+                if event == "userUnmuted" {
+                    if mediaStatus.hasVideo,
+                       mediaStatus.isMuted,
+                       let activeHost = activeMediaFrameInfo?.securityOrigin.host.lowercased(),
+                       activeHost == originHost {
+                        onUnmutedByUser?(id)
+                    }
+                } else if event == "videoEnded" {
+                    onVideoEnded?(id)
+                }
+                return
+            }
+
+            guard body["subframeMedia"] as? Bool == true else { return }
+            let prevSubframeHasVideo = subframeMediaStatus?.hasVideo == true
+            let subHasVideo = body["hasVideo"] as? Bool ?? false
+
+            if !subHasVideo {
+                clearSubframeMediaState()
+                return
+            }
+
+            let wasPlaying = mediaStatus.isPlaying
+            activeMediaFrameInfo = message.frameInfo
+            subframeMediaStatus = MediaStatus(
+                hasVideo: true,
+                isPlaying: body["isPlaying"] as? Bool ?? false,
+                title: "",
+                channel: "",
+                channelURLString: "",
+                urlString: "",
+                isMuted: body["isMuted"] as? Bool ?? false,
+                isPiP: body["isPiP"] as? Bool ?? false,
+                isTheater: false,
+                isHDR: false,
+                playbackRate: body["playbackRate"] as? Double ?? 1.0,
+                isHomeFeedEmpty: false,
+                airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
+                isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false
+            )
+            recomputeMergedMediaStatus()
+            if !wasPlaying && mediaStatus.isPlaying {
+                onStartedPlaying?(id)
+            }
+            if !mainFrameMediaStatus.hasVideo {
+                let currentTime = body["currentTime"] as? Double ?? 0
+                let duration = body["duration"] as? Double ?? 0
+                timeline.update(currentTime: currentTime, duration: duration)
+            }
+            if !prevSubframeHasVideo {
+                evaluate(EnhancementScript.syncCompanionCleanBoxScript)
+            }
             return
         }
 
@@ -893,25 +1219,48 @@ extension BrowserTab: WKScriptMessageHandler {
             } else if event == "videoEnded" {
                 onVideoEnded?(id)
             } else if event == "chaptersUpdated" {
+                let eventVideoID = body["videoId"] as? String ?? ""
+                if eventVideoID.isEmpty {
+                    if !chapters.isEmpty { chapters = [] }
+                    if !videoDescription.isEmpty {
+                        videoDescription = ""
+                        videoDescriptionWasTruncated = false
+                    }
+                    return
+                }
+                let activeVideoID = YouTubeURLRouter.extractVideoID(from: url)
+                    ?? URL(string: mediaStatus.urlString).flatMap(YouTubeURLRouter.extractVideoID(from:))
+                guard activeVideoID == nil || activeVideoID == eventVideoID else {
+                    return
+                }
+
                 let rawChapters = body["chapters"] as? [[String: Any]] ?? []
                 let structuredEntries: [(title: String, startSeconds: Double)] = rawChapters.compactMap { dict in
                     guard let title = dict["title"] as? String else { return nil }
                     let secs = (dict["startSeconds"] as? NSNumber)?.doubleValue ?? -1
                     return (title, secs)
                 }
+                let description = body["description"] as? String ?? ""
                 var parsed = VideoChapterParser.normalize(structuredEntries)
-                if parsed.isEmpty, let description = body["description"] as? String, !description.isEmpty {
+                if parsed.isEmpty, !description.isEmpty {
                     let maxDur = timeline.duration > 0 ? timeline.duration : nil
                     parsed = VideoChapterParser.parseFromDescription(description, maxDuration: maxDur)
                 }
                 if chapters != parsed {
                     chapters = parsed
                 }
+
+                let sanitized = AgentSecurity.sanitizeWebText(description, maxLength: AgentSecurity.maxVideoDescriptionLength)
+                let wasTruncated = sanitized.truncated || description.count >= 16_384
+                if videoDescription != sanitized.text || videoDescriptionWasTruncated != wasTruncated {
+                    videoDescription = sanitized.text
+                    videoDescriptionWasTruncated = wasTruncated
+                }
             }
             return
         }
 
-        let newStatus = MediaStatus(
+        let newMainStatus = MediaStatus(
             hasVideo: body["hasVideo"] as? Bool ?? false,
             isPlaying: body["isPlaying"] as? Bool ?? false,
             title: body["title"] as? String ?? "",
@@ -925,39 +1274,50 @@ extension BrowserTab: WKScriptMessageHandler {
             playbackRate: body["playbackRate"] as? Double ?? 1.0,
             isHomeFeedEmpty: body["isHomeFeedEmpty"] as? Bool ?? false,
             airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
-            isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false
+            isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false,
+            isCleanBoxActive: body["isCleanBoxActive"] as? Bool ?? false,
+            isCleanBoxEligible: body["isCleanBoxEligible"] as? Bool ?? false
         )
         let wasPlaying = mediaStatus.isPlaying
-        if mediaStatus != newStatus {
-            mediaStatus = newStatus
+        mainFrameMediaStatus = newMainStatus
+        if newMainStatus.hasVideo {
+            subframeMediaStatus = nil
+            activeMediaFrameInfo = nil
         }
-        if !wasPlaying && newStatus.isPlaying {
+        recomputeMergedMediaStatus()
+        if !wasPlaying && mediaStatus.isPlaying {
             onStartedPlaying?(id)
         }
 
-        let currentTime = body["currentTime"] as? Double ?? 0
-        let duration = body["duration"] as? Double ?? 0
-        timeline.update(currentTime: currentTime, duration: duration)
+        if mainFrameMediaStatus.hasVideo {
+            let currentTime = body["currentTime"] as? Double ?? 0
+            let duration = body["duration"] as? Double ?? 0
+            timeline.update(currentTime: currentTime, duration: duration)
+        } else if subframeMediaStatus?.hasVideo != true {
+            timeline.update(currentTime: 0, duration: 0)
+        }
 
         // Throttled Continue Watching & Most Watched Channel tracking (strictly www.youtube.com — skip tv.youtube.com & Companion sites).
-        if newStatus.hasVideo,
-           let parsedURL = URL(string: newStatus.urlString) ?? Optional(url),
+        if mediaStatus.hasVideo,
+           let parsedURL = URL(string: mediaStatus.urlString) ?? Optional(url),
            YouTubeURLRouter.isStandardYouTubeHost(parsedURL.host),
            let videoID = YouTubeURLRouter.extractVideoID(from: parsedURL) {
+            let currentTime = body["currentTime"] as? Double ?? 0
+            let duration = body["duration"] as? Double ?? 0
             let now = Date()
-            let pausedTransition = wasPlaying && !newStatus.isPlaying
+            let pausedTransition = wasPlaying && !mediaStatus.isPlaying
             let videoChanged = videoID != lastSavedWatchVideoID
             let elapsed = now.timeIntervalSince(lastSavedWatchProgressTime)
-            let isNewChannelRecord = !newStatus.channel.isEmpty && videoID != lastRecordedChannelVideoID && currentTime >= 2
+            let isNewChannelRecord = !mediaStatus.channel.isEmpty && videoID != lastRecordedChannelVideoID && currentTime >= 2
 
-            if pausedTransition || (videoChanged && currentTime >= 3) || (newStatus.isPlaying && elapsed >= 15) || isNewChannelRecord {
+            if pausedTransition || (videoChanged && currentTime >= 3) || (mediaStatus.isPlaying && elapsed >= 15) || isNewChannelRecord {
                 lastSavedWatchProgressTime = now
                 lastSavedWatchVideoID = videoID
                 if isNewChannelRecord {
                     lastRecordedChannelVideoID = videoID
                 }
-                let effectiveTitle = newStatus.title.isEmpty ? displayTitle : newStatus.title
-                onWatchProgress?(videoID, effectiveTitle, newStatus.channel, newStatus.channelURLString, currentTime, duration, isNewChannelRecord)
+                let effectiveTitle = mediaStatus.title.isEmpty ? displayTitle : mediaStatus.title
+                onWatchProgress?(videoID, effectiveTitle, mediaStatus.channel, mediaStatus.channelURLString, currentTime, duration, isNewChannelRecord)
             }
         }
     }

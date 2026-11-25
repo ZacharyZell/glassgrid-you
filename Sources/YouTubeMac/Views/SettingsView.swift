@@ -32,8 +32,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Account & Data", systemImage: "person.crop.circle")
                 }
+
+            AgentSettingsTabView(coordinator: coordinator)
+                .tabItem {
+                    Label("AI & Automation", systemImage: "sparkles")
+                }
         }
-        .frame(width: 540, height: 485)
+        .frame(width: 600, height: 540)
         .alert("Sign Out & Clear All Site Data?", isPresented: $showClearDataConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Clear All Data", role: .destructive) {
@@ -115,7 +120,7 @@ struct SettingsView: View {
             }
 
             Section("Mini-Player & Window") {
-                Toggle("Auto pop-out Mini-Player when leaving a video or covered by another app", isOn: $settings.autoMiniPlayerOnLeave)
+                Toggle("Auto pop-out Mini-Player or Multiview Grid when leaving or covered by another app", isOn: $settings.autoMiniPlayerOnLeave)
                 Toggle("Keep Mini-Player visible across all Spaces", isOn: $settings.miniPlayerAllSpaces)
             }
 
@@ -226,8 +231,12 @@ struct SettingsView: View {
             }
 
             Section("Watch Page Distractions") {
+                Toggle("Clean-Box streaming service players (remove site chrome during playback)", isOn: $settings.cleanBoxStreamingPlayers)
                 Toggle("Hide right-side recommendations", isOn: $settings.hideWatchRecommendations)
                 Toggle("Hide video comments", isOn: $settings.hideComments)
+                Text("Promotes the native video player edge-to-edge on streaming services once playback starts. Browse pages stay untouched; press ⌘⇧B anytime for Full Page.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
