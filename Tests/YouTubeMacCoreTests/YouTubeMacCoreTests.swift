@@ -2195,4 +2195,189 @@ final class YouTubeMacCoreTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(grown.minX, visible.minX + 8)
         XCTAssertLessThanOrEqual(grown.maxY, visible.maxY - 8)
     }
+
+    func testCleanBoxRulesCrunchyrollDualPathAndAllowlist() {
+        let profile = CleanBoxRules.profile(serviceID: "crunchyroll")
+        XCTAssertNotNil(profile)
+        XCTAssertEqual(profile?.strategy, .companionIframe)
+        XCTAssertTrue(profile?.playerSelectors.contains("#vilosRoot") == true)
+        XCTAssertTrue(profile?.playerSelectors.contains("[data-testid=\"vilos-root\"]") == true)
+        XCTAssertTrue(profile?.playerSelectors.contains("[data-testid=\"vilos-player\"]") == true)
+        XCTAssertTrue(profile?.playerSelectors.contains("[data-testid=\"video-player\"]") == true)
+        XCTAssertTrue(profile?.playerSelectors.contains(".erc-watch-episode-player") == true)
+        XCTAssertTrue(profile?.iframeSelectors.contains("iframe[src*=\"crunchyrollsvc.com\"]") == true)
+        XCTAssertTrue(profile?.iframeSelectors.contains("iframe[src*=\"vrv.co\"]") == true)
+
+        let watch = URL(string: "https://www.crunchyroll.com/watch/GX9U34054/raiders")!
+        let localeWatch = URL(string: "https://www.crunchyroll.com/es-es/watch/GX9U34054/raiders")!
+        let series = URL(string: "https://www.crunchyroll.com/series/G123/gachiakuta")!
+        let discover = URL(string: "https://www.crunchyroll.com/discover")!
+        let ssoLogin = URL(string: "https://sso.crunchyroll.com/login")!
+        let ptLogin = URL(string: "https://www.crunchyroll.com/pt-br/login")!
+
+        XCTAssertEqual(CleanBoxRules.classifyRoute(watch), .watch)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(localeWatch), .watch)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(series), .browse)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(discover), .browse)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(ssoLogin), .auth)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(ptLogin), .auth)
+
+        XCTAssertTrue(CleanBoxRules.isAllowedPlayerIframeHost("static.crunchyroll.com", forMainFrameURL: watch))
+        XCTAssertTrue(CleanBoxRules.isAllowedPlayerIframeHost("cr-play-service.prd.crunchyrollsvc.com", forMainFrameURL: watch))
+        XCTAssertTrue(CleanBoxRules.isAllowedPlayerIframeHost("v.vrv.co", forMainFrameURL: watch))
+        XCTAssertTrue(CleanBoxRules.isAllowedPlayerIframeHost("www.crunchyroll.com", forMainFrameURL: watch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("doubleclick.net", forMainFrameURL: watch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("sso.crunchyroll.com", forMainFrameURL: watch))
+        XCTAssertFalse(CleanBoxRules.isAllowedPlayerIframeHost("static.crunchyroll.com", forMainFrameURL: series))
+    }
+
+    func testCleanBoxScriptDualPathChainCSSNoClobberAndLazySubframe() {
+        let bootstrap = EnhancementScript.bootstrapScript(config: DistractionFreeConfig())
+        let subframe = EnhancementScript.subframeMediaBridgeScript()
+        let syncPlayer = EnhancementScript.syncPlayerSizeScript
+        let notifyResize = EnhancementScript.notifyViewportResizeScript
+        let syncSubframe = EnhancementScript.syncCompanionCleanBoxScript
+        let clearSubframe = EnhancementScript.clearSubframeMediaActiveScript
+
+        XCTAssertTrue(bootstrap.contains("resolveIframeCandidate"))
+        XCTAssertTrue(bootstrap.contains("resolveInlineVideoCandidate"))
+        XCTAssertTrue(bootstrap.contains("cand.iframe !== cand.root"))
+        XCTAssertTrue(bootstrap.contains("setAttribute('data-ytmac-cb', 'chain')"))
+        XCTAssertTrue(bootstrap.contains("hasHiddenAncestor"))
+        XCTAssertTrue(bootstrap.contains("[data-ytmac-cb=\"chain\"]"))
+        XCTAssertTrue(bootstrap.contains("min-width: 0 !important;"))
+        XCTAssertTrue(bootstrap.contains("min-height: 0 !important;"))
+        XCTAssertTrue(bootstrap.contains("aspect-ratio: auto !important;"))
+        XCTAssertTrue(bootstrap.contains("iframe[data-ytmac-cb=\"player\"]"))
+        XCTAssertTrue(bootstrap.contains("[650, 1500, 3000, 5500]"))
+        XCTAssertTrue(bootstrap.contains("hasMediaSource"))
+        XCTAssertTrue(bootstrap.contains("srcObject"))
+
+        // Lazy subframe size gate & passive resize wake-up
+        XCTAssertFalse(subframe.contains("if (window.innerWidth < 100 || window.innerHeight < 56) return;"))
+        XCTAssertTrue(subframe.contains("hasSubframeSize()"))
+        XCTAssertTrue(subframe.contains("addEventListener('resize'"))
+        XCTAssertTrue(subframe.contains("'loadeddata', 'canplay'"))
+
+        XCTAssertTrue(syncPlayer.contains("__ytmacSyncCleanBox('resizeSync')"))
+        XCTAssertTrue(notifyResize.contains("webkitFullscreenElement"))
+        XCTAssertTrue(notifyResize.contains("__ytmacSyncCleanBox('resizeSync')"))
+        XCTAssertTrue(syncSubframe.contains("__ytmacSubframeMediaActive = true"))
+        XCTAssertTrue(clearSubframe.contains("__ytmacSubframeMediaActive = false"))
+
+        for snippet in [bootstrap, subframe, syncPlayer, notifyResize, syncSubframe, clearSubframe] {
+            XCTAssertFalse(snippet.contains(":has("))
+            XCTAssertFalse(snippet.contains("MutationObserver"))
+            XCTAssertFalse(snippet.contains("AudioContext"))
+            XCTAssertFalse(snippet.contains("ytInitialPlayerResponse"))
+        }
+    }
+
+    func testAll11ConnectedServicesAuthSignInCleanBoxAndSchemeBlocking() {
+        // 1. Disney+: /identity/login, my.disney.com, locale watch routes, MyDisney isolation
+        let disney = StreamingServiceCatalog.service(id: "disneyplus")!
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.disneyplus.com/identity/login")!))
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.disneyplus.com/identity/login/enter-password")!))
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.disneyplus.com/en-us/identity/login/enter-passcode")!))
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://my.disney.com/")!))
+        XCTAssertTrue(StreamingServiceCatalog.isAuthOrOAuthPopupURL(URL(string: "https://www.disneyplus.com/identity/login")!))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.disneyplus.com/identity/login")!, for: disney))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.disneyplus.com/en-us")!, for: disney))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.disneyplus.com/en-us/home")!, for: disney))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.disneyplus.com/en-us/select-profile")!, for: disney))
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.disneyplus.com/identity/login")!), .auth)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.disneyplus.com/en-us/play/abc123")!), .watch)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.disneyplus.com/en-us/home")!), .browse)
+        XCTAssertTrue(StreamingServiceCatalog.matchesDataRecord(displayName: "registerdisney.go.com", for: disney))
+
+        // 2. HBO Max (`id: "max"`): hbomax.com rebrand, multi-step /auth/*, logged-out vs play.hbomax.com
+        let maxSvc = StreamingServiceCatalog.service(id: "max")!
+        XCTAssertEqual(maxSvc.name, "HBO Max")
+        XCTAssertEqual(maxSvc.monogram, "HBO")
+        XCTAssertEqual(maxSvc.homeURLString, "https://play.hbomax.com/")
+        XCTAssertEqual(maxSvc.signInURLString, "https://www.hbomax.com/auth/login")
+        XCTAssertTrue(maxSvc.authHostHints.contains("auth.hbomax.com"))
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://play.hbomax.com/")!)?.id, "max")
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.hbomax.com/auth/login")!)?.id, "max")
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://play.max.com/")!)?.id, "max")
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.hbomax.com/auth/login")!))
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.hbomax.com/auth/password")!))
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://auth.hbomax.com/login")!))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hbomax.com/")!, for: maxSvc))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hbomax.com/plans")!, for: maxSvc))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hbomax.com/auth/login")!, for: maxSvc))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://play.hbomax.com/")!, for: maxSvc))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hbomax.com/video/watch/abc")!, for: maxSvc))
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.hbomax.com/auth/login")!), .auth)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://play.hbomax.com/video/watch/abc")!), .watch)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.hbomax.com/en-us/video/watch/abc")!), .watch)
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://play.hbomax.com/")!), .browse)
+
+        // 3. YouTube TV /welcome, Paramount+, Hulu, Netflix locale/country, Fubo, Corporate domain exclusions
+        let yttv = StreamingServiceCatalog.service(id: "yttv")!
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://tv.youtube.com/welcome/?utm_servlet=prod&rd_rsn=lo")!, for: yttv))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://tv.youtube.com/")!, for: yttv))
+
+        let paramount = StreamingServiceCatalog.service(id: "paramount")!
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.paramountplus.com/user-profile/whos-watching/")!, for: paramount))
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.paramountplus.com/live-tv")!), .watch)
+
+        let hulu = StreamingServiceCatalog.service(id: "hulu")!
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hulu.com/profiles")!, for: hulu))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hulu.com/my-stuff")!, for: hulu))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.hulu.com/welcome")!, for: hulu))
+
+        let netflix = StreamingServiceCatalog.service(id: "netflix")!
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.netflix.com/us/login")!))
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.netflix.com/us/login")!, for: netflix))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.netflix.com/es-es/browse")!, for: netflix))
+        XCTAssertEqual(CleanBoxRules.classifyRoute(URL(string: "https://www.netflix.com/es-es/watch/80057281")!), .watch)
+
+        let fubo = StreamingServiceCatalog.service(id: "fubo")!
+        XCTAssertFalse(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.fubo.tv/welcome")!, for: fubo))
+        XCTAssertTrue(StreamingServiceCatalog.isLikelySignedInNavigation(url: URL(string: "https://www.fubo.tv/p/home")!, for: fubo))
+
+        XCTAssertNil(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.icloud.com/")!))
+        XCTAssertNil(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.apple.com/")!))
+        XCTAssertNil(StreamingServiceCatalog.service(matchingURL: URL(string: "https://registerdisney.go.com/")!))
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://tv.apple.com/")!)?.id, "appletv")
+        XCTAssertEqual(StreamingServiceCatalog.service(matchingURL: URL(string: "https://www.espn.go.com/watch")!)?.id, "espn")
+        XCTAssertTrue(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://oauth.xfinity.com/login")!))
+        XCTAssertFalse(StreamingServiceCatalog.isTransientAuthURL(URL(string: "https://www.espn.com/tournament-challenge")!))
+
+        // 4. App-handoff scheme blocking & non-link external protection
+        for blocked in ["videos://play", "com.apple.tv://show", "disneyplus://home", "hbomax://feature", "nflx://watch", "peacocktv://watch", "paramountplus://home", "hulu://watch", "file:///etc/passwd"] {
+            let decision = YouTubeURLRouter.routeNavigation(
+                url: URL(string: blocked)!,
+                currentPageURL: nil,
+                isUserLinkClick: true,
+                openExternalLinksInBrowser: true,
+                redirectShortsToWatch: false,
+                routingMode: .companion
+            )
+            XCTAssertEqual(decision, .block, "Expected .block for \(blocked)")
+        }
+        XCTAssertEqual(
+            YouTubeURLRouter.routeNavigation(
+                url: URL(string: "mailto:support@glassgridyou.com")!,
+                currentPageURL: nil,
+                isUserLinkClick: false,
+                openExternalLinksInBrowser: true,
+                redirectShortsToWatch: false,
+                routingMode: .companion
+            ),
+            .block
+        )
+        XCTAssertEqual(
+            YouTubeURLRouter.routeNavigation(
+                url: URL(string: "mailto:support@glassgridyou.com")!,
+                currentPageURL: nil,
+                isUserLinkClick: true,
+                openExternalLinksInBrowser: true,
+                redirectShortsToWatch: false,
+                routingMode: .companion
+            ),
+            .openExternal(URL(string: "mailto:support@glassgridyou.com")!)
+        )
+    }
 }

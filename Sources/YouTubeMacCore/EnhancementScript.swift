@@ -9,6 +9,8 @@ public enum EnhancementScript {
     public static func bootstrapScript(config: DistractionFreeConfig) -> String {
         let configJSON = encodeConfigJSON(config)
         let styleText = cssRules.replacingOccurrences(of: "`", with: "\\`")
+        let quotedLocales = StreamingServiceCatalog.iso639LocaleCodes.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
+        let quotedRegions = StreamingServiceCatalog.regionLocalePrefixes.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
 
         return """
         (() => {
@@ -24,11 +26,34 @@ public enum EnhancementScript {
                 return !isYouTubeTVHost() && !isStandardYouTubeHost();
             }
 
+            const ISO639_LOCALES = new Set([\(quotedLocales)]);
+            const REGION_LOCALES = new Set([\(quotedRegions)]);
+
+            function stripLeadingLocale(segs) {
+                if (!segs || segs.length === 0) return segs || [];
+                const first = (segs[0] || '').toLowerCase();
+                if (!first) return segs;
+                if (ISO639_LOCALES.has(first) || REGION_LOCALES.has(first)) {
+                    return segs.slice(1);
+                }
+                const parts = first.split('-');
+                if (parts.length === 2) {
+                    const lang = parts[0];
+                    const region = parts[1];
+                    const validPrefix = ISO639_LOCALES.has(lang) || REGION_LOCALES.has(lang);
+                    const validRegion = /^[a-z]{2}$/.test(region) || /^\\d{3}$/.test(region);
+                    if (validPrefix && validRegion) {
+                        return segs.slice(1);
+                    }
+                }
+                return segs;
+            }
+
             function isCompanionAuthPage() {
                 if (!isWebCompanionHost()) return false;
                 const host = location.hostname.toLowerCase();
-                if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts)\\./i.test(host)) return true;
-                if (/(^|\\.)(accounts\\.google\\.[a-z.]+|accounts\\.youtube\\.com|idmsa\\.apple\\.com|appleid\\.apple\\.com|registerdisney\\.go\\.com|sp\\.auth\\.adobe\\.com|(na|eu|fe)\\.account\\.amazon\\.com|auth\\.hulu\\.com|auth\\.max\\.com|sso\\.crunchyroll\\.com|id\\.nfl\\.com|ids\\.mlb\\.com|identity\\.nba\\.com|id\\.peacocktv\\.com|identity\\.sling\\.com|passport\\.twitch\\.tv|id\\.twitch\\.tv)$/i.test(host)) return true;
+                if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts|oauth)\\./i.test(host)) return true;
+                if (/(^|\\.)(accounts\\.google\\.[a-z.]+|accounts\\.youtube\\.com|idmsa\\.apple\\.com|appleid\\.apple\\.com|registerdisney\\.go\\.com|cdn\\.registerdisney\\.go\\.com|my\\.disney\\.com|sp\\.auth\\.adobe\\.com|(na|eu|fe)\\.account\\.amazon\\.com|auth\\.hulu\\.com|auth\\.max\\.com|auth\\.hbomax\\.com|sso\\.crunchyroll\\.com|id\\.nfl\\.com|ids\\.mlb\\.com|identity\\.nba\\.com|id\\.peacocktv\\.com|identity\\.sling\\.com|passport\\.twitch\\.tv|id\\.twitch\\.tv)$/i.test(host)) return true;
                 const path = location.pathname.toLowerCase();
                 const normSegs = path.split('/').filter(Boolean).map((s) => s.replace(/\\.(html|htm|php|aspx)$/i, ''));
                 const strippedRegion = (normSegs.length >= 2 && normSegs[0] === 'region' && /^[a-z]{2,3}$/.test(normSegs[1]))
@@ -42,7 +67,7 @@ public enum EnhancementScript {
                 }
                 const authTokens = new Set([
                     'signin', 'sign-in', 'sign_in', 'oauth', 'oauth2', 'authorize',
-                    'servicelogin', 'auth-redirect', 'mfa', 'cvf', 'captcha', 'challenge',
+                    'servicelogin', 'auth-redirect', 'mfa', 'cvf', 'captcha',
                     'signout', 'sign-out', 'logout', 'log-out', 'register', 'reset-password'
                 ]);
                 for (let i = 0; i < normSegs.length; i += 1) {
@@ -54,11 +79,11 @@ public enum EnhancementScript {
                         }
                     }
                 }
-                const afterLocale = (normSegs.length >= 1 && /^([a-z]{2}(-[a-z]{2}|-\\d{3})?)$/i.test(normSegs[0]) && !['ap', 'ax', 'gp', 'tv', 'v1', 'v2'].includes(normSegs[0]))
-                    ? normSegs.slice(1)
-                    : normSegs;
+                const afterLocale = stripLeadingLocale(normSegs);
                 if (afterLocale[0] === 'login') return true;
-                if (afterLocale.length >= 2 && ['web', 'account', 'accounts', 'auth', 'sso', 'user'].includes(afterLocale[0]) && afterLocale[1] === 'login') return true;
+                if (afterLocale.length >= 2 && ['web', 'account', 'accounts', 'auth', 'sso', 'user', 'identity'].includes(afterLocale[0]) && afterLocale[1] === 'login') return true;
+                if ((host === 'disneyplus.com' || host.endsWith('.disneyplus.com')) && afterLocale[0] === 'identity') return true;
+                if ((host === 'hbomax.com' || host.endsWith('.hbomax.com') || host === 'max.com' || host.endsWith('.max.com')) && afterLocale[0] === 'auth') return true;
                 const query = (location.search || '').toLowerCase();
                 if (query && (query.includes('servicelogin') || query.includes('openid.mode=checkid_setup') || query.includes('openid.mode=checkid_immediate') || (query.includes('oauth') && query.includes('client_id=')))) {
                     return true;
@@ -66,6 +91,12 @@ public enum EnhancementScript {
                 return false;
             }
             if (isCompanionAuthPage()) return;
+            if (window.__ytmacInitialized) {
+                window.__ytmacConfig = \(configJSON);
+                if (typeof window.__ytmacApplyConfigOnly === 'function') window.__ytmacApplyConfigOnly();
+                if (typeof window.__ytmacHandleRouteChange === 'function') window.__ytmacHandleRouteChange();
+                return;
+            }
 
             const initialConfig = \(configJSON);
             window.__ytmacConfig = initialConfig;
@@ -106,17 +137,19 @@ public enum EnhancementScript {
                 document.head.appendChild(styleEl);
             }
 
-            let activeCleanBoxState = { root: null, iframe: null, video: null, ancestors: [] };
+            let activeCleanBoxState = { root: null, iframe: null, video: null, mediaAnchor: null, chain: [], ancestors: [] };
             let lastCleanBoxEligible = false;
             let lastCleanBoxActive = false;
-            let cleanBoxSettleTimer1 = null;
-            let cleanBoxSettleTimer2 = null;
+            let cleanBoxBlockedByModal = false;
+            let cleanBoxSettleTimers = [];
             let cleanBoxCloseTimer1 = null;
             let cleanBoxCloseTimer2 = null;
 
             function clearCleanBoxSettleTimers() {
-                if (cleanBoxSettleTimer1) { clearTimeout(cleanBoxSettleTimer1); cleanBoxSettleTimer1 = null; }
-                if (cleanBoxSettleTimer2) { clearTimeout(cleanBoxSettleTimer2); cleanBoxSettleTimer2 = null; }
+                for (let i = 0; i < cleanBoxSettleTimers.length; i += 1) {
+                    clearTimeout(cleanBoxSettleTimers[i]);
+                }
+                cleanBoxSettleTimers = [];
             }
 
             function clearCleanBoxCloseTimers() {
@@ -129,7 +162,27 @@ public enum EnhancementScript {
                 for (let i = 0; i < tagged.length; i += 1) {
                     tagged[i].removeAttribute('data-ytmac-cb');
                 }
-                activeCleanBoxState = { root: null, iframe: null, video: null, ancestors: [] };
+                activeCleanBoxState = { root: null, iframe: null, video: null, mediaAnchor: null, chain: [], ancestors: [] };
+            }
+
+            function isCleanBoxStateIntact() {
+                if (!activeCleanBoxState.root || !activeCleanBoxState.root.isConnected) return false;
+                if (activeCleanBoxState.root.getAttribute('data-ytmac-cb') !== 'player') return false;
+                if (activeCleanBoxState.iframe && activeCleanBoxState.iframe !== activeCleanBoxState.root) {
+                    if (!activeCleanBoxState.iframe.isConnected || activeCleanBoxState.iframe.getAttribute('data-ytmac-cb') !== 'iframe') return false;
+                }
+                if (activeCleanBoxState.video && activeCleanBoxState.video !== activeCleanBoxState.root) {
+                    if (!activeCleanBoxState.video.isConnected || activeCleanBoxState.video.getAttribute('data-ytmac-cb') !== 'video') return false;
+                }
+                for (let i = 0; i < activeCleanBoxState.chain.length; i += 1) {
+                    const el = activeCleanBoxState.chain[i];
+                    if (!el || !el.isConnected || el.getAttribute('data-ytmac-cb') !== 'chain') return false;
+                }
+                for (let i = 0; i < activeCleanBoxState.ancestors.length; i += 1) {
+                    const el = activeCleanBoxState.ancestors[i];
+                    if (!el || !el.isConnected || el.getAttribute('data-ytmac-cb') !== 'ancestor') return false;
+                }
+                return true;
             }
 
             function releaseCompanionCleanBox(stripStyle, suppressResize) {
@@ -179,7 +232,7 @@ public enum EnhancementScript {
                     return { serviceID: 'twitch', type: 'browse' };
                 }
                 if (host === 'crunchyroll.com' || host.endsWith('.crunchyroll.com')) {
-                    const afterLoc = (normSegs.length >= 1 && /^([a-z]{2}(-[a-z]{2}|-\\d{3})?)$/i.test(normSegs[0])) ? normSegs.slice(1) : normSegs;
+                    const afterLoc = stripLeadingLocale(normSegs);
                     return (afterLoc.length >= 2 && afterLoc[0] === 'watch')
                         ? { serviceID: 'crunchyroll', type: 'watch' }
                         : { serviceID: 'crunchyroll', type: 'browse' };
@@ -215,7 +268,7 @@ public enum EnhancementScript {
                 if (host === 'paramountplus.com' || host.endsWith('.paramountplus.com')) {
                     const ok = (normSegs.length >= 3 && normSegs[0] === 'shows' && normSegs[2] === 'video')
                         || (normSegs.length >= 2 && normSegs[0] === 'movies' && normSegs[1] === 'video')
-                        || path.startsWith('/video/') || path.startsWith('/live-tv/');
+                        || path.startsWith('/video/') || normSegs[0] === 'live-tv';
                     return { serviceID: 'paramount', type: ok ? 'watch' : 'browse' };
                 }
                 if (host === 'fubo.tv' || host.endsWith('.fubo.tv')) {
@@ -227,17 +280,22 @@ public enum EnhancementScript {
                     return { serviceID: 'sling', type: ok ? 'watch' : 'browse' };
                 }
                 if (host === 'disneyplus.com' || host.endsWith('.disneyplus.com')) {
-                    const ok = path.startsWith('/play/') || path.startsWith('/video/');
+                    const afterLoc = stripLeadingLocale(normSegs);
+                    const ok = afterLoc.length >= 2 && (afterLoc[0] === 'play' || afterLoc[0] === 'video');
                     return { serviceID: 'disneyplus', type: ok ? 'watch' : 'browse' };
                 }
                 if (host === 'hulu.com' || host.endsWith('.hulu.com')) {
                     return { serviceID: 'hulu', type: path.startsWith('/watch/') ? 'watch' : 'browse' };
                 }
                 if (host === 'play.max.com' || host === 'max.com' || host.endsWith('.max.com') || host === 'hbomax.com' || host.endsWith('.hbomax.com')) {
-                    return { serviceID: 'max', type: (path.startsWith('/video/watch') || path.startsWith('/player')) ? 'watch' : 'browse' };
+                    const afterLoc = stripLeadingLocale(normSegs);
+                    const ok = (afterLoc.length >= 2 && afterLoc[0] === 'video' && afterLoc[1] === 'watch') || afterLoc[0] === 'player';
+                    return { serviceID: 'max', type: ok ? 'watch' : 'browse' };
                 }
                 if (host === 'netflix.com' || host.endsWith('.netflix.com')) {
-                    return { serviceID: 'netflix', type: path.startsWith('/watch/') ? 'watch' : 'browse' };
+                    const afterLoc = stripLeadingLocale(normSegs);
+                    const ok = afterLoc.length >= 2 && afterLoc[0] === 'watch';
+                    return { serviceID: 'netflix', type: ok ? 'watch' : 'browse' };
                 }
                 return { serviceID: '_generic', type: 'generic' };
             }
@@ -257,24 +315,72 @@ public enum EnhancementScript {
                 return cur;
             }
 
+            function hasMediaSource(v) {
+                return Boolean(v && (v.src || v.currentSrc || v.srcObject || v.readyState > 0 || (v.querySelector && v.querySelector('source[src]'))));
+            }
+
             function isAmbientTrailerVideo(v) {
                 if (!v) return true;
                 if (v.loop && v.muted && (!Number.isFinite(v.duration) || v.duration <= 180)) return true;
-                if (v.getAttribute && v.getAttribute('aria-hidden') === 'true') return true;
+                if (v.getAttribute && v.getAttribute('aria-hidden') === 'true' && (v.muted || v.loop) && (!Number.isFinite(v.duration) || v.duration <= 180)) return true;
+                return false;
+            }
+
+            function hasHiddenAncestor(el, isAlreadyActive) {
+                try {
+                    let cur = el;
+                    let guard = 0;
+                    while (cur && cur !== document.body && cur !== document.documentElement && guard < 40) {
+                        guard += 1;
+                        if (isAlreadyActive) {
+                            const s = cur.style;
+                            if (s && (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0')) return true;
+                            const cs = getComputedStyle(cur);
+                            if (cs.display === 'none' || cs.visibility === 'hidden') return true;
+                        } else {
+                            const s = cur.style;
+                            if (s && (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0')) return true;
+                            const cs = getComputedStyle(cur);
+                            if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0.05) return true;
+                        }
+                        cur = cur.parentElement;
+                    }
+                } catch (_) {}
                 return false;
             }
 
             function hasVisibleExternalModal(playerRoot) {
                 try {
+                    const vw = window.innerWidth || 0;
+                    const vh = window.innerHeight || 0;
                     const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
                     for (let i = 0; i < dialogs.length; i += 1) {
                         const d = dialogs[i];
                         if (!d || !d.isConnected) continue;
                         if (playerRoot && (playerRoot.contains(d) || d.contains(playerRoot))) continue;
+                        if (typeof d.closest === 'function' && d.closest('[aria-hidden="true"], [inert]')) continue;
                         const cs = getComputedStyle(d);
-                        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0.05) continue;
+                        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') <= 0.05 || cs.pointerEvents === 'none') continue;
+                        const isAriaModal = d.getAttribute('aria-modal') === 'true';
+                        if (!isAriaModal) {
+                            const idLower = (d.id || '').toLowerCase();
+                            const clsLower = typeof d.className === 'string' ? d.className.toLowerCase() : '';
+                            if (idLower.includes('onetrust') || clsLower.includes('onetrust') || clsLower.includes('toast') || d.getAttribute('role') === 'status') {
+                                continue;
+                            }
+                        }
                         const r = d.getBoundingClientRect();
-                        if (r.width >= 200 && r.height >= 120) return true;
+                        const visW = Math.min(r.right, vw) - Math.max(r.left, 0);
+                        const visH = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+                        if (visW < 200 || visH < 120) continue;
+                        if (isAriaModal) return true;
+                        if (d.tagName === 'DIALOG' && d.open) return true;
+                        if (cs.position === 'fixed') {
+                            const spansCenter = r.left < vw * 0.5 && r.right > vw * 0.5 && r.top < vh * 0.5 && r.bottom > vh * 0.5;
+                            if (spansCenter || (visW >= vw * 0.25 && visH >= vh * 0.25)) {
+                                return true;
+                            }
+                        }
                     }
                 } catch (_) {}
                 return false;
@@ -290,8 +396,8 @@ public enum EnhancementScript {
                     const tag = (cur.tagName || '').toLowerCase();
                     if (tag === 'body' || tag === 'html' || tag === 'main') break;
                     if (cur.id === 'root' || cur.id === 'app' || cur.id === '__next') break;
-                    if (cur.querySelector && cur.querySelector('nav, header[role="banner"], footer, [data-a-target="chat-scroller"]')) break;
-                    if (cur.querySelectorAll && cur.querySelectorAll('a').length > 12) break;
+                    if (cur.querySelector && cur.querySelector('nav, header[role="banner"], footer, h1, article, [data-a-target="chat-scroller"]')) break;
+                    if (cur.querySelectorAll && cur.querySelectorAll('a[href]').length > 16) break;
                     const r = cur.getBoundingClientRect();
                     if (r.width <= baseRect.width * 1.18 + 24 && r.height <= baseRect.height * 1.25 + 80) {
                         best = cur;
@@ -302,52 +408,210 @@ public enum EnhancementScript {
                 return best;
             }
 
-            function findCleanBoxIframe(profile, minW, minH) {
-                const selectors = (profile && profile.iframeSelectors) || [];
-                const allowedSuffixes = (profile && profile.allowedIframeHostSuffixes) || [];
-                const checkCandidate = (frame) => {
-                    if (!frame || !frame.isConnected) return false;
-                    const inline = frame.style;
-                    if (inline && (inline.display === 'none' || inline.visibility === 'hidden' || inline.opacity === '0')) return false;
-                    const cs = getComputedStyle(frame);
-                    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-                    const r = frame.getBoundingClientRect();
-                    const already = activeCleanBoxState.iframe === frame && document.documentElement.dataset.ytmacCleanBox === 'true';
-                    if (!already && (r.width < minW || r.height < minH)) return false;
-                    try {
-                        const u = new URL(frame.src || '', location.href);
-                        const h = (u.hostname || '').toLowerCase();
-                        if (!h) return false;
-                        if (allowedSuffixes.length > 0 && !allowedSuffixes.some((s) => h === s || h.endsWith('.' + s))) {
-                            return false;
-                        }
-                    } catch (_) {
-                        return false;
-                    }
-                    return true;
+            const CLEANBOX_AD_HOST_SUFFIXES = [
+                'doubleclick.net',
+                'googlesyndication.com',
+                'imasdk.googleapis.com',
+                'adservice.google.com',
+                'amazon-adsystem.com',
+                'scorecardresearch.com',
+                'moatads.com'
+            ];
+
+            function isDisallowedPlayerIframeHost(h) {
+                if (!h) return true;
+                if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts|oauth)\\./i.test(h)) return true;
+                if (/(^|\\.)(accounts\\.google\\.[a-z.]+|accounts\\.youtube\\.com|idmsa\\.apple\\.com|appleid\\.apple\\.com|registerdisney\\.go\\.com|cdn\\.registerdisney\\.go\\.com|my\\.disney\\.com|sp\\.auth\\.adobe\\.com|(na|eu|fe)\\.account\\.amazon\\.com|auth\\.hulu\\.com|auth\\.max\\.com|auth\\.hbomax\\.com|sso\\.crunchyroll\\.com|id\\.nfl\\.com|ids\\.mlb\\.com|identity\\.nba\\.com|id\\.peacocktv\\.com|identity\\.sling\\.com|passport\\.twitch\\.tv|id\\.twitch\\.tv)$/i.test(h)) return true;
+                if (CLEANBOX_AD_HOST_SUFFIXES.some((s) => h === s || h.endsWith('.' + s))) return true;
+                return false;
+            }
+
+            function collectCleanBoxIframes(root, depth) {
+                const out = [];
+                if (!root || depth > 3) return out;
+                const seenShadow = new Set();
+                const pushHost = (host) => {
+                    if (!host || !host.shadowRoot || seenShadow.has(host)) return;
+                    seenShadow.add(host);
+                    const sub = collectCleanBoxIframes(host.shadowRoot, depth + 1);
+                    for (let i = 0; i < sub.length; i += 1) out.push(sub[i]);
                 };
+                try {
+                    const direct = root.querySelectorAll ? root.querySelectorAll('iframe') : [];
+                    for (let i = 0; i < direct.length; i += 1) out.push(direct[i]);
+                    if (depth < 3 && root.querySelectorAll) {
+                        const els = root.querySelectorAll('*');
+                        const cap = Math.min(els.length, 400);
+                        for (let i = 0; i < cap; i += 1) pushHost(els[i]);
+                    }
+                } catch (_) {}
+                return out;
+            }
+
+            function resolveIframeCandidate(profile, isCompactSurface, wasCleanBox) {
+                if (!profile || !Array.isArray(profile.allowedIframeHostSuffixes) || profile.allowedIframeHostSuffixes.length === 0) {
+                    return null;
+                }
+                const selectors = Array.isArray(profile.iframeSelectors) ? profile.iframeSelectors : [];
+                if (profile.strategy !== 'companionIframe' && selectors.length === 0) {
+                    return null;
+                }
+                const allowedSuffixes = profile.allowedIframeHostSuffixes;
+                const playerSelJoined = Array.isArray(profile.playerSelectors) ? profile.playerSelectors.join(',') : '';
+                const minW = isCompactSurface ? 100 : 200;
+                const minH = isCompactSurface ? 56 : 112;
+
+                const evaluateFrame = (frame, allowBlankSubframe) => {
+                    if (!frame || !frame.isConnected || frame.hasAttribute('srcdoc')) return null;
+                    const already = wasCleanBox && activeCleanBoxState.iframe === frame;
+                    if (hasHiddenAncestor(frame, already)) return null;
+                    const r = frame.getBoundingClientRect();
+                    if (!already && (r.width < minW || r.height < minH)) return null;
+
+                    const rawSrc = (frame.getAttribute('src') || '').trim();
+                    const lowerSrc = rawSrc.toLowerCase();
+                    if (lowerSrc.startsWith('javascript:') || lowerSrc.startsWith('data:') || lowerSrc.startsWith('blob:')) {
+                        return null;
+                    }
+                    const isBlank = rawSrc === '' || lowerSrc === 'about:blank' || lowerSrc.startsWith('about:blank?') || lowerSrc.startsWith('about:blank#');
+                    if (isBlank) {
+                        if (!allowBlankSubframe || window.__ytmacSubframeMediaActive !== true) return null;
+                        const matchesExplicitSelector = selectors.some((s) => {
+                            try { return typeof frame.matches === 'function' && frame.matches(s); } catch (_) { return false; }
+                        });
+                        const insidePlayer = Boolean(playerSelJoined && typeof frame.closest === 'function' && frame.closest(playerSelJoined));
+                        if (!matchesExplicitSelector && !insidePlayer) return null;
+                    } else {
+                        try {
+                            const u = new URL(rawSrc, location.href);
+                            if (u.protocol !== 'https:') return null;
+                            const h = (u.hostname || '').toLowerCase();
+                            if (isDisallowedPlayerIframeHost(h)) return null;
+                            if (!allowedSuffixes.some((s) => h === s || h.endsWith('.' + s))) return null;
+                        } catch (_) {
+                            return null;
+                        }
+                    }
+
+                    const area = Math.max(0, r.width) * Math.max(0, r.height);
+                    const inLightDOM = typeof frame.getRootNode === 'function' && frame.getRootNode() === document;
+                    if (inLightDOM) {
+                        return { root: frame, iframe: frame, video: null, mediaAnchor: frame, area };
+                    }
+                    const hostEl = climbLightHost(frame);
+                    if (!hostEl || !hostEl.isConnected || hasHiddenAncestor(hostEl, wasCleanBox && activeCleanBoxState.root === hostEl)) {
+                        return null;
+                    }
+                    return { root: hostEl, iframe: null, video: null, mediaAnchor: hostEl, area };
+                };
+
+                const pickLargest = (frames, allowBlankSubframe) => {
+                    let best = null;
+                    for (let i = 0; i < frames.length; i += 1) {
+                        const cand = evaluateFrame(frames[i], allowBlankSubframe);
+                        if (cand && (!best || cand.area > best.area)) {
+                            best = cand;
+                        }
+                    }
+                    return best;
+                };
+
+                const tier1Frames = [];
                 for (let i = 0; i < selectors.length; i += 1) {
                     const list = document.querySelectorAll(selectors[i]);
-                    for (let j = 0; j < list.length; j += 1) {
-                        if (checkCandidate(list[j])) return list[j];
+                    for (let j = 0; j < list.length; j += 1) tier1Frames.push(list[j]);
+                }
+                const allFrames = collectCleanBoxIframes(document, 0);
+
+                // Always prioritize explicit HTTPS allowlisted player iframes before any blank/about:blank fallback.
+                return pickLargest(tier1Frames, false)
+                    || pickLargest(allFrames, false)
+                    || pickLargest(tier1Frames, true)
+                    || pickLargest(allFrames, true);
+            }
+
+            function resolveInlineVideoCandidate(profile, route, isCompactSurface, wasCleanBox) {
+                const video = findPrimaryWebVideo();
+                if (!video || !video.isConnected || !hasMediaSource(video) || isAmbientTrailerVideo(video)) return null;
+                const lightEl = climbLightHost(video);
+                if (!lightEl || !lightEl.isConnected) return null;
+                if (typeof lightEl.closest === 'function' && lightEl.closest('[data-a-target="front-page-carousel"], .persistent-player')) {
+                    return null;
+                }
+                const vRect = lightEl.getBoundingClientRect();
+                const minW = isCompactSurface ? 100 : 180;
+                const minH = isCompactSurface ? 56 : 100;
+                const reqW = route.serviceID === '_generic' ? (isCompactSurface ? 100 : 320) : minW;
+                const reqH = route.serviceID === '_generic' ? (isCompactSurface ? 56 : 180) : minH;
+                if (!(wasCleanBox && video.readyState > 0) && (vRect.width < reqW || vRect.height < reqH)) {
+                    return null;
+                }
+                if (route.serviceID === '_generic' && video.readyState < 2) {
+                    return null;
+                }
+
+                let resolvedRoot = null;
+                if (profile && Array.isArray(profile.playerSelectors)) {
+                    for (let i = 0; i < profile.playerSelectors.length; i += 1) {
+                        const sel = profile.playerSelectors[i];
+                        const cand = (typeof lightEl.closest === 'function') ? lightEl.closest(sel) : null;
+                        if (!cand || cand === document.body || cand === document.documentElement) continue;
+                        if (cand.id === 'root' || cand.id === 'app' || cand.id === '__next') continue;
+                        if (cand.querySelector && cand.querySelector('nav, header[role="banner"], footer, [data-a-target="chat-scroller"]')) continue;
+                        if (cand.querySelectorAll && cand.querySelectorAll('a[href]').length > 16) continue;
+                        if (route.type === 'watch' && !(wasCleanBox && cand === activeCleanBoxState.root)) {
+                            const candRect = cand.getBoundingClientRect();
+                            if (candRect.height > vRect.height * 1.45 + 140) {
+                                const topPad = vRect.top - candRect.top;
+                                const bottomPad = candRect.bottom - vRect.bottom;
+                                const tooTall = candRect.height > (window.innerHeight || 0) * 1.1;
+                                const asymmetricBelow = bottomPad > topPad + 120;
+                                const hasDocChrome = Boolean(cand.querySelector && cand.querySelector('h1, article, footer'));
+                                if (tooTall || asymmetricBelow || hasDocChrome) {
+                                    continue;
+                                }
+                            }
+                        }
+                        resolvedRoot = cand;
+                        break;
                     }
                 }
-                const allFrames = document.querySelectorAll('iframe');
-                for (let i = 0; i < allFrames.length; i += 1) {
-                    if (checkCandidate(allFrames[i])) return allFrames[i];
+
+                if (route.type === 'overlaySDK') {
+                    if (!resolvedRoot) return null;
+                    const already = wasCleanBox && activeCleanBoxState.root === resolvedRoot && video.readyState > 0;
+                    if (hasHiddenAncestor(resolvedRoot, already)) return null;
+                    const r = resolvedRoot.getBoundingClientRect();
+                    if (!already && (r.width < reqW || r.height < reqH)) return null;
+                } else {
+                    if (!resolvedRoot) {
+                        resolvedRoot = resolveGenericPlayerBox(lightEl);
+                    }
+                    if (!resolvedRoot) return null;
+                    const already = wasCleanBox && activeCleanBoxState.root === resolvedRoot && video.readyState > 0;
+                    if (hasHiddenAncestor(resolvedRoot, already)) return null;
                 }
-                return null;
+
+                const lightVideo = (video.getRootNode && video.getRootNode() === document) ? video : null;
+                const area = Math.max(0, vRect.width) * Math.max(0, vRect.height);
+                return {
+                    root: resolvedRoot,
+                    iframe: null,
+                    video: lightVideo,
+                    mediaAnchor: lightEl,
+                    area,
+                    videoObj: video
+                };
             }
 
             function evaluateCompanionCleanBoxCandidate(cfg) {
-                const none = { eligible: false, activate: false, root: null, iframe: null, video: null };
+                cleanBoxBlockedByModal = false;
+                const none = { eligible: false, activate: false, root: null, iframe: null, video: null, mediaAnchor: null };
                 if (!isWebCompanionHost() || isCompanionAuthPage()) return none;
                 const route = isCleanBoxWatchPage();
                 if (!route || route.type === 'browse') return none;
 
                 const isCompactSurface = Boolean(cfg && (cfg.miniPlayerActive || cfg.multiviewTileActive));
-                const minW = isCompactSurface ? 100 : 180;
-                const minH = isCompactSurface ? 56 : 100;
                 const profile = CLEANBOX_PLAYER_SELECTORS[route.serviceID] || null;
                 const isCatalog = route.serviceID !== '_generic';
                 const wasCleanBox = document.documentElement.dataset.ytmacCleanBox === 'true';
@@ -358,77 +622,30 @@ public enum EnhancementScript {
                     }
                 }
 
-                let resolvedRoot = null;
-                let resolvedIframe = null;
-                let resolvedVideo = null;
-
-                if (profile && profile.strategy === 'companionIframe') {
-                    const iframe = findCleanBoxIframe(profile, isCompactSurface ? 100 : 240, isCompactSurface ? 56 : 135);
-                    if (!iframe) return none;
-                    resolvedIframe = iframe;
-                    for (let i = 0; i < profile.playerSelectors.length; i += 1) {
-                        const match = iframe.closest(profile.playerSelectors[i]);
-                        if (match && match !== document.body && match !== document.documentElement && !match.querySelector('nav, header[role="banner"]')) {
-                            resolvedRoot = match;
-                            break;
-                        }
-                    }
-                    if (!resolvedRoot) {
-                        resolvedRoot = iframe;
+                let chosen = null;
+                if (route.type === 'overlaySDK' || route.serviceID === '_generic') {
+                    chosen = resolveInlineVideoCandidate(profile, route, isCompactSurface, wasCleanBox);
+                } else if (profile && profile.strategy === 'companionIframe') {
+                    const inlineCand = resolveInlineVideoCandidate(profile, route, isCompactSurface, wasCleanBox);
+                    const iframeCand = resolveIframeCandidate(profile, isCompactSurface, wasCleanBox);
+                    if (inlineCand && iframeCand) {
+                        const v = inlineCand.videoObj;
+                        const inlineActive = Boolean(v && ((!v.paused && !v.ended) || (v.readyState >= 1 && inlineCand.area >= iframeCand.area)));
+                        chosen = inlineActive ? inlineCand : iframeCand;
+                    } else {
+                        chosen = inlineCand || iframeCand;
                     }
                 } else {
-                    const video = findPrimaryWebVideo();
-                    if (!video || !video.isConnected) return none;
-                    const hasMedia = Boolean(video.src || video.currentSrc || video.readyState > 0 || (video.querySelector && video.querySelector('source[src]')));
-                    if (!hasMedia || isAmbientTrailerVideo(video)) return none;
-                    const lightEl = climbLightHost(video);
-                    if (!lightEl || !lightEl.isConnected) return none;
-                    if (typeof lightEl.closest === 'function' && lightEl.closest('[data-a-target="front-page-carousel"], .persistent-player')) {
-                        return none;
-                    }
-                    const vRect = lightEl.getBoundingClientRect();
-                    const reqW = route.serviceID === '_generic' ? (isCompactSurface ? 100 : 320) : minW;
-                    const reqH = route.serviceID === '_generic' ? (isCompactSurface ? 56 : 180) : minH;
-                    if (!(wasCleanBox && video.readyState > 0) && (vRect.width < reqW || vRect.height < reqH)) {
-                        return none;
-                    }
-                    if (route.serviceID === '_generic' && video.readyState < 2) {
-                        return none;
-                    }
-
-                    if (profile && Array.isArray(profile.playerSelectors)) {
-                        for (let i = 0; i < profile.playerSelectors.length; i += 1) {
-                            const sel = profile.playerSelectors[i];
-                            const cand = (typeof lightEl.closest === 'function') ? lightEl.closest(sel) : null;
-                            if (cand && cand !== document.body && cand !== document.documentElement) {
-                                if (cand.querySelector && cand.querySelector('nav, header[role="banner"], [data-a-target="chat-scroller"]')) {
-                                    continue;
-                                }
-                                resolvedRoot = cand;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (route.type === 'overlaySDK') {
-                        if (!resolvedRoot) return none;
-                        const s = resolvedRoot.style;
-                        if (s && (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0')) return none;
-                        const cs = getComputedStyle(resolvedRoot);
-                        if (cs.display === 'none' || cs.visibility === 'hidden') return none;
-                        const r = resolvedRoot.getBoundingClientRect();
-                        if (!(wasCleanBox && video.readyState > 0) && (r.width < reqW || r.height < reqH)) return none;
-                    } else if (!resolvedRoot) {
-                        resolvedRoot = resolveGenericPlayerBox(lightEl);
-                    }
-
-                    if (!resolvedRoot) return none;
-                    if (video.getRootNode && video.getRootNode() === document) {
-                        resolvedVideo = video;
+                    chosen = resolveInlineVideoCandidate(profile, route, isCompactSurface, wasCleanBox);
+                    if (!chosen && profile && Array.isArray(profile.iframeSelectors) && profile.iframeSelectors.length > 0) {
+                        chosen = resolveIframeCandidate(profile, isCompactSurface, wasCleanBox);
                     }
                 }
 
-                if (hasVisibleExternalModal(resolvedRoot)) {
+                if (!chosen || !chosen.root) return none;
+
+                if (hasVisibleExternalModal(chosen.root)) {
+                    cleanBoxBlockedByModal = true;
                     return none;
                 }
 
@@ -437,19 +654,23 @@ public enum EnhancementScript {
                 return {
                     eligible: true,
                     activate,
-                    root: resolvedRoot,
-                    iframe: resolvedIframe,
-                    video: resolvedVideo
+                    root: chosen.root,
+                    iframe: chosen.iframe,
+                    video: chosen.video,
+                    mediaAnchor: chosen.mediaAnchor
                 };
             }
 
             function syncCompanionCleanBox(reason) {
                 if (!isWebCompanionHost()) {
                     lastCleanBoxEligible = false;
+                    cleanBoxBlockedByModal = false;
                     return false;
                 }
                 if (isCompanionAuthPage()) {
                     lastCleanBoxEligible = false;
+                    cleanBoxBlockedByModal = false;
+                    clearCleanBoxSettleTimers();
                     const changed = releaseCompanionCleanBox(true, true);
                     if (changed) emitMediaState(true);
                     return false;
@@ -469,24 +690,42 @@ public enum EnhancementScript {
                         requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
                         if (reason !== 'configOnly') emitMediaState(true);
                     }
+                    if (reason === 'subframe' && cfg.cleanBoxStreamingPlayers && !cfg.cleanBoxBypassed) {
+                        scheduleCleanBoxSettleTimers();
+                    }
                     return false;
                 }
 
                 ensureCleanBoxStyleElement();
                 const targetChanged = activeCleanBoxState.root !== cand.root
                     || activeCleanBoxState.iframe !== cand.iframe
-                    || activeCleanBoxState.video !== cand.video;
+                    || activeCleanBoxState.video !== cand.video
+                    || activeCleanBoxState.mediaAnchor !== cand.mediaAnchor;
                 const wasActive = Boolean(rootEl && rootEl.dataset.ytmacCleanBox === 'true');
+                const needsRepair = !wasActive || targetChanged || !isCleanBoxStateIntact();
 
-                if (targetChanged || !wasActive) {
+                if (needsRepair) {
                     stripCleanBoxAttributes();
                     cand.root.setAttribute('data-ytmac-cb', 'player');
-                    if (cand.iframe) {
+                    if (cand.iframe && cand.iframe !== cand.root) {
                         cand.iframe.setAttribute('data-ytmac-cb', 'iframe');
                     }
                     if (cand.video && cand.video !== cand.root) {
                         cand.video.setAttribute('data-ytmac-cb', 'video');
                     }
+
+                    const chain = [];
+                    if (cand.mediaAnchor && cand.mediaAnchor !== cand.root && cand.mediaAnchor !== cand.video && cand.mediaAnchor !== cand.iframe) {
+                        cand.mediaAnchor.setAttribute('data-ytmac-cb', 'chain');
+                        chain.push(cand.mediaAnchor);
+                    }
+                    let chainCur = cand.mediaAnchor ? cand.mediaAnchor.parentElement : null;
+                    while (chainCur && chainCur !== cand.root && chainCur !== document.body && chainCur !== document.documentElement && chain.length < 24) {
+                        chainCur.setAttribute('data-ytmac-cb', 'chain');
+                        chain.push(chainCur);
+                        chainCur = chainCur.parentElement;
+                    }
+
                     const ancestors = [];
                     let cur = cand.root.parentElement;
                     while (cur && cur !== document.body && cur !== document.documentElement) {
@@ -498,6 +737,8 @@ public enum EnhancementScript {
                         root: cand.root,
                         iframe: cand.iframe,
                         video: cand.video,
+                        mediaAnchor: cand.mediaAnchor,
+                        chain,
                         ancestors
                     };
                 }
@@ -506,8 +747,9 @@ public enum EnhancementScript {
                     setDatasetFlag(rootEl, 'ytmacCleanBox', true);
                 }
                 lastCleanBoxActive = true;
+                clearCleanBoxSettleTimers();
 
-                if (!wasActive) {
+                if (!wasActive || targetChanged) {
                     requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
                     if (reason !== 'configOnly') emitMediaState(true);
                 }
@@ -518,15 +760,23 @@ public enum EnhancementScript {
 
             function scheduleCleanBoxSettleTimers() {
                 if (!isWebCompanionHost() || isCompanionAuthPage()) return;
+                const route = isCleanBoxWatchPage();
+                if (!route || route.type === 'browse') return;
+                const cfg = window.__ytmacConfig || initialConfig;
+                if (!cfg || !cfg.cleanBoxStreamingPlayers || cfg.cleanBoxBypassed) return;
                 clearCleanBoxSettleTimers();
-                cleanBoxSettleTimer1 = setTimeout(() => {
-                    cleanBoxSettleTimer1 = null;
-                    syncCompanionCleanBox('settle1');
-                }, 650);
-                cleanBoxSettleTimer2 = setTimeout(() => {
-                    cleanBoxSettleTimer2 = null;
-                    syncCompanionCleanBox('settle2');
-                }, 1500);
+                const delays = [650, 1500, 3000, 5500];
+                for (let i = 0; i < delays.length; i += 1) {
+                    const ms = delays[i];
+                    const id = setTimeout(() => {
+                        if (lastCleanBoxActive) {
+                            clearCleanBoxSettleTimers();
+                            return;
+                        }
+                        syncCompanionCleanBox('settle' + ms);
+                    }, ms);
+                    cleanBoxSettleTimers.push(id);
+                }
             }
 
             function setDatasetFlag(root, key, enabled) {
@@ -574,7 +824,7 @@ public enum EnhancementScript {
                         results.push(direct[i]);
                     }
                     if (depth < 4 && root.querySelectorAll) {
-                        const priorityHosts = root.querySelectorAll('apple-tv-plus-player, amp-video-player, amp-video-player-internal, disney-web-player, video-js, media-controller, shaka-player');
+                        const priorityHosts = root.querySelectorAll('apple-tv-plus-player, amp-chrome-player, amp-video-player, amp-video-player-internal, disney-web-player, btm-media-client-element, video-js, media-controller, shaka-player');
                         for (let i = 0; i < priorityHosts.length; i += 1) {
                             pushNested(priorityHosts[i]);
                         }
@@ -614,13 +864,21 @@ public enum EnhancementScript {
                 let fallback = null;
                 for (let i = 0; i < videos.length; i += 1) {
                     const v = videos[i];
-                    if (!v) continue;
-                    const hasMedia = Boolean(v.src || v.currentSrc || v.readyState > 0 || (v.querySelector && v.querySelector('source[src]')));
-                    if (!hasMedia) continue;
+                    if (!v || !v.isConnected) continue;
+                    if (!hasMediaSource(v) || isAmbientTrailerVideo(v)) continue;
+                    const isPlayingNow = !v.paused && !v.ended && v.readyState >= 2;
+                    const isPiP = document.pictureInPictureElement === v ||
+                        (typeof v.webkitPresentationMode === 'string' && v.webkitPresentationMode === 'picture-in-picture');
+                    let hidden = false;
+                    try {
+                        const cs = getComputedStyle(v);
+                        hidden = cs.display === 'none' || cs.visibility === 'hidden';
+                    } catch (_) {}
+                    if (hidden && !isPlayingNow && !isPiP) continue;
                     if (!fallback) fallback = v;
                     const rect = v.getBoundingClientRect();
                     const area = Math.max(0, rect.width) * Math.max(0, rect.height);
-                    if (!v.paused && !v.ended && v.readyState >= 2) {
+                    if (isPlayingNow) {
                         if (area >= bestPlayingArea) {
                             bestPlaying = v;
                             bestPlayingArea = area;
@@ -1492,7 +1750,7 @@ public enum EnhancementScript {
                     const isPiP = document.pictureInPictureElement === video ||
                         (typeof video.webkitPresentationMode === 'string' && video.webkitPresentationMode === 'picture-in-picture');
                     const hasVideo = (isWebCompanionHost() || isWatchPage())
-                        && Boolean(video.src || video.currentSrc || video.readyState > 0 || (isWebCompanionHost() && video.querySelector && video.querySelector('source[src]')));
+                        && Boolean(video.src || video.currentSrc || video.srcObject || video.readyState > 0 || (isWebCompanionHost() && video.querySelector && video.querySelector('source[src]')));
                     let isMuted = Boolean(video.muted || video.volume === 0);
                     try {
                         if (player && typeof player.isMuted === 'function') {
@@ -1760,6 +2018,9 @@ public enum EnhancementScript {
                 applyDatasetConfig(cfg);
                 if (isWebCompanionHost()) {
                     syncCompanionCleanBox('configOnly');
+                    if (!lastCleanBoxActive && cfg.cleanBoxStreamingPlayers && !cfg.cleanBoxBypassed) {
+                        scheduleCleanBoxSettleTimers();
+                    }
                 }
                 if (prevActive !== lastCleanBoxActive || prevEligible !== lastCleanBoxEligible) {
                     emitMediaState(true);
@@ -1834,6 +2095,8 @@ public enum EnhancementScript {
                             sponsorState = { videoId: '', segments: [], skippedIndices: new Set() };
                         }
                         if (isWebCompanionHost()) {
+                            window.__ytmacSubframeMediaActive = false;
+                            cleanBoxBlockedByModal = false;
                             clearCleanBoxSettleTimers();
                             clearCleanBoxCloseTimers();
                             releaseCompanionCleanBox(isCompanionAuthPage(), true);
@@ -1888,12 +2151,21 @@ public enum EnhancementScript {
                 window.addEventListener('play', handleCapturedVideoEvent, true);
                 window.addEventListener('playing', handleCapturedVideoEvent, true);
                 window.addEventListener('loadedmetadata', handleCapturedVideoEvent, true);
+                window.addEventListener('loadeddata', handleCapturedVideoEvent, true);
+                window.addEventListener('canplay', handleCapturedVideoEvent, true);
                 window.addEventListener('pause', handleCapturedVideoEvent, true);
                 window.addEventListener('emptied', handleCapturedVideoEvent, true);
                 window.addEventListener('ended', handleCapturedVideoEvent, true);
+                window.addEventListener('load', (ev) => {
+                    const target = ev && ev.target;
+                    if (!target || target.tagName !== 'IFRAME') return;
+                    if (isWebCompanionHost()) {
+                        syncCompanionCleanBox('iframe:load');
+                    }
+                }, { capture: true, passive: true });
 
                 const scheduleOverlayCloseRecheck = () => {
-                    if (!isWebCompanionHost() || !activeCleanBoxState.root) return;
+                    if (!isWebCompanionHost() || (!activeCleanBoxState.root && !cleanBoxBlockedByModal)) return;
                     clearCleanBoxCloseTimers();
                     cleanBoxCloseTimer1 = setTimeout(() => {
                         cleanBoxCloseTimer1 = null;
@@ -1971,10 +2243,13 @@ public enum EnhancementScript {
     public static let notifyViewportResizeScript = """
     (() => {
         const ds = document.documentElement.dataset;
-        if (document.fullscreenElement || ds.ytmacMiniPlayer === 'true' || ds.ytmacTilePlayer === 'true') return;
+        if (document.fullscreenElement || document.webkitFullscreenElement || ds.ytmacMiniPlayer === 'true' || ds.ytmacTilePlayer === 'true') return;
         requestAnimationFrame(() => {
             const d = document.documentElement.dataset;
-            if (document.fullscreenElement || d.ytmacMiniPlayer === 'true' || d.ytmacTilePlayer === 'true') return;
+            if (document.fullscreenElement || document.webkitFullscreenElement || d.ytmacMiniPlayer === 'true' || d.ytmacTilePlayer === 'true') return;
+            if (typeof window.__ytmacSyncCleanBox === 'function') {
+                window.__ytmacSyncCleanBox('resizeSync');
+            }
             window.dispatchEvent(new Event('resize'));
             const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
             try {
@@ -2040,7 +2315,7 @@ public enum EnhancementScript {
                     const list = root.querySelectorAll ? root.querySelectorAll('video') : [];
                     for (let i = 0; i < list.length; i += 1) out.push(list[i]);
                     if (depth < 4 && root.querySelectorAll) {
-                        const priority = root.querySelectorAll('apple-tv-plus-player, amp-video-player, amp-video-player-internal, disney-web-player, video-js, media-controller, shaka-player');
+                        const priority = root.querySelectorAll('apple-tv-plus-player, amp-chrome-player, amp-video-player, amp-video-player-internal, disney-web-player, btm-media-client-element, video-js, media-controller, shaka-player');
                         for (let i = 0; i < priority.length; i += 1) pushHost(priority[i]);
                         if (root === document && document.body && document.body.children) {
                             const kids = document.body.children;
@@ -2069,7 +2344,7 @@ public enum EnhancementScript {
             let bestPlaying = null, bestPlayingArea = -1, bestVisible = null, bestVisibleArea = -1, firstMedia = null;
             for (let i = 0; i < vids.length; i += 1) {
                 const cand = vids[i];
-                if (!cand || !(cand.src || cand.currentSrc || cand.readyState > 0 || (cand.querySelector && cand.querySelector('source[src]')))) continue;
+                if (!cand || !(cand.src || cand.currentSrc || cand.srcObject || cand.readyState > 0 || (cand.querySelector && cand.querySelector('source[src]')))) continue;
                 if (!firstMedia) firstMedia = cand;
                 const r = cand.getBoundingClientRect();
                 const area = Math.max(0, r.width) * Math.max(0, r.height);
@@ -2178,6 +2453,9 @@ public enum EnhancementScript {
         if (document.fullscreenElement || document.webkitFullscreenElement) return false;
         const syncNow = () => {
             if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            if (typeof window.__ytmacSyncCleanBox === 'function') {
+                window.__ytmacSyncCleanBox('resizeSync');
+            }
             try { window.dispatchEvent(new Event('resize')); } catch (_) {}
             try {
                 const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
@@ -2347,6 +2625,9 @@ public enum EnhancementScript {
     /// status string (`'ok'`, `'mse_unsupported'`, `'unavailable'`, or `'no_video'`) so UI never fails silently.
     public static let teardownCompanionCleanBoxScript = """
     (() => {
+        if (typeof window.__ytmacSyncCleanBox === 'function') {
+            window.__ytmacSyncCleanBox('authTeardown');
+        }
         const root = document.documentElement;
         if (root) delete root.dataset.ytmacCleanBox;
         const tagged = document.querySelectorAll('[data-ytmac-cb]');
@@ -2362,10 +2643,18 @@ public enum EnhancementScript {
     /// One-shot Clean-Box re-evaluation hook invoked on main frame when a subframe player detects active `<video>`.
     public static let syncCompanionCleanBoxScript = """
     (() => {
+        window.__ytmacSubframeMediaActive = true;
         if (typeof window.__ytmacSyncCleanBox === 'function') {
             return Boolean(window.__ytmacSyncCleanBox('subframe'));
         }
         return false;
+    })();
+    """
+
+    /// Resets the verified subframe-media indicator on the main frame when subframe state clears or navigates.
+    public static let clearSubframeMediaActiveScript = """
+    (() => {
+        window.__ytmacSubframeMediaActive = false;
     })();
     """
 
@@ -2381,21 +2670,28 @@ public enum EnhancementScript {
             if (window === window.top) return;
             const host = (location.hostname || '').toLowerCase();
             if (!host) return;
-            if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts)\\./i.test(host)) return;
-            if (/(doubleclick\\.net|googlesyndication\\.com|imasdk\\.googleapis\\.com|adservice\\.google\\.com|amazon-adsystem\\.com)$/i.test(host)) return;
+            if (/^(sso|auth|login|signin|sign-in|passport|identity|id|ids|accounts|oauth)\\./i.test(host)) return;
+            if (/(doubleclick\\.net|googlesyndication\\.com|imasdk\\.googleapis\\.com|adservice\\.google\\.com|amazon-adsystem\\.com|scorecardresearch\\.com|moatads\\.com)$/i.test(host)) return;
             const allowedSuffixes = [\(quotedSuffixes)];
             if (!allowedSuffixes.some((s) => host === s || host.endsWith('.' + s))) return;
-            if (window.innerWidth < 100 || window.innerHeight < 56) return;
+
+            function hasSubframeSize() {
+                return window.innerWidth >= 100 && window.innerHeight >= 56;
+            }
+
+            function hasSubframeMediaSource(v) {
+                return Boolean(v && (v.src || v.currentSrc || v.srcObject || v.readyState > 0 || (v.querySelector && v.querySelector('source[src]'))));
+            }
 
             function getSubframeVideo() {
+                if (!hasSubframeSize()) return null;
                 const list = document.querySelectorAll('video');
                 let best = null;
                 let bestArea = -1;
                 for (let i = 0; i < list.length; i += 1) {
                     const v = list[i];
                     if (!v || !v.isConnected) continue;
-                    const hasMedia = Boolean(v.src || v.currentSrc || v.readyState > 0 || (v.querySelector && v.querySelector('source[src]')));
-                    if (!hasMedia) continue;
+                    if (!hasSubframeMediaSource(v)) continue;
                     const r = v.getBoundingClientRect();
                     const area = Math.max(0, r.width) * Math.max(0, r.height);
                     if (!v.paused && !v.ended && v.readyState >= 2) return v;
@@ -2408,6 +2704,7 @@ public enum EnhancementScript {
 
             let lastProgMuteAt = 0;
             let lastMutedState = null;
+            let lastSubframeHasVideo = false;
             let lastTimeSent = 0;
             let lastSig = '';
             let bound = null;
@@ -2423,7 +2720,8 @@ public enum EnhancementScript {
                 const now = Date.now();
                 if (!force && now - lastTimeSent < 1000) return;
                 const v = getSubframeVideo();
-                const hasVideo = Boolean(v && (v.src || v.currentSrc || v.readyState > 0));
+                const hasVideo = hasSubframeMediaSource(v);
+                lastSubframeHasVideo = hasVideo;
                 const isMuted = Boolean(v && (v.muted || v.volume === 0));
                 const isPlaying = Boolean(hasVideo && v && !v.paused && !v.ended && v.readyState >= 2);
                 const currentTime = (v && Number.isFinite(v.currentTime)) ? v.currentTime : 0;
@@ -2476,7 +2774,7 @@ public enum EnhancementScript {
                     emitSubframeState(true);
                 });
                 v.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => emitSubframeState(true));
-                for (const evt of ['play', 'playing', 'pause', 'ended', 'seeked', 'loadedmetadata', 'durationchange', 'volumechange', 'ratechange', 'emptied']) {
+                for (const evt of ['play', 'playing', 'pause', 'ended', 'seeked', 'loadedmetadata', 'loadeddata', 'canplay', 'durationchange', 'volumechange', 'ratechange', 'emptied']) {
                     v.addEventListener(evt, () => {
                         const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
                         if (evt === 'ended' && handler) {
@@ -2506,7 +2804,15 @@ public enum EnhancementScript {
                 window.addEventListener('play', onCapture, true);
                 window.addEventListener('playing', onCapture, true);
                 window.addEventListener('loadedmetadata', onCapture, true);
+                window.addEventListener('loadeddata', onCapture, true);
+                window.addEventListener('canplay', onCapture, true);
                 window.addEventListener('emptied', onCapture, true);
+                window.addEventListener('resize', () => {
+                    if ((!bound || !lastSubframeHasVideo) && hasSubframeSize()) {
+                        bindSubframeVideo();
+                        emitSubframeState(true);
+                    }
+                }, { passive: true });
                 window.addEventListener('pagehide', () => {
                     const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
                     if (handler) {
@@ -2679,6 +2985,8 @@ public enum EnhancementScript {
         background: #000 !important;
         margin: 0 !important;
         padding: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
     }
 
     html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="ancestor"] {
@@ -2706,6 +3014,7 @@ public enum EnhancementScript {
 
     html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="player"] {
         position: fixed !important;
+        inset: 0 !important;
         top: 0 !important;
         left: 0 !important;
         right: 0 !important;
@@ -2720,22 +3029,73 @@ public enum EnhancementScript {
         padding: 0 !important;
         border: 0 !important;
         border-radius: 0 !important;
+        aspect-ratio: auto !important;
         transform: none !important;
         z-index: 2147483640 !important;
         background: #000 !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] iframe[data-ytmac-cb="player"],
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] video[data-ytmac-cb="player"] {
+        display: block !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="chain"] {
+        top: 0 !important;
+        left: 0 !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        aspect-ratio: auto !important;
+        transform: none !important;
+        box-sizing: border-box !important;
     }
 
     html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="iframe"] {
+        display: block !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: auto !important;
+        bottom: auto !important;
         width: 100% !important;
         height: 100% !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
         border: 0 !important;
+        transform: none !important;
     }
 
     html[data-ytmac-host="web"][data-ytmac-clean-box="true"] [data-ytmac-cb="video"] {
+        display: block !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: auto !important;
+        bottom: auto !important;
         width: 100% !important;
         height: 100% !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
         max-width: 100% !important;
         max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        transform: none !important;
         object-fit: contain !important;
     }
     """

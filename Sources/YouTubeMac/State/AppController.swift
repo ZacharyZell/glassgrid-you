@@ -1867,6 +1867,10 @@ public final class AppController {
     }
 
     private func handleTabDidFinishNavigation(tabID: UUID, url: URL) {
+        scheduleSignInCompletionCheck(for: tabID, url: url, requireAuthFlowForNonPrime: false)
+    }
+
+    private func scheduleSignInCompletionCheck(for tabID: UUID, url: URL, requireAuthFlowForNonPrime: Bool) {
         guard !isWindowTornDown,
               let tab = tabs.first(where: { $0.id == tabID }),
               !tab.isSleeping,
@@ -1875,8 +1879,10 @@ public final class AppController {
             return
         }
         let fromAuthFlow = (tab.authFlowServiceID == service.id)
-        guard fromAuthFlow || service.id == "primevideo" else {
-            return
+        if requireAuthFlowForNonPrime {
+            guard fromAuthFlow else { return }
+        } else {
+            guard fromAuthFlow || service.id == "primevideo" else { return }
         }
 
         signInCheckTasks[tabID]?.cancel()
@@ -2275,6 +2281,7 @@ public final class AppController {
 
     public func canPopOut(tab: BrowserTab) -> Bool {
         guard tab.mediaStatus.hasVideo else { return false }
+        guard !StreamingServiceCatalog.isTransientAuthURL(tab.url) else { return false }
         guard YouTubeURLRouter.isWatchURL(tab.url) || tab.isCompanionTab else { return false }
         guard !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen else { return false }
         return true
@@ -3148,7 +3155,7 @@ public final class AppController {
             CommandPaletteActionDescriptor(
                 action: .manageStreamingServices,
                 title: "Manage Streaming Services & Sign-In Hub…",
-                keywords: "services onboarding login sign in prime amazon crunchyroll anime netflix hulu disney espn twitch peacock paramount",
+                keywords: "services onboarding login sign in prime amazon crunchyroll anime netflix hulu disney espn twitch peacock paramount hbo max apple",
                 systemImage: "square.grid.3x3.square",
                 isFeaturedWhenEmpty: false
             )
@@ -4068,7 +4075,7 @@ public final class AppController {
             return settings.distractionFreeConfig(
                 focusMode: focusModeActive,
                 miniPlayer: isTabPoppedOut(id),
-                multiviewTile: !isSoloed,
+                multiviewTile: true,
                 qualityOverride: clampedQuality,
                 cleanBoxBypassed: bypassed
             )
@@ -4234,6 +4241,9 @@ public final class AppController {
         }
         if let tab = tabs.first(where: { $0.id == tabID }) {
             refreshSponsorSegmentsIfNeeded(for: tab, url: newURL)
+            if tab.authFlowServiceID != nil && !StreamingServiceCatalog.isTransientAuthURL(newURL) {
+                scheduleSignInCompletionCheck(for: tabID, url: newURL, requireAuthFlowForNonPrime: true)
+            }
         }
         if tabID == selectedTabID {
             syncWindowTitle()

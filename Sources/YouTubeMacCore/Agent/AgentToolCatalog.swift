@@ -286,7 +286,7 @@ public enum AgentToolCatalog {
         ),
         AgentToolDefinition(
             name: "open_service",
-            description: "Open any built-in streaming service by ID (e.g. youtube, yttv, twitch, espn, peacock, paramount, primevideo, crunchyroll, netflix).",
+            description: "Open any built-in streaming service by ID or alias (e.g. youtube, yttv, twitch, espn, peacock, paramount, primevideo, disneyplus, hulu, max/hbomax, appletv, netflix, crunchyroll).",
             requiredTier: .playbackAndNavigation,
             inputSchema: schema(
                 properties: [

@@ -246,10 +246,11 @@ enum GlassGridCLIMain {
                 }
             case "add":
                 if let target = args.dropFirst().first {
-                    if target.hasPrefix("http") {
+                    let lowerTarget = target.lowercased()
+                    if lowerTarget.hasPrefix("http://") || lowerTarget.hasPrefix("https://") {
                         mapped = .success(("multiview_manage_tile", ["action": .string("add"), "url": .string(target)]))
                     } else {
-                        mapped = .success(("multiview_manage_tile", ["action": .string("add"), "service_id": .string(target.lowercased())]))
+                        mapped = .success(("multiview_manage_tile", ["action": .string("add"), "service_id": .string(lowerTarget)]))
                     }
                 } else {
                     mapped = .failure(CLIUsageError("Usage: glassgrid multiview add <service-id|https-url>"))

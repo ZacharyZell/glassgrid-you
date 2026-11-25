@@ -91,11 +91,11 @@ public enum AgentURLActionParser {
             return .success(ParsedURLAction(toolName: "search_youtube", arguments: args))
 
         case "service":
-            guard let serviceID = params["id"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-                  StreamingServiceCatalog.service(id: serviceID) != nil else {
+            guard let rawServiceID = params["id"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let service = StreamingServiceCatalog.resolveService(identifierOrAlias: rawServiceID) else {
                 return .failure(AgentURLActionError("service action requires a valid built-in service id."))
             }
-            var args: [String: JSONValue] = ["service_id": .string(serviceID)]
+            var args: [String: JSONValue] = ["service_id": .string(service.id)]
             if let inMV = parseBool(params["multiview"]) {
                 args["in_multiview"] = .bool(inMV)
             }

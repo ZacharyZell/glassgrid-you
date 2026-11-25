@@ -57,7 +57,14 @@ public struct MCPProtocolHandler: Sendable {
             return .reply(encodeResult(id: idValue, result: buildToolsListResult()))
         case "resources/list":
             return .reply(encodeResult(id: idValue, result: buildResourcesListResult()))
+        case "resources/templates/list":
+            return idValue == nil ? .noResponse : .reply(encodeResult(id: idValue, result: .object(["resourceTemplates": .array([])])))
+        case "prompts/list":
+            return idValue == nil ? .noResponse : .reply(encodeError(id: idValue, code: -32601, message: "Method not found: prompts/list"))
         default:
+            if method.hasPrefix("notifications/") && idValue == nil {
+                return .noResponse
+            }
             return nil
         }
     }
@@ -116,6 +123,14 @@ public struct MCPProtocolHandler: Sendable {
         case "resources/list":
             if idValue == nil { return .noResponse }
             return .reply(encodeResult(id: idValue, result: buildResourcesListResult()))
+
+        case "resources/templates/list":
+            if idValue == nil { return .noResponse }
+            return .reply(encodeResult(id: idValue, result: .object(["resourceTemplates": .array([])])))
+
+        case "prompts/list":
+            if idValue == nil { return .noResponse }
+            return .reply(encodeError(id: idValue, code: -32601, message: "Method not found: prompts/list"))
 
         case "tools/call":
             guard let name = params["name"]?.stringValue, !name.isEmpty else {

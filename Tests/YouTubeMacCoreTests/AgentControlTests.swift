@@ -501,6 +501,68 @@ final class AgentControlTests: XCTestCase {
         let cleanBoxProp = prefsTool?.inputSchema.objectValue?["properties"]?.objectValue?["clean_box_streaming_players"]?.objectValue
         XCTAssertEqual(cleanBoxProp?["type"]?.stringValue, "boolean")
     }
+
+    func testConnectedServiceSecurityAliasResolutionAndMCPDiscovery() async throws {
+        // 1. Alias resolution across CLI, URL actions, Siri & MCP tools
+        XCTAssertEqual(StreamingServiceCatalog.resolveService(identifierOrAlias: "hbomax")?.id, "max")
+        XCTAssertEqual(StreamingServiceCatalog.resolveService(identifierOrAlias: "HBO Max")?.id, "max")
+        XCTAssertEqual(StreamingServiceCatalog.resolveService(identifierOrAlias: "disney+")?.id, "disneyplus")
+        XCTAssertEqual(StreamingServiceCatalog.resolveService(identifierOrAlias: "Apple TV+")?.id, "appletv")
+        XCTAssertEqual(StreamingServiceCatalog.resolveService(identifierOrAlias: "prime")?.id, "primevideo")
+
+        let urlAction = AgentURLActionParser.parse(URL(string: "glassgridyou://action/service?id=hbomax&multiview=true")!)
+        if case .success(let parsed) = urlAction {
+            XCTAssertEqual(parsed.toolName, "open_service")
+            XCTAssertEqual(parsed.arguments["service_id"]?.stringValue, "max")
+            XCTAssertEqual(parsed.arguments["in_multiview"]?.boolValue, true)
+        } else {
+            XCTFail("Expected hbomax URL alias to resolve to max")
+        }
+
+        // 2. AgentSecurity URL hardening against newly discovered auth & corporate domains
+        if case .failure(let err) = AgentSecurity.validateURL("https://www.disneyplus.com/identity/login/enter-password", tier: .fullControl) {
+            XCTAssertEqual(err, .blockedAuthOrLogoutRoute)
+        } else {
+            XCTFail("Expected Disney+ /identity/login/enter-password to be blocked")
+        }
+        if case .failure(let err) = AgentSecurity.validateURL("https://www.hbomax.com/auth/password", tier: .fullControl) {
+            XCTAssertEqual(err, .blockedAuthOrLogoutRoute)
+        } else {
+            XCTFail("Expected HBO Max /auth/password to be blocked")
+        }
+        if case .failure(let err) = AgentSecurity.validateURL("https://www.icloud.com/", tier: .playbackAndNavigation) {
+            XCTAssertEqual(err, .tierRestrictedCompanionDomain)
+        } else {
+            XCTFail("Expected icloud.com to be blocked in playbackAndNavigation tier")
+        }
+        if case .success(let hboURL) = AgentSecurity.validateURL("https://play.hbomax.com/video/watch/123", tier: .playbackAndNavigation) {
+            XCTAssertEqual(hboURL.host, "play.hbomax.com")
+        } else {
+            XCTFail("Expected play.hbomax.com watch URL in playbackAndNavigation tier")
+        }
+
+        // 3. MCP discovery-only handling avoids launching GUI app
+        let handler = MCPProtocolHandler()
+        let tplReq = Data(#"{"jsonrpc":"2.0","id":10,"method":"resources/templates/list"}"#.utf8)
+        guard let tplRes = handler.handleDiscoveryOnly(tplReq), case .reply(let tplData) = tplRes else {
+            return XCTFail("Expected resources/templates/list local reply")
+        }
+        let tplJSON = try JSONValue.decode(from: tplData)
+        XCTAssertEqual(tplJSON.objectValue?["result"]?.objectValue?["resourceTemplates"]?.arrayValue, [])
+
+        let promptsReq = Data(#"{"jsonrpc":"2.0","id":11,"method":"prompts/list"}"#.utf8)
+        guard let promptsRes = handler.handleDiscoveryOnly(promptsReq), case .reply(let promptsData) = promptsRes else {
+            return XCTFail("Expected prompts/list local error reply")
+        }
+        let promptsJSON = try JSONValue.decode(from: promptsData)
+        XCTAssertEqual(promptsJSON.objectValue?["error"]?.objectValue?["code"]?.intValue, -32601)
+
+        let notifReq = Data(#"{"jsonrpc":"2.0","method":"notifications/roots/list_changed"}"#.utf8)
+        XCTAssertEqual(handler.handleDiscoveryOnly(notifReq), .noResponse)
+
+        let notifIDReq = Data(#"{"jsonrpc":"2.0","method":"resources/templates/list"}"#.utf8)
+        XCTAssertEqual(handler.handleDiscoveryOnly(notifIDReq), .noResponse)
+    }
 }
 
 private struct MockAgentExecutor: AgentCommandExecutor {

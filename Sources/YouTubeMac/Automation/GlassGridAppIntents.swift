@@ -77,8 +77,13 @@ public struct GlassGridStreamingServiceEntityQuery: EntityStringQuery, Sendable 
         if query.isEmpty {
             return try await suggestedEntities()
         }
+        let aliasMatchID = StreamingServiceCatalog.resolveService(identifierOrAlias: query)?.id
         return StreamingServiceCatalog.all
-            .filter { $0.name.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query) }
+            .filter {
+                $0.id == aliasMatchID
+                    || $0.name.localizedCaseInsensitiveContains(query)
+                    || $0.id.localizedCaseInsensitiveContains(query)
+            }
             .map { GlassGridStreamingServiceEntity(id: $0.id, name: $0.name) }
     }
 

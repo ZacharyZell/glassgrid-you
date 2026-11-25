@@ -64,10 +64,12 @@ public enum AgentSecurity {
         "id.peacocktv.com",
         "auth.hulu.com",
         "auth.max.com",
+        "auth.hbomax.com",
         "sso.crunchyroll.com",
         "na.account.amazon.com",
         "eu.account.amazon.com",
-        "fe.account.amazon.com"
+        "fe.account.amazon.com",
+        "my.disney.com"
     ]
 
     private static let blockedAuthHostPrefixes: [String] = [
@@ -80,7 +82,8 @@ public enum AgentSecurity {
         "ids.",
         "identity.",
         "passport.",
-        "accounts."
+        "accounts.",
+        "oauth."
     ]
 
     private static let blockedLogoutSegments: Set<String> = [
@@ -303,8 +306,12 @@ public enum AgentSecurity {
             return .failure(.blockedAuthOrLogoutRoute)
         }
         if afterLocale.count >= 2,
-           ["web", "account", "accounts", "auth", "sso", "user"].contains(afterLocale[0]),
+           ["web", "account", "accounts", "auth", "sso", "user", "identity"].contains(afterLocale[0]),
            afterLocale[1] == "login" {
+            return .failure(.blockedAuthOrLogoutRoute)
+        }
+
+        if StreamingServiceCatalog.isTransientAuthURL(parsed) {
             return .failure(.blockedAuthOrLogoutRoute)
         }
 

@@ -782,8 +782,8 @@ public final class AgentBridgeController: AgentCommandExecutor {
     }
 
     private func executeOpenService(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
-        guard let serviceID = args["service_id"]?.stringValue?.lowercased(),
-              let service = StreamingServiceCatalog.service(id: serviceID) else {
+        guard let rawServiceID = args["service_id"]?.stringValue,
+              let service = StreamingServiceCatalog.resolveService(identifierOrAlias: rawServiceID) else {
             return .failure(code: "not_found", message: "Unknown streaming service ID.")
         }
 
@@ -964,9 +964,9 @@ public final class AgentBridgeController: AgentCommandExecutor {
             if controller.isMultiviewActive && !controller.canAddMultiviewTile {
                 return .failure(code: "multiview_full", message: "Multiview already has 4 streams.")
             }
-            if let serviceID = args["service_id"]?.stringValue?.lowercased() {
-                guard let svc = StreamingServiceCatalog.service(id: serviceID) else {
-                    return .failure(code: "not_found", message: "Unknown streaming service '\(serviceID)'.")
+            if let rawServiceID = args["service_id"]?.stringValue {
+                guard let svc = StreamingServiceCatalog.resolveService(identifierOrAlias: rawServiceID) else {
+                    return .failure(code: "not_found", message: "Unknown streaming service '\(rawServiceID)'.")
                 }
                 controller.addStreamingServiceToMultiview(svc)
                 return .success("Added \(svc.name) to Multiview")

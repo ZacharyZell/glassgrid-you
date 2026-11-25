@@ -97,27 +97,39 @@ public enum StreamingServiceCatalog {
         "amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp", "amazon.ca",
         "amazon.fr", "amazon.it", "amazon.es", "amazon.com.au", "amazon.in",
         "amazon.com.br", "amazon.com.mx", "amazon.nl", "amazon.se", "amazon.pl",
-        "amazon.sg", "amazon.ae", "amazon.sa"
+        "amazon.sg", "amazon.ae", "amazon.sa",
+        "amazon.com.tr", "amazon.com.be", "amazon.ie", "amazon.eg", "amazon.co.za"
     ]
 
     /// Shared third-party SSO / IdP hosts used across multiple streaming services.
     public static let sharedThirdPartySSOHosts: Set<String> = [
         "accounts.google.com", "accounts.youtube.com",
         "idmsa.apple.com", "appleid.apple.com",
-        "sp.auth.adobe.com", "registerdisney.go.com", "cdn.registerdisney.go.com"
+        "sp.auth.adobe.com", "registerdisney.go.com", "cdn.registerdisney.go.com",
+        "my.disney.com"
     ]
 
     /// Host prefixes belonging exclusively to authentication, SSO, or identity subdomains.
     public static let authHostPrefixes: [String] = [
         "auth.", "sso.", "login.", "signin.", "sign-in.",
-        "id.", "ids.", "identity.", "passport.", "accounts."
+        "id.", "ids.", "identity.", "passport.", "accounts.", "oauth."
     ]
 
-    private static let iso639LocaleCodes: Set<String> = [
-        "en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ar",
-        "ru", "hi", "id", "nl", "pl", "sv", "tr", "vi", "th", "uk",
-        "he", "cs", "da", "fi", "no", "nb", "el", "ro", "hu"
+    public static let iso639LocaleCodes: [String] = [
+        "ar", "cs", "da", "de", "el", "en", "es", "fi", "fr", "he",
+        "hi", "hu", "id", "it", "ja", "ko", "nb", "nl", "no", "pl",
+        "pt", "ro", "ru", "sv", "th", "tr", "uk", "vi", "zh"
     ]
+
+    private static let iso639LocaleCodeSet: Set<String> = Set(iso639LocaleCodes)
+
+    /// Explicit two-letter regional storefronts used by streaming SPAs (`netflix.com/us/login`, `/gb/watch/...`).
+    /// Deliberately excludes non-country route roots like `ap`, `ax`, `gp`, `tv`, `v1`, `v2`, `p`.
+    public static let regionLocalePrefixes: [String] = [
+        "au", "br", "ca", "gb", "jp", "kr", "mx", "uk", "us"
+    ]
+
+    private static let regionLocalePrefixSet: Set<String> = Set(regionLocalePrefixes)
 
     /// All 18 major streaming services grouped across Video & Live TV, Movies & Shows, and Live Sports.
     public static let all: [StreamingService] = [
@@ -212,7 +224,7 @@ public enum StreamingServiceCatalog {
             homeURLString: "https://www.espn.com/watch/",
             signInURLString: "https://www.espn.com/watch/",
             dataDomains: ["espn.com", "espn.go.com", "go.com", "disney.com", "adobe.com"],
-            authHostHints: ["sp.auth.adobe.com", "registerdisney.go.com", "cdn.registerdisney.go.com"],
+            authHostHints: ["sp.auth.adobe.com", "registerdisney.go.com", "cdn.registerdisney.go.com", "my.disney.com"],
             routingMode: .companion,
             requiresStrictDRM: false,
             symbolName: "sportscourt.fill",
@@ -325,8 +337,8 @@ public enum StreamingServiceCatalog {
             category: .moviesAndShows,
             homeURLString: "https://www.disneyplus.com/home",
             signInURLString: "https://www.disneyplus.com/login",
-            dataDomains: ["disneyplus.com", "disney.com", "bamgrid.com", "dssott.com"],
-            authHostHints: ["registerdisney.go.com"],
+            dataDomains: ["disneyplus.com", "disney.com", "bamgrid.com", "dssott.com", "registerdisney.go.com"],
+            authHostHints: ["registerdisney.go.com", "cdn.registerdisney.go.com", "my.disney.com"],
             routingMode: .companion,
             requiresStrictDRM: true,
             symbolName: "wand.and.stars",
@@ -341,8 +353,8 @@ public enum StreamingServiceCatalog {
             category: .moviesAndShows,
             homeURLString: "https://www.hulu.com/hub/home",
             signInURLString: "https://auth.hulu.com/web/login",
-            dataDomains: ["hulu.com", "disney.com", "bamgrid.com"],
-            authHostHints: ["auth.hulu.com", "registerdisney.go.com"],
+            dataDomains: ["hulu.com", "disney.com", "bamgrid.com", "registerdisney.go.com"],
+            authHostHints: ["auth.hulu.com", "registerdisney.go.com", "cdn.registerdisney.go.com", "my.disney.com"],
             routingMode: .companion,
             requiresStrictDRM: true,
             symbolName: "rectangle.stack.fill",
@@ -352,17 +364,17 @@ public enum StreamingServiceCatalog {
         ),
         StreamingService(
             id: "max",
-            name: "Max",
+            name: "HBO Max",
             subtitle: "HBO, TNT Sports & Warner Bros.",
             category: .moviesAndShows,
-            homeURLString: "https://play.max.com/",
-            signInURLString: "https://play.max.com/login",
-            dataDomains: ["max.com", "hbomax.com", "wbd.com"],
-            authHostHints: ["auth.max.com"],
+            homeURLString: "https://play.hbomax.com/",
+            signInURLString: "https://www.hbomax.com/auth/login",
+            dataDomains: ["hbomax.com", "max.com", "wbd.com"],
+            authHostHints: ["auth.hbomax.com", "auth.max.com"],
             routingMode: .companion,
             requiresStrictDRM: true,
             symbolName: "film.fill",
-            monogram: "MX",
+            monogram: "HBO",
             accentHexStart: "#0F1D73",
             accentHexEnd: "#415CF5"
         ),
@@ -434,6 +446,71 @@ public enum StreamingServiceCatalog {
         all.first { $0.id == id }
     }
 
+    private static let serviceAliases: [String: String] = [
+        "hbomax": "max",
+        "hbo-max": "max",
+        "hbo_max": "max",
+        "hbo max": "max",
+        "hbo": "max",
+        "disney+": "disneyplus",
+        "disney-plus": "disneyplus",
+        "disney_plus": "disneyplus",
+        "disney plus": "disneyplus",
+        "disney": "disneyplus",
+        "paramount+": "paramount",
+        "paramount-plus": "paramount",
+        "paramount_plus": "paramount",
+        "paramount plus": "paramount",
+        "appletv+": "appletv",
+        "apple-tv": "appletv",
+        "apple-tv+": "appletv",
+        "apple_tv": "appletv",
+        "apple tv": "appletv",
+        "apple tv+": "appletv",
+        "appletvplus": "appletv",
+        "prime": "primevideo",
+        "prime-video": "primevideo",
+        "prime_video": "primevideo",
+        "prime video": "primevideo",
+        "amazon": "primevideo",
+        "youtube-tv": "yttv",
+        "youtube_tv": "yttv",
+        "youtube tv": "yttv",
+        "youtubetv": "yttv",
+        "espn+": "espn",
+        "espn-plus": "espn",
+        "espn_plus": "espn",
+        "espn plus": "espn",
+        "nfl+": "nfl",
+        "nfl-plus": "nfl",
+        "nfl_plus": "nfl",
+        "nfl plus": "nfl",
+        "mlb.tv": "mlb",
+        "mlbtv": "mlb",
+        "mlb tv": "mlb",
+        "peacocktv": "peacock",
+        "peacock tv": "peacock"
+    ]
+
+    /// Resolves a canonical service ID or common user/AI alias (e.g. `hbomax`, `disney+`, `apple tv+`, `prime`).
+    public static func resolveService(identifierOrAlias raw: String) -> StreamingService? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+        if let exact = service(id: trimmed) {
+            return exact
+        }
+        if let mapped = serviceAliases[trimmed] {
+            return service(id: mapped)
+        }
+        return nil
+    }
+
+    private static let nonExclusiveServiceMatchingDomains: Set<String> = [
+        "google.com", "disney.com", "adobe.com", "go.com", "registerdisney.go.com",
+        "apple.com", "icloud.com", "cbs.com", "cbsi.com", "nbcuni.com",
+        "wbd.com", "dish.com", "bamgrid.com", "dssott.com"
+    ]
+
     public static func services(in category: StreamingServiceCategory) -> [StreamingService] {
         all.filter { $0.category == category }
     }
@@ -464,7 +541,7 @@ public enum StreamingServiceCatalog {
                host == homeHost || host.hasSuffix("." + homeHost) {
                 return svc
             }
-            for domain in svc.dataDomains where domain != "google.com" && domain != "disney.com" && domain != "adobe.com" {
+            for domain in svc.dataDomains where !nonExclusiveServiceMatchingDomains.contains(domain) {
                 let clean = normalizeDomain(domain)
                 if host == clean || host.hasSuffix("." + clean) {
                     return svc
@@ -522,7 +599,7 @@ public enum StreamingServiceCatalog {
         guard let first = segments.first?.lowercased(), !first.isEmpty else {
             return segments[...]
         }
-        if iso639LocaleCodes.contains(first) {
+        if iso639LocaleCodeSet.contains(first) || regionLocalePrefixSet.contains(first) {
             return segments.dropFirst()
         }
         let parts = first.split(separator: "-", omittingEmptySubsequences: false)
@@ -531,7 +608,7 @@ public enum StreamingServiceCatalog {
             let region = String(parts[1])
             let isRegionLetters = region.count == 2 && region.unicodeScalars.allSatisfy { $0.value >= 97 && $0.value <= 122 }
             let isRegionDigits = region.count == 3 && region.unicodeScalars.allSatisfy { $0.value >= 48 && $0.value <= 57 }
-            if iso639LocaleCodes.contains(lang) && (isRegionLetters || isRegionDigits) {
+            if (iso639LocaleCodeSet.contains(lang) || regionLocalePrefixSet.contains(lang)) && (isRegionLetters || isRegionDigits) {
                 return segments.dropFirst()
             }
         }
@@ -572,8 +649,8 @@ public enum StreamingServiceCatalog {
 
         let authTokens: Set<String> = [
             "signin", "sign-in", "sign_in", "oauth", "oauth2",
-            "authorize", "servicelogin", "auth-redirect", "mfa",
-            "signout", "sign-out", "logout", "log-out"
+            "authorize", "servicelogin", "auth-redirect", "mfa", "cvf", "captcha",
+            "register", "reset-password", "signout", "sign-out", "logout", "log-out"
         ]
         if normSegments.contains(where: { authTokens.contains($0) }) {
             return true
@@ -584,8 +661,14 @@ public enum StreamingServiceCatalog {
             return true
         }
         if afterLocale.count >= 2,
-           ["web", "account", "accounts", "auth", "sso", "user"].contains(afterLocale[0]),
+           ["web", "account", "accounts", "auth", "sso", "user", "identity"].contains(afterLocale[0]),
            afterLocale[1] == "login" {
+            return true
+        }
+        if (host == "disneyplus.com" || host.hasSuffix(".disneyplus.com")) && afterLocale.first == "identity" {
+            return true
+        }
+        if (host == "hbomax.com" || host.hasSuffix(".hbomax.com") || host == "max.com" || host.hasSuffix(".max.com")) && afterLocale.first == "auth" {
             return true
         }
 
@@ -731,6 +814,32 @@ public enum StreamingServiceCatalog {
             return false
         }
 
+        if service.id == "max" {
+            let isMaxHost = host == "hbomax.com" || host.hasSuffix(".hbomax.com")
+                || host == "max.com" || host.hasSuffix(".max.com")
+            guard isMaxHost else { return false }
+            let afterLocale = Array(stripLeadingLocaleSegment(normSegments))
+            let first = afterLocale.first ?? ""
+            if host == "play.hbomax.com" || host == "play.max.com" {
+                let loggedOutRoutes: Set<String> = [
+                    "login", "auth", "subscribe", "plans", "pricing",
+                    "signup", "sign-up", "welcome", "activate", "redeem", "offers"
+                ]
+                return !loggedOutRoutes.contains(first)
+            }
+            let signedInRoots: Set<String> = [
+                "home", "profile", "profiles", "select-profile", "profile-select",
+                "player", "my-stuff", "my-list"
+            ]
+            if signedInRoots.contains(first) {
+                return true
+            }
+            if afterLocale.count >= 2 && afterLocale[0] == "video" && afterLocale[1] == "watch" {
+                return true
+            }
+            return false
+        }
+
         guard let rawHomeHost = service.homeURL.host else { return false }
         let normalizedHomeHost = normalizeDomain(rawHomeHost)
         let bareHomeHost = normalizedHomeHost.hasPrefix("www.") ? String(normalizedHomeHost.dropFirst(4)) : normalizedHomeHost
@@ -738,19 +847,21 @@ public enum StreamingServiceCatalog {
         guard hostMatchesHome else { return false }
 
         // Require authenticated-looking landing paths for services whose home URL also serves logged-out walls.
+        let afterLocale = Array(stripLeadingLocaleSegment(normSegments))
         switch service.id {
         case "netflix":
-            return path.hasPrefix("/browse") || path.hasPrefix("/profiles") || path.hasPrefix("/watch")
+            return ["browse", "profiles", "watch", "latest", "my-list"].contains(afterLocale.first ?? "")
         case "disneyplus":
-            return path.hasPrefix("/home") || path.hasPrefix("/select-profile") || path.hasPrefix("/browse")
+            return ["home", "select-profile", "browse", "play", "video"].contains(afterLocale.first ?? "")
         case "hulu":
-            return path.hasPrefix("/hub") || path.hasPrefix("/profiles") || path.hasPrefix("/watch")
+            return ["hub", "profile", "profiles", "watch", "my-stuff"].contains(afterLocale.first ?? "")
         case "peacock":
             return path.hasPrefix("/watch")
         case "paramount":
-            return path.hasPrefix("/home") || path.hasPrefix("/shows") || path.hasPrefix("/live-tv")
+            return path.hasPrefix("/home") || path.hasPrefix("/user-profile") || path.hasPrefix("/shows") || path.hasPrefix("/movies") || path.hasPrefix("/live-tv")
+        case "fubo":
+            return path.hasPrefix("/p/") || path.hasPrefix("/home") || path.hasPrefix("/guide") || path.hasPrefix("/sports") || path.hasPrefix("/movies") || path.hasPrefix("/shows")
         case "crunchyroll":
-            let afterLocale = Array(stripLeadingLocaleSegment(normSegments))
             let loggedOutRoutes: Set<String> = [
                 "login", "register", "reset-password", "welcome",
                 "freetrial", "premium", "offer", "try", "auth", "callback", "oauth"
@@ -760,7 +871,17 @@ public enum StreamingServiceCatalog {
             }
             return true
         case "yttv":
-            return host == "tv.youtube.com"
+            guard host == "tv.youtube.com" else { return false }
+            let loggedOutYTTV: Set<String> = [
+                "welcome", "start", "signup", "sign-up", "landing", "try", "promo", "offer", "offers"
+            ]
+            if let first = normSegments.first, loggedOutYTTV.contains(first) {
+                return false
+            }
+            if let query = url.query?.lowercased(), query.contains("rd_rsn=lo") {
+                return false
+            }
+            return true
         case "youtube":
             // Only mark YouTube signed-in when redirected back off Google Accounts (caller can also let user click Done).
             return host == "www.youtube.com" && !path.hasPrefix("/signin")

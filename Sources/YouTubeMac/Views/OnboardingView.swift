@@ -463,7 +463,7 @@ struct StreamingOnboardingView: View {
                     service: activeSignInService,
                     reloadToken: webReloadToken,
                     freshSignInToken: freshSignInToken,
-                    onURLChanged: { serviceID, newURL in
+                    onURLChanged: { serviceID, newURL, didObserveAuthStep in
                         guard serviceID == activeSignInService.id else { return }
                         currentSignInURL = newURL
                         signInCheckTask?.cancel()
@@ -472,7 +472,7 @@ struct StreamingOnboardingView: View {
                             _ = await controller.evaluateSignInCompletion(
                                 for: targetService,
                                 url: newURL,
-                                fromAuthFlow: true,
+                                fromAuthFlow: didObserveAuthStep,
                                 refreshIdleTabsOnNewSignIn: true
                             )
                         }

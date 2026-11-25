@@ -57,8 +57,13 @@ public enum URLRouteDecision: Equatable, Sendable {
 public enum YouTubeURLRouter {
     private static let inAppSchemes: Set<String> = ["about", "data", "blob", "javascript"]
     private static let blockedAppSchemes: Set<String> = [
+        "file",
         "glassgridyou", "youtubemac",
-        "aiv", "amzn", "amazon", "primevideo", "crunchyroll"
+        "aiv", "amzn", "amazon", "primevideo", "crunchyroll",
+        "disneyplus", "hulu", "hbomax", "max", "nflx", "netflix",
+        "peacock", "peacocktv", "pplus", "paramountplus", "cbs", "cbsaa",
+        "videos", "com.apple.tv", "appletv", "itmss", "itms",
+        "espn", "sportscenter", "twitch", "fubotv", "slingtv"
     ]
 
     /// Returns true for app-handoff and internal custom schemes that WebKit must never open inside or launch externally.
@@ -290,7 +295,7 @@ public enum YouTubeURLRouter {
         }
 
         if scheme != "http" && scheme != "https" {
-            return .openExternal(url)
+            return isUserLinkClick ? .openExternal(url) : .block
         }
 
         // Companion web tabs allow all HTTP/HTTPS navigations (same-site browsing & third-party OAuth/SSO) in-app.

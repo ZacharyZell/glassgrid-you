@@ -133,6 +133,15 @@ public final class BrowserTab: NSObject, Identifiable {
     private var subframeMediaStatus: MediaStatus?
 
     @ObservationIgnored
+    private var subframeCleanBoxSyncAttempts: Int = 0
+
+    @ObservationIgnored
+    private var lastSubframeCleanBoxSyncAt: Date = .distantPast
+
+    @ObservationIgnored
+    private var documentLoadedOnCompanionAuthPage: Bool = false
+
+    @ObservationIgnored
     var configProvider: () -> DistractionFreeConfig
 
     @ObservationIgnored
@@ -318,6 +327,7 @@ public final class BrowserTab: NSObject, Identifiable {
         videoDescriptionWasTruncated = false
         mainFrameMediaStatus = .empty
         clearSubframeMediaState()
+        documentLoadedOnCompanionAuthPage = false
         if !StreamingServiceCatalog.isTransientAuthURL(targetURL) {
             let nextServiceID = StreamingServiceCatalog.service(matchingURL: targetURL)?.id
             if nextServiceID != authFlowServiceID {
@@ -347,6 +357,7 @@ public final class BrowserTab: NSObject, Identifiable {
         pauseAllPlayback()
         mainFrameMediaStatus = .empty
         clearSubframeMediaState()
+        documentLoadedOnCompanionAuthPage = false
         mediaStatus = .empty
         chapters = []
         videoDescription = ""
@@ -716,6 +727,7 @@ public final class BrowserTab: NSObject, Identifiable {
         onDidFinishNavigation = nil
         authFlowServiceID = nil
         lastKnownServiceID = nil
+        documentLoadedOnCompanionAuthPage = false
     }
 
     private func installObservations() {
@@ -789,6 +801,11 @@ public final class BrowserTab: NSObject, Identifiable {
     private func clearSubframeMediaState() {
         activeMediaFrameInfo = nil
         subframeMediaStatus = nil
+        subframeCleanBoxSyncAttempts = 0
+        lastSubframeCleanBoxSyncAt = .distantPast
+        if !isTornDown && !isSleeping {
+            evaluate(EnhancementScript.clearSubframeMediaActiveScript)
+        }
         recomputeMergedMediaStatus()
         if !mainFrameMediaStatus.hasVideo {
             timeline.update(currentTime: 0, duration: 0)
@@ -850,14 +867,28 @@ public final class BrowserTab: NSObject, Identifiable {
                 }
                 url = webURL
                 onURLDidChange?(id, webURL)
-                if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
-                    updatedConfig.cleanBoxBypassed = false
-                    applyConfig(updatedConfig, force: true)
-                }
                 if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webURL) {
+                    if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
+                        updatedConfig.cleanBoxBypassed = false
+                        applyConfig(updatedConfig, force: true)
+                    }
                     evaluate(EnhancementScript.teardownCompanionCleanBoxScript)
-                } else if let host = webURL.host, !YouTubeURLRouter.isStandardYouTubeHost(host) {
-                    evaluate(EnhancementScript.notifyRouteChangedScript)
+                } else if isCompanionTab && documentLoadedOnCompanionAuthPage {
+                    documentLoadedOnCompanionAuthPage = false
+                    var cfg = configProvider()
+                    if didResetCleanBoxBypass {
+                        cfg.cleanBoxBypassed = false
+                    }
+                    lastAppliedConfig = cfg
+                    evaluate(EnhancementScript.bootstrapScript(config: cfg))
+                } else {
+                    if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
+                        updatedConfig.cleanBoxBypassed = false
+                        applyConfig(updatedConfig, force: true)
+                    }
+                    if let host = webURL.host, !YouTubeURLRouter.isStandardYouTubeHost(host) {
+                        evaluate(EnhancementScript.notifyRouteChangedScript)
+                    }
                 }
             }
         }
@@ -957,12 +988,14 @@ extension BrowserTab: WKNavigationDelegate {
         loadError = nil
         mainFrameMediaStatus = .empty
         clearSubframeMediaState()
+        documentLoadedOnCompanionAuthPage = false
     }
 
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView === self.webView else { return }
         loadError = nil
         clearSubframeMediaState()
+        documentLoadedOnCompanionAuthPage = isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webView.url ?? url)
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -1031,9 +1064,12 @@ extension BrowserTab: WKUIDelegate {
             return nil
         }
 
+        let lowerURLString = targetURL?.absoluteString.lowercased() ?? ""
         let isBlankOpen = targetURL == nil
-            || targetURL!.absoluteString.isEmpty
-            || targetURL!.absoluteString.lowercased() == "about:blank"
+            || lowerURLString.isEmpty
+            || lowerURLString == "about:blank"
+            || lowerURLString.hasPrefix("about:blank?")
+            || lowerURLString.hasPrefix("about:blank#")
         let currentURL = self.webView.url ?? self.url
         let isAuthOrServiceContext = StreamingServiceCatalog.isTransientAuthURL(currentURL)
             || StreamingServiceCatalog.service(matchingURL: currentURL) != nil
@@ -1201,7 +1237,18 @@ extension BrowserTab: WKScriptMessageHandler {
                 let duration = body["duration"] as? Double ?? 0
                 timeline.update(currentTime: currentTime, duration: duration)
             }
-            if !prevSubframeHasVideo {
+            let shouldSyncCleanBox = !isInFullscreen
+                && webView.fullscreenState == .notInFullscreen
+                && !isCleanBoxBypassed
+                && !mainFrameMediaStatus.isCleanBoxActive
+                && configProvider().cleanBoxStreamingPlayers
+                && subframeCleanBoxSyncAttempts < 3
+                && (!prevSubframeHasVideo
+                    || (!wasPlaying && mediaStatus.isPlaying)
+                    || Date().timeIntervalSince(lastSubframeCleanBoxSyncAt) >= 1.5)
+            if shouldSyncCleanBox {
+                subframeCleanBoxSyncAttempts += 1
+                lastSubframeCleanBoxSyncAt = Date()
                 evaluate(EnhancementScript.syncCompanionCleanBoxScript)
             }
             return

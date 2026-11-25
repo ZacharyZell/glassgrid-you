@@ -105,10 +105,15 @@ public enum CleanBoxRules {
             strategy: .companionIframe,
             hosts: ["crunchyroll.com"],
             playerSelectors: [
+                "#vilosRoot",
+                "[data-testid=\"vilos-root\"]",
                 "[data-testid=\"vilos-player\"]",
+                ".vilos-player",
+                "[data-testid=\"video-player\"]",
                 ".video-player-wrapper",
-                ".erc-watch-episode-player",
-                "[class*=\"video-player-wrapper\"]"
+                "[class*=\"video-player-wrapper\"]",
+                "[class*=\"video-player-container\"]",
+                ".erc-watch-episode-player"
             ],
             iframeSelectors: [
                 "iframe#player0",
@@ -116,6 +121,8 @@ public enum CleanBoxRules {
                 "iframe.video-player",
                 "[data-testid=\"vilos-player\"] iframe",
                 "iframe[src*=\"static.crunchyroll.com\"]",
+                "iframe[src*=\"crunchyrollsvc.com\"]",
+                "iframe[src*=\"vrv.co\"]",
                 "iframe[src*=\"vilos\"]"
             ],
             allowedIframeHostSuffixes: ["static.crunchyroll.com", "crunchyrollsvc.com", "vrv.co", "crunchyroll.com"]
@@ -252,6 +259,7 @@ public enum CleanBoxRules {
             playerSelectors: [
                 "disney-web-player",
                 "#hudson-wrapper",
+                "btm-media-client-element",
                 ".btm-media-client-element",
                 ".btm-media-player",
                 "[data-testid=\"web-player\"]",
@@ -276,7 +284,7 @@ public enum CleanBoxRules {
         CleanBoxServiceProfile(
             serviceID: "max",
             strategy: .companionSelector,
-            hosts: ["play.max.com", "max.com", "hbomax.com"],
+            hosts: ["play.hbomax.com", "hbomax.com", "play.max.com", "max.com"],
             playerSelectors: [
                 "[data-testid=\"player-ux-wrapper\"]",
                 "[data-testid=\"player-container\"]",
@@ -284,7 +292,7 @@ public enum CleanBoxRules {
                 "#layer-root-player",
                 ".player-container"
             ],
-            allowedIframeHostSuffixes: ["max.com", "hbomax.com", "wbd.com"]
+            allowedIframeHostSuffixes: ["hbomax.com", "max.com", "wbd.com"]
         ),
         CleanBoxServiceProfile(
             serviceID: "appletv",
@@ -292,6 +300,7 @@ public enum CleanBoxRules {
             hosts: ["tv.apple.com"],
             playerSelectors: [
                 "apple-tv-plus-player",
+                "amp-chrome-player",
                 "amp-video-player",
                 "[data-testid=\"player\"]"
             ],
@@ -303,6 +312,7 @@ public enum CleanBoxRules {
             hosts: ["netflix.com"],
             playerSelectors: [
                 "[data-uia=\"watch-video\"]",
+                "[data-uia=\"player\"]",
                 ".watch-video",
                 ".NFPlayer"
             ],
@@ -447,7 +457,7 @@ public enum CleanBoxRules {
             if normSegments.count >= 2 && normSegments[0] == "movies" && normSegments[1] == "video" {
                 return .watch
             }
-            if path.hasPrefix("/video/") || path.hasPrefix("/live-tv/") {
+            if path.hasPrefix("/video/") || normSegments.first == "live-tv" {
                 return .watch
             }
             return .browse
@@ -469,7 +479,8 @@ public enum CleanBoxRules {
             return .browse
 
         case "disneyplus":
-            if path.hasPrefix("/play/") || path.hasPrefix("/video/") {
+            let afterLocale = Array(StreamingServiceCatalog.stripLeadingLocaleSegment(normSegments))
+            if afterLocale.count >= 2 && (afterLocale[0] == "play" || afterLocale[0] == "video") {
                 return .watch
             }
             return .browse
@@ -481,13 +492,15 @@ public enum CleanBoxRules {
             return .browse
 
         case "max":
-            if path.hasPrefix("/video/watch") || path.hasPrefix("/player") {
+            let afterLocale = Array(StreamingServiceCatalog.stripLeadingLocaleSegment(normSegments))
+            if (afterLocale.count >= 2 && afterLocale[0] == "video" && afterLocale[1] == "watch") || afterLocale.first == "player" {
                 return .watch
             }
             return .browse
 
         case "netflix":
-            if path.hasPrefix("/watch/") {
+            let afterLocale = Array(StreamingServiceCatalog.stripLeadingLocaleSegment(normSegments))
+            if afterLocale.count >= 2 && afterLocale[0] == "watch" {
                 return .watch
             }
             return .browse

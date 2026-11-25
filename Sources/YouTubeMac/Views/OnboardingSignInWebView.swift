@@ -11,7 +11,7 @@ struct OnboardingSignInWebView: NSViewRepresentable {
     let service: StreamingService
     let reloadToken: Int
     let freshSignInToken: Int
-    let onURLChanged: (String, URL?) -> Void
+    let onURLChanged: (String, URL?, Bool) -> Void
     let onLoadingChanged: (String, Bool) -> Void
     let onError: (String, String?) -> Void
 
@@ -64,7 +64,7 @@ struct OnboardingSignInWebView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private static let maxPopups = 3
 
-        var onURLChanged: (String, URL?) -> Void
+        var onURLChanged: (String, URL?, Bool) -> Void
         var onLoadingChanged: (String, Bool) -> Void
         var onError: (String, String?) -> Void
 
@@ -72,13 +72,17 @@ struct OnboardingSignInWebView: NSViewRepresentable {
         private var lastReloadToken: Int = -1
         private var lastFreshSignInToken: Int = -1
         private var lastMainFrameHTTPStatusCode: Int?
+        private var didObserveAuthStep: Bool = false
+        private var loadGeneration: Int = 0
+        private var lastReportedURL: URL?
+        private var urlObservation: NSKeyValueObservation?
         private weak var primaryWebView: WKWebView?
         private var popupWindows: [ObjectIdentifier: NSWindow] = [:]
         private var popupWebViews: [ObjectIdentifier: WKWebView] = [:]
         private var popupObservers: [ObjectIdentifier: any NSObjectProtocol] = [:]
 
         init(
-            onURLChanged: @escaping (String, URL?) -> Void,
+            onURLChanged: @escaping (String, URL?, Bool) -> Void,
             onLoadingChanged: @escaping (String, Bool) -> Void,
             onError: @escaping (String, String?) -> Void
         ) {
@@ -89,25 +93,46 @@ struct OnboardingSignInWebView: NSViewRepresentable {
 
         func bind(webView: WKWebView) {
             primaryWebView = webView
+            installURLObservation(on: webView, generation: loadGeneration)
+        }
+
+        private func installURLObservation(on webView: WKWebView, generation: Int) {
+            urlObservation?.invalidate()
+            urlObservation = webView.observe(\.url, options: [.new]) { [weak self, weak webView] _, _ in
+                Task { @MainActor [weak self, weak webView] in
+                    guard let self, let webView,
+                          webView === self.primaryWebView,
+                          self.loadGeneration == generation else { return }
+                    self.reportURLChange(webView.url, forceReport: false)
+                }
+            }
         }
 
         func load(service: StreamingService, reloadToken: Int, freshSignInToken: Int, in webView: WKWebView) {
             if loadedServiceID != service.id || lastFreshSignInToken != freshSignInToken {
                 closeAllPopups()
+                loadGeneration += 1
+                installURLObservation(on: webView, generation: loadGeneration)
                 loadedServiceID = service.id
                 lastReloadToken = reloadToken
                 lastFreshSignInToken = freshSignInToken
                 lastMainFrameHTTPStatusCode = nil
+                didObserveAuthStep = StreamingServiceCatalog.isTransientAuthURL(service.signInURL)
+                lastReportedURL = nil
                 onError(service.id, nil)
                 onLoadingChanged(service.id, true)
                 webView.load(URLRequest(url: service.signInURL))
             } else if lastReloadToken != reloadToken {
                 lastReloadToken = reloadToken
+                loadGeneration += 1
+                installURLObservation(on: webView, generation: loadGeneration)
+                lastReportedURL = nil
                 onLoadingChanged(service.id, true)
                 if webView.url != nil && (lastMainFrameHTTPStatusCode ?? 200) < 400 {
                     webView.reload()
                 } else {
                     lastMainFrameHTTPStatusCode = nil
+                    didObserveAuthStep = StreamingServiceCatalog.isTransientAuthURL(service.signInURL)
                     onError(service.id, nil)
                     webView.load(URLRequest(url: service.signInURL))
                 }
@@ -115,11 +140,28 @@ struct OnboardingSignInWebView: NSViewRepresentable {
         }
 
         func teardown(webView: WKWebView) {
+            urlObservation?.invalidate()
+            urlObservation = nil
             closeAllPopups()
             webView.stopLoading()
             webView.navigationDelegate = nil
             webView.uiDelegate = nil
             primaryWebView = nil
+        }
+
+        private func reportURLChange(_ url: URL?, forceReport: Bool) {
+            guard let serviceID = loadedServiceID else { return }
+            if let url, url.scheme?.lowercased() == "about" {
+                return
+            }
+            if !forceReport && url == lastReportedURL {
+                return
+            }
+            lastReportedURL = url
+            if let url, StreamingServiceCatalog.isTransientAuthURL(url) {
+                didObserveAuthStep = true
+            }
+            onURLChanged(serviceID, url, didObserveAuthStep)
         }
 
         private func closeAllPopups() {
@@ -198,14 +240,14 @@ struct OnboardingSignInWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-            guard webView === primaryWebView, let serviceID = loadedServiceID else { return }
-            onURLChanged(serviceID, webView.url)
+            guard webView === primaryWebView else { return }
+            reportURLChange(webView.url, forceReport: false)
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard webView === primaryWebView, let serviceID = loadedServiceID else { return }
             onLoadingChanged(serviceID, false)
-            onURLChanged(serviceID, webView.url)
+            reportURLChange(webView.url, forceReport: true)
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
@@ -255,12 +297,16 @@ struct OnboardingSignInWebView: NSViewRepresentable {
                 return nil
             }
             if let url = navigationAction.request.url, let scheme = url.scheme, !scheme.isEmpty {
-                let lower = scheme.lowercased()
-                let isBlank = url.absoluteString.lowercased() == "about:blank"
-                guard lower == "http" || lower == "https" || isBlank else {
+                let lowerScheme = scheme.lowercased()
+                let lowerRaw = url.absoluteString.lowercased()
+                let isBlank = lowerRaw == "about:blank"
+                    || lowerRaw.hasPrefix("about:blank?")
+                    || lowerRaw.hasPrefix("about:blank#")
+                guard lowerScheme == "http" || lowerScheme == "https" || isBlank else {
                     return nil
                 }
             }
+            didObserveAuthStep = true
 
             let popupSize = NSSize(width: 520, height: 680)
             let childWebView = WKWebView(frame: NSRect(origin: .zero, size: popupSize), configuration: configuration)
