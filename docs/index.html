@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 18 Streaming Services</title>
   <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, Twitch, Crunchyroll, live sports, and 18 streaming services—plus Floating Multiview Grid, Clean-Box players, opt-in Live Pulse sports &amp; fantasy tracking, local MCP/CLI AI control, Siri App Intents, and zero Electron.">
   <meta name="theme-color" content="#0A0A0B">
@@ -26,7 +26,8 @@
 
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body id="top">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="nav-wrap">
     <nav class="navbar" aria-label="Primary navigation">
       <a class="nav-brand" href="#top">
@@ -45,13 +46,32 @@
       </div>
 
       <div class="nav-actions">
-        <a class="nav-mobile-changelog" href="changelog.html">Releases</a>
-        <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+        <a class="btn btn-primary btn-sm nav-cta" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer" aria-label="Download GlassGrid You for macOS — $12">
+          <span class="nav-cta-long">Download — $12</span>
+          <span class="nav-cta-short" aria-hidden="true">Get · $12</span>
+        </a>
+        <details class="nav-menu">
+          <summary class="nav-menu-toggle" aria-label="Navigation menu">
+            <span class="nav-menu-icon" aria-hidden="true">
+              <span></span>
+              <span></span>
+            </span>
+          </summary>
+          <div class="nav-menu-panel">
+            <a href="#multiview">Multiview</a>
+            <a href="#live-pulse">Live Pulse</a>
+            <a href="#automation">AI &amp; MCP</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#faq">FAQ</a>
+            <a href="changelog.html">Release Log</a>
+            <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
+          </div>
+        </details>
       </div>
     </nav>
   </header>
 
-  <main id="top">
+  <main id="main-content" tabindex="-1">
     <section class="hero">
       <div class="container">
         <img class="hero-icon" src="assets/app-icon.png" alt="GlassGrid You macOS App Icon" width="76" height="76" decoding="async">
@@ -110,7 +130,7 @@
               <ul class="feature-bullets">
                 <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>):</strong> Expand any tile full-window while keeping the other 3 streams live in the background; press <kbd>Esc</kbd> to snap back instantaneously with your split ratios intact.</li>
                 <li><strong>Live Stream Sync Micro-Nudge:</strong> Fine-tune broadcast delay per tile with <strong>−5s</strong>, <strong>−1s</strong>, <strong>+1s</strong>, <strong>+5s</strong>, or <strong>Jump to Live</strong> so games and watchalongs stay aligned.</li>
-                <li><strong>Reactive Live Pulse Companion (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>):</strong> Pair Multiview with opt-in live NFL/NBA/MLB/NHL scores, fantasy tracking, and read-only odds in <a href="#live-pulse" style="text-decoration:underline;text-underline-offset:3px;">Live Pulse</a> below.</li>
+                <li><strong>Reactive Live Pulse Companion (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>):</strong> Pair Multiview with opt-in live NFL/NBA/MLB/NHL scores, fantasy tracking, and read-only odds in <a href="#live-pulse">Live Pulse</a> below.</li>
                 <li><strong>120Hz Draggable Dividers &amp; Audio Focus:</strong> Drag any split line smoothly (double-click to reset), press <kbd>⌘⌥1–4</kbd> for exclusive audio, or enable 15% background ducking.</li>
                 <li><strong>Saved Multiview Presets:</strong> Relaunch your favorite Sunday Quad or news wall with custom split ratios in one click.</li>
               </ul>

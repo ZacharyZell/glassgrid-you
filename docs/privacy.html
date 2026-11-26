@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Privacy Policy — GlassGrid You</title>
   <meta name="description" content="GlassGrid You privacy policy: zero telemetry, zero trackers, local macOS WebKit storage and strictly opt-in local AI Agent / MCP IPC only.">
   <meta name="theme-color" content="#0A0A0B">
@@ -11,7 +11,8 @@
   <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body id="top">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="nav-wrap">
     <nav class="navbar" aria-label="Primary navigation">
       <a class="nav-brand" href="./">
@@ -30,13 +31,32 @@
       </div>
 
       <div class="nav-actions">
-        <a class="nav-mobile-changelog" href="changelog.html">Releases</a>
-        <a class="btn btn-primary btn-sm" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download — $12</a>
+        <a class="btn btn-primary btn-sm nav-cta" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer" aria-label="Download GlassGrid You for macOS — $12">
+          <span class="nav-cta-long">Download — $12</span>
+          <span class="nav-cta-short" aria-hidden="true">Get · $12</span>
+        </a>
+        <details class="nav-menu">
+          <summary class="nav-menu-toggle" aria-label="Navigation menu">
+            <span class="nav-menu-icon" aria-hidden="true">
+              <span></span>
+              <span></span>
+            </span>
+          </summary>
+          <div class="nav-menu-panel">
+            <a href="./#multiview">Multiview</a>
+            <a href="./#live-pulse">Live Pulse</a>
+            <a href="./#automation">AI &amp; MCP</a>
+            <a href="./#pricing">Pricing</a>
+            <a href="./#faq">FAQ</a>
+            <a href="changelog.html">Release Log</a>
+            <a href="https://github.com/ZacharyZell/glassgrid-you" target="_blank" rel="noopener noreferrer">GitHub</a>
+          </div>
+        </details>
       </div>
     </nav>
   </header>
 
-  <main class="legal-main">
+  <main id="main-content" class="legal-main" tabindex="-1">
     <div class="container">
       <article class="legal-card">
         <a class="legal-back" href="./">&larr; Back to GlassGrid You</a>
