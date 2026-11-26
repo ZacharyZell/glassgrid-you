@@ -14,8 +14,8 @@ private struct YouTubeURLDropTargetModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(AppleTheme.accent.opacity(isTargeted ? 0.75 : 0), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+                    .strokeBorder(AppleTheme.accentText.opacity(isTargeted ? 0.75 : 0), lineWidth: 1.5)
                     .allowsHitTesting(false)
             )
             .onDrop(of: [UTType.url, UTType.plainText], isTargeted: $isTargeted) { providers in

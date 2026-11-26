@@ -39,10 +39,10 @@ struct CommandPaletteView: View {
                 footerHints
             }
             .frame(maxWidth: 580)
-            .appleGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .appleGlass(in: RoundedRectangle(cornerRadius: AppRadius.sheet, style: .continuous))
             .shadow(color: .black.opacity(0.26), radius: 28, y: 12)
             .padding(.top, 54)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, AppSpacing.xxl)
         }
         .onAppear {
             selectedIndex = 0
@@ -67,14 +67,14 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private var searchHeader: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: AppSpacing.md) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(AppleTheme.accent)
+                .font(AppIconFont.nav(weight: .semibold))
+                .foregroundStyle(AppleTheme.accentText)
 
             TextField("Search YouTube, open tabs, presets, or actions…", text: $controller.commandPaletteQuery)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15, weight: .regular))
+                .font(AppFont.body)
                 .focused($isSearchFocused)
                 .onKeyPress(.upArrow) {
                     moveSelection(by: -1)
@@ -97,24 +97,26 @@ struct CommandPaletteView: View {
                     selectedIndex = 0
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+                        .font(AppIconFont.nav())
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .help("Clear Search")
             }
 
             Text("ESC")
-                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2.5)
+                .font(AppFont.micro(weight: .semibold))
+                .foregroundStyle(AppleTheme.textSecondary)
+                .padding(.horizontal, AppSpacing.sm)
+                .padding(.vertical, AppSpacing.xxs)
                 .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous)
                         .fill(Color.primary.opacity(0.08))
                 )
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, AppSpacing.xl)
         .frame(height: 48)
     }
 
@@ -122,28 +124,28 @@ struct CommandPaletteView: View {
     private var resultsList: some View {
         let currentItems = items
         if currentItems.isEmpty {
-            VStack(spacing: 6) {
+            VStack(spacing: AppSpacing.sm) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.secondary.opacity(0.6))
+                    .font(AppIconFont.xl)
+                    .foregroundStyle(AppleTheme.textMuted)
                 Text("Type to search YouTube, jump to a tab, or run an action")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.callout)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 120)
         } else {
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         ForEach(Array(currentItems.enumerated()), id: \.element.id) { index, item in
                             if index == 0 || currentItems[index - 1].section != item.section {
                                 Text(item.section.title)
-                                    .font(.system(size: 10.5, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 12)
-                                    .padding(.top, index == 0 ? 6 : 10)
-                                    .padding(.bottom, 3)
+                                    .font(AppFont.caption(weight: .semibold))
+                                    .foregroundStyle(AppleTheme.textSecondary)
+                                    .padding(.horizontal, AppSpacing.lg)
+                                    .padding(.top, index == 0 ? AppSpacing.sm : AppSpacing.md)
+                                    .padding(.bottom, AppSpacing.xxs)
                             }
 
                             paletteRow(item: item, isSelected: index == selectedIndex)
@@ -159,8 +161,8 @@ struct CommandPaletteView: View {
                                 }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.bottom, AppSpacing.md)
                 }
                 .frame(maxHeight: 360)
                 .onChange(of: selectedIndex) { _, newIdx in
@@ -177,92 +179,92 @@ struct CommandPaletteView: View {
     @ViewBuilder
     private func paletteRow(item: CommandPaletteItem, isSelected: Bool) -> some View {
         let isHovered = hoveredItemID == item.id
-        HStack(spacing: 10) {
+        HStack(spacing: AppSpacing.md) {
             Image(systemName: item.systemImage)
-                .font(.system(size: 13, weight: .semibold))
+                .font(AppIconFont.toolbar(weight: .semibold))
                 .foregroundStyle(
                     item.isActiveAudio || isSelected
-                        ? AppleTheme.accent
-                        : Color.secondary
+                        ? AppleTheme.accentText
+                        : AppleTheme.textSecondary
                 )
                 .frame(width: 22, alignment: .center)
 
-            VStack(alignment: .leading, spacing: 1.5) {
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                 Text(item.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .font(AppFont.body(weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 if let subtitle = item.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: AppSpacing.md)
 
             if let badge = item.badgeText {
                 Text(badge)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(item.isActiveAudio ? .white : .secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .font(AppFont.micro(weight: .semibold, tabular: true))
+                    .foregroundStyle(item.isActiveAudio ? .white : AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .padding(.vertical, AppSpacing.xxs)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(item.isActiveAudio ? AppleTheme.accent : Color.primary.opacity(0.09))
+                            .fill(item.isActiveAudio ? AppleTheme.accentFill : Color.primary.opacity(0.09))
                     )
             }
 
             if let shortcut = item.shortcutHint {
                 Text(shortcut)
-                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6.5)
-                    .padding(.vertical, 2)
+                    .font(AppFont.micro(weight: .medium))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .padding(.vertical, AppSpacing.xxs)
                     .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous)
                             .fill(Color.primary.opacity(isSelected ? 0.12 : 0.07))
                     )
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
                 .fill(
                     isSelected
-                        ? AppleTheme.accent.opacity(0.14)
+                        ? AppleTheme.accentText.opacity(0.14)
                         : (isHovered ? Color.primary.opacity(0.06) : .clear)
                 )
         )
-        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
     }
 
     @ViewBuilder
     private var footerHints: some View {
-        HStack(spacing: 14) {
-            HStack(spacing: 4) {
+        HStack(spacing: AppSpacing.lg) {
+            HStack(spacing: AppSpacing.xs) {
                 Text("↑↓")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(AppFont.micro(weight: .semibold))
                 Text("Navigate")
-                    .font(.system(size: 10.5))
+                    .font(AppFont.caption)
             }
-            HStack(spacing: 4) {
+            HStack(spacing: AppSpacing.xs) {
                 Text("↩")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(AppFont.micro(weight: .semibold))
                 Text("Open / Run")
-                    .font(.system(size: 10.5))
+                    .font(AppFont.caption)
             }
             Spacer()
             Text("⌘L to edit URL directly")
-                .font(.system(size: 10.5))
+                .font(AppFont.caption)
         }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 14)
+        .foregroundStyle(AppleTheme.textSecondary)
+        .padding(.horizontal, AppSpacing.lg)
         .frame(height: 30)
     }
 

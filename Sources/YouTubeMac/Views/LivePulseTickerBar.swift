@@ -391,26 +391,26 @@ struct LivePulseTickerBar: View {
                     .frame(width: 6, height: 6)
 
                 Text(pinnedSummaryText)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(AppFont.caption(weight: .semibold, tabular: true))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 if hasManualPinOnActiveTab {
                     Image(systemName: "pin.fill")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(AppleTheme.accent)
+                        .font(AppIconFont.xs(weight: .bold))
+                        .foregroundStyle(AppleTheme.accentText)
                 }
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
             .padding(.horizontal, 9)
             .frame(height: 24)
             .appleGlass(
                 in: Capsule(style: .continuous),
-                tint: hasManualPinOnActiveTab ? AppleTheme.accent.opacity(0.14) : nil,
+                tint: hasManualPinOnActiveTab ? AppleTheme.accentText.opacity(0.14) : nil,
                 interactive: true
             )
             .contentShape(Capsule(style: .continuous))
@@ -431,25 +431,26 @@ struct LivePulseTickerBar: View {
             controller.toggleLivePulseStreamFocus()
         } label: {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
+                HStack(spacing: AppSpacing.xs) {
                     Image(systemName: "scope")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(AppIconFont.xs(weight: .semibold))
                     Text("Focus")
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(AppFont.caption(weight: .semibold))
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, AppSpacing.md)
+                .frame(minHeight: 24)
                 .fixedSize()
 
                 Image(systemName: "scope")
-                    .font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 7)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .frame(width: 24, height: 24)
                     .fixedSize()
             }
-            .foregroundStyle(isFocused ? AppleTheme.accent : Color.primary.opacity(0.82))
+            .foregroundStyle(isFocused ? AppleTheme.accentText : Color.primary.opacity(0.82))
             .frame(height: 24)
             .appleGlass(
                 in: Capsule(style: .continuous),
-                tint: isFocused ? AppleTheme.accent.opacity(0.18) : nil,
+                tint: isFocused ? AppleTheme.accentText.opacity(0.18) : nil,
                 interactive: true
             )
             .contentShape(Capsule(style: .continuous))
@@ -461,34 +462,36 @@ struct LivePulseTickerBar: View {
 
     private var statusDotColor: Color {
         if !controller.settings.livePulseEnabled || isFrozen {
-            return Color.secondary.opacity(0.5)
+            return AppleTheme.textMuted
         }
         if store.isTickerPaused {
-            return Color.orange
+            return AppleTheme.warning
         }
-        return AppleTheme.accent
+        return AppleTheme.accentFill
     }
 
     @ViewBuilder
     private var spoilerDelayPill: some View {
-        let isDelayActive = controller.settings.livePulseSpoilerDelay != .off
+        @Bindable var settings = controller.settings
+        let isDelayActive = settings.livePulseSpoilerDelay != .off
 
         Button {
             isSpoilerPopoverPresented.toggle()
         } label: {
-            HStack(spacing: 3.5) {
+            HStack(spacing: AppSpacing.xs) {
                 Image(systemName: "clock.badge.checkmark")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(isDelayActive ? AppleTheme.accent : Color.secondary)
-                Text(controller.settings.livePulseSpoilerDelay.shortLabel)
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(isDelayActive ? AppleTheme.accent : Color.primary.opacity(0.86))
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(isDelayActive ? AppleTheme.accentText : AppleTheme.textSecondary)
+                Text(settings.livePulseSpoilerDelay.shortLabel)
+                    .font(AppFont.caption(weight: .semibold, tabular: true))
+                    .foregroundStyle(isDelayActive ? AppleTheme.accentText : Color.primary.opacity(0.86))
             }
-            .padding(.horizontal, 7)
+            .padding(.horizontal, AppSpacing.sm)
             .frame(height: 24)
+            .frame(minWidth: 24)
             .appleGlass(
                 in: Capsule(style: .continuous),
-                tint: isDelayActive ? AppleTheme.accent.opacity(0.12) : nil,
+                tint: isDelayActive ? AppleTheme.accentText.opacity(0.12) : nil,
                 interactive: true
             )
             .contentShape(Capsule(style: .continuous))
@@ -498,42 +501,10 @@ struct LivePulseTickerBar: View {
         .disabled(isFrozen)
         .help("Spoiler Delay Buffer — Delay live scores & plays to match your stream")
         .popover(isPresented: $isSpoilerPopoverPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Spoiler Delay Buffer")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-
-                ForEach(SpoilerDelayOption.allCases) { option in
-                    let isSelected = controller.settings.livePulseSpoilerDelay == option
-                    Button {
-                        controller.settings.livePulseSpoilerDelay = option
-                        isSpoilerPopoverPresented = false
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isSelected ? "checkmark" : "clock")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(isSelected ? AppleTheme.accent : .secondary)
-                                .frame(width: 14)
-                            Text(option.displayName)
-                                .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
-                                .foregroundStyle(.primary)
-                            Spacer(minLength: 8)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(isSelected ? AppleTheme.accent.opacity(0.12) : .clear)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(6)
-            .frame(width: 170)
+            SpoilerDelayPopover(
+                selectedDelay: $settings.livePulseSpoilerDelay,
+                isPresented: $isSpoilerPopoverPresented
+            )
         }
     }
 
@@ -543,17 +514,18 @@ struct LivePulseTickerBar: View {
     private var centerReactiveRail: some View {
         if needsInitialSetup {
             SettingsLink {
-                HStack(spacing: 6) {
+                HStack(spacing: AppSpacing.sm) {
                     Image(systemName: "sportscourt")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(AppleTheme.accent)
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
                     Text("Configure Live Pulse")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(AppFont.caption(weight: .medium))
                         .foregroundStyle(.primary.opacity(0.88))
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 24)
                 .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                .contentShape(Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(isFrozen)
@@ -564,40 +536,40 @@ struct LivePulseTickerBar: View {
                 HStack(spacing: 5) {
                     if item.isBench {
                         Text(item.badge)
-                            .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.micro(weight: .bold, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
                             .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
+                            .padding(.vertical, AppSpacing.xxs)
                             .overlay(
                                 Capsule(style: .continuous)
-                                    .strokeBorder(Color.secondary.opacity(0.35), lineWidth: 0.75)
+                                    .strokeBorder(AppleTheme.textSecondary.opacity(0.35), lineWidth: 0.75)
                             )
                             .fixedSize()
                             .layoutPriority(1)
                     } else {
                         Text(item.badge)
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
-                            .foregroundStyle(item.badge == "RZ" ? .white : AppleTheme.accent)
+                            .font(AppFont.micro(weight: .bold, tabular: true))
+                            .foregroundStyle(item.badge == "RZ" ? Color.white : AppleTheme.accentText)
                             .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
+                            .padding(.vertical, AppSpacing.xxs)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(item.badge == "RZ" ? AppleTheme.accent : AppleTheme.accent.opacity(0.14))
+                                    .fill(item.badge == "RZ" ? AppleTheme.accentFill : AppleTheme.accentText.opacity(0.14))
                             )
                             .fixedSize()
                             .layoutPriority(1)
                     }
 
                     Text(item.text)
-                        .font(.system(size: 11, weight: item.isBench ? .medium : .semibold, design: .rounded).monospacedDigit())
+                        .font(AppFont.caption(weight: item.isBench ? .medium : .semibold, tabular: true))
                         .foregroundStyle(tickerTextColor(for: item.isPositive, isBench: item.isBench))
                         .lineLimit(1)
                         .layoutPriority(0.8)
 
                     if let detail = item.detail, !detail.isEmpty {
                         Text("· \(detail)")
-                            .font(.system(size: 10.5, weight: .regular))
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption(tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .layoutPriority(-1)
@@ -605,8 +577,8 @@ struct LivePulseTickerBar: View {
 
                     if railItems.count > 1 {
                         Text("\((currentPageIndex % railItems.count) + 1)/\(railItems.count)")
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .font(AppFont.micro(weight: .medium, tabular: true))
+                            .foregroundStyle(AppleTheme.textMuted)
                             .fixedSize()
                             .layoutPriority(1)
                     }
@@ -616,7 +588,7 @@ struct LivePulseTickerBar: View {
                     insertion: .opacity.combined(with: .move(edge: .bottom)),
                     removal: .opacity.combined(with: .move(edge: .top))
                 ))
-                .padding(.horizontal, 8)
+                .padding(.horizontal, AppSpacing.md)
                 .frame(height: 24)
                 .frame(minWidth: 180, maxWidth: 480)
                 .appleGlass(in: Capsule(style: .continuous), interactive: true)
@@ -627,30 +599,40 @@ struct LivePulseTickerBar: View {
             .onHover { isRailHovered = $0 }
             .help("Click to open \(item.targetTab.title) in Live Companion Drawer")
         } else if controller.settings.livePulseStreamFocusOnly {
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.xs) {
                 Text("No matched stream")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
 
-                Button("Pin") {
+                Button {
                     isPinPopoverPresented = true
+                } label: {
+                    Text("Pin")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
+                        .padding(.horizontal, AppSpacing.xs)
+                        .frame(minWidth: 24, minHeight: 24)
+                        .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppleTheme.accent)
                 .disabled(isFrozen)
 
                 Text("·")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textMuted)
 
-                Button("Show All") {
+                Button {
                     controller.toggleLivePulseStreamFocus()
+                } label: {
+                    Text("Show All")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
+                        .padding(.horizontal, AppSpacing.xs)
+                        .frame(minWidth: 24, minHeight: 24)
+                        .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppleTheme.accent)
                 .disabled(isFrozen)
             }
             .padding(.horizontal, 9)
@@ -658,17 +640,20 @@ struct LivePulseTickerBar: View {
             .frame(minWidth: 180)
             .appleGlass(in: Capsule(style: .continuous))
         } else {
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.sm) {
                 Text(store.isRefreshing ? "Syncing live sports…" : "Live Pulse Ready — No active games")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
 
                 if controller.settings.livePulseFantasyLeagues.isEmpty {
                     SettingsLink {
                         Text("Setup")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(AppleTheme.accent)
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.accentText)
+                            .padding(.horizontal, AppSpacing.xs)
+                            .frame(minWidth: 24, minHeight: 24)
+                            .contentShape(Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(isFrozen)
@@ -683,18 +668,18 @@ struct LivePulseTickerBar: View {
 
     private func tickerTextColor(for isPositive: Bool?, isBench: Bool) -> Color {
         if isBench {
-            guard let isPositive else { return .secondary }
-            return isPositive ? .green.opacity(0.75) : AppleTheme.accent.opacity(0.8)
+            guard let isPositive else { return AppleTheme.textSecondary }
+            return isPositive ? AppleTheme.positive : AppleTheme.accentText
         }
         guard let isPositive else { return .primary }
-        return isPositive ? .green : AppleTheme.accent
+        return isPositive ? AppleTheme.positive : AppleTheme.accentText
     }
 
     // MARK: - Trailing Controls Pill
 
     @ViewBuilder
     private var trailingControlPill: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: AppSpacing.xxs) {
             FreshnessLabelView(
                 lastUpdatedAt: snapshot.lastUpdatedAt,
                 hasLiveGames: hasLiveGames,
@@ -710,7 +695,8 @@ struct LivePulseTickerBar: View {
                 providerStatus: snapshot.providerStatus,
                 isEnabled: controller.settings.livePulseEnabled,
                 isFrozen: isFrozen,
-                iconSize: 10
+                iconFont: AppIconFont.xs(weight: .semibold),
+                checkmarkFont: AppIconFont.xs(weight: .bold)
             ) {
                 store.refreshNow()
             }
@@ -719,9 +705,9 @@ struct LivePulseTickerBar: View {
                 store.toggleTickerPaused()
             } label: {
                 Image(systemName: store.isTickerPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(store.isTickerPaused ? AppleTheme.accent : Color.primary.opacity(0.8))
-                    .frame(width: 22, height: 22)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(store.isTickerPaused ? AppleTheme.accentText : Color.primary.opacity(0.82))
+                    .frame(width: 24, height: 24)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -732,9 +718,9 @@ struct LivePulseTickerBar: View {
                 controller.toggleLivePulseDrawer()
             } label: {
                 Image(systemName: controller.isLivePulseDrawerVisible ? "sidebar.right" : "rectangle.trailinghalf.inset.filled")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(controller.isLivePulseDrawerVisible ? AppleTheme.accent : Color.primary.opacity(0.82))
-                    .frame(width: 22, height: 22)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(controller.isLivePulseDrawerVisible ? AppleTheme.accentText : Color.primary.opacity(0.82))
+                    .frame(width: 24, height: 24)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -745,16 +731,16 @@ struct LivePulseTickerBar: View {
                 controller.toggleLivePulseTicker()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
+                    .font(AppIconFont.xs(weight: .bold))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .frame(width: 24, height: 24)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(isFrozen)
             .help("Hide Live Pulse Ticker (⌘⌥B)")
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, AppSpacing.xs)
         .frame(height: 24)
         .fixedSize()
         .appleGlass(in: Capsule(style: .continuous), interactive: true)
@@ -785,11 +771,11 @@ struct LivePulseTickerBar: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Pin Stream Context")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(AppFont.callout(weight: .semibold))
                 Spacer()
                 Toggle("Lock Pin", isOn: $lockPinAcrossNavigations)
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 11))
+                    .font(AppFont.caption)
                     .help("Keep pin locked across channel/URL changes in this tab")
             }
 
@@ -806,7 +792,7 @@ struct LivePulseTickerBar: View {
             )
             .toggleStyle(.switch)
             .controlSize(.small)
-            .font(.system(size: 11, weight: .medium))
+            .font(AppFont.caption(weight: .medium))
 
             Divider()
 
@@ -818,29 +804,31 @@ struct LivePulseTickerBar: View {
                         }
                         isPinPopoverPresented = false
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: AppSpacing.sm) {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(AppleTheme.accent)
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .frame(width: 16)
                             Text("Auto-Detect from Stream")
-                                .font(.system(size: 11.5, weight: .medium))
+                                .font(AppFont.callout(weight: .medium))
                             Spacer()
                             if !hasManualPinOnActiveTab {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(AppleTheme.accent)
+                                    .font(AppIconFont.xs(weight: .bold))
+                                    .foregroundStyle(AppleTheme.accentText)
                             }
                         }
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, AppSpacing.md)
                         .padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
 
                     if !myFantasyGames.isEmpty {
                         Text("My Fantasy Games")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
                         ForEach(myFantasyGames) { game in
                             pinGameRow(game)
                         }
@@ -849,8 +837,8 @@ struct LivePulseTickerBar: View {
                     ForEach(controller.settings.livePulseLeaguePriority) { league in
                         if let leagueGames = groupedByLeague[league], !leagueGames.isEmpty {
                             Text("Live \(league.displayName)")
-                                .font(.system(size: 10.5, weight: .semibold))
-                                .foregroundStyle(.secondary)
+                                .font(AppFont.caption(weight: .semibold))
+                                .foregroundStyle(AppleTheme.textSecondary)
                             ForEach(leagueGames.prefix(8)) { game in
                                 pinGameRow(game)
                             }
@@ -858,25 +846,27 @@ struct LivePulseTickerBar: View {
                     }
 
                     Text("Live Whip-Around Slates")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
 
                     ForEach(controller.settings.livePulseLeaguePriority) { league in
                         let slateLabel = liveSlateTitle(for: league)
                         Button {
                             pinSlate(league: league, label: slateLabel)
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: AppSpacing.sm) {
                                 Image(systemName: league.symbolName)
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(AppleTheme.accent)
+                                    .font(AppIconFont.sm)
+                                    .foregroundStyle(AppleTheme.accentText)
+                                    .frame(width: 16)
                                 Text(slateLabel)
-                                    .font(.system(size: 11.5))
+                                    .font(AppFont.callout)
                                 Spacer()
                             }
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, AppSpacing.md)
                             .padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
@@ -884,7 +874,7 @@ struct LivePulseTickerBar: View {
             }
             .frame(maxHeight: 280)
         }
-        .padding(12)
+        .padding(AppSpacing.lg)
         .frame(width: 286)
     }
 
@@ -902,29 +892,30 @@ struct LivePulseTickerBar: View {
         Button {
             pinGame(game)
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.sm) {
                 Text(game.league.displayName)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26, alignment: .leading)
+                    .font(AppFont.micro(weight: .bold))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .frame(width: 28, alignment: .leading)
                 Text("\(game.away.abbreviation) \(game.away.score) – \(game.home.score) \(game.home.abbreviation)")
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded).monospacedDigit())
+                    .font(AppFont.callout(weight: .medium, tabular: true))
                 Spacer()
                 Text(game.clock ?? game.statusDetail)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(tabular: true))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
                 if isPinned {
                     Image(systemName: "pin.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(AppleTheme.accent)
+                        .font(AppIconFont.xs)
+                        .foregroundStyle(AppleTheme.accentText)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, AppSpacing.md)
             .padding(.vertical, 5)
+            .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isPinned ? AppleTheme.accent.opacity(0.14) : Color.primary.opacity(0.05))
+                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+                    .fill(isPinned ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.05))
             )
         }
         .buttonStyle(.plain)

@@ -60,11 +60,11 @@ struct AgentSettingsTabView: View {
                     socketStatusBadge
                 }
                 Text("Allow Claude, Gemini, Grok, Antigravity, Siri, Shortcuts, and local CLI tools to inspect and control GlassGrid You.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 Picker("Permission Level", selection: $bindableSettings.agentPermissionLevel) {
                     ForEach(AgentPermissionLevel.allCases) { level in
                         Text(level.title).tag(level)
@@ -73,23 +73,23 @@ struct AgentSettingsTabView: View {
                 .disabled(!settings.agentControlEnabled)
 
                 Text(settings.agentPermissionLevel.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
 
                 Text("Always blocked: cookies, Google/SSO logins, arbitrary JavaScript, and site-data wipes.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textMuted)
             }
 
             Toggle("Show HUD toast on AI actions", isOn: $bindableSettings.agentShowHUDToasts)
                 .disabled(!settings.agentControlEnabled)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 Toggle("Allow glassgridyou://action/... URL triggers", isOn: $bindableSettings.allowURLSchemeActions)
                     .disabled(!settings.agentControlEnabled)
                 Text("Opt-in for Raycast or launcher scripts. Strictly limited to safe playback & catalog actions (blocked inside WebKit pages).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
         }
     }
@@ -98,26 +98,26 @@ struct AgentSettingsTabView: View {
     private var socketStatusBadge: some View {
         let (text, color): (String, Color) = {
             if !coordinator.settings.agentControlEnabled {
-                return ("Off", .secondary)
+                return ("Off", AppleTheme.textSecondary)
             }
             switch bridge.unixSocketStatus {
             case .listening:
-                return ("Socket Ready", .green)
+                return ("Socket Ready", AppleTheme.positive)
             case .anotherInstanceActive:
-                return ("Another Window Active", .orange)
+                return ("Another Window Active", AppleTheme.warning)
             case .failed:
-                return ("Socket Error", .red)
+                return ("Socket Error", AppleTheme.accentText)
             case .stopped:
-                return ("Starting…", .secondary)
+                return ("Starting…", AppleTheme.textSecondary)
             }
         }()
-        HStack(spacing: 5) {
+        HStack(spacing: AppSpacing.xs) {
             Circle()
                 .fill(color)
                 .frame(width: 7, height: 7)
             Text(text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption)
+                .foregroundStyle(AppleTheme.textSecondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Automation socket status: \(text)")
@@ -129,14 +129,14 @@ struct AgentSettingsTabView: View {
     private var mcpClientsSection: some View {
         let binaryPath = MCPClientInstaller.resolvedCLIBinaryPath()
         Section("MCP Clients (Recommended · Local stdio)") {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                HStack(spacing: AppSpacing.md) {
                     Text("Bundled Server")
-                        .font(.subheadline.weight(.medium))
+                        .font(AppFont.subhead(weight: .medium))
                     Spacer()
                     Text(binaryPath)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.mono(11))
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Button("Copy Path") {
@@ -148,12 +148,12 @@ struct AgentSettingsTabView: View {
                 }
                 if !MCPClientInstaller.isRunningFromApplicationsBundle {
                     Text("Tip: Install GlassGrid You.app into /Applications so client configs point to a stable path.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.warning)
                 } else {
                     Text("Uses owner-only Unix socket IPC with zero tokens stored in client config files.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
             }
 
@@ -163,8 +163,8 @@ struct AgentSettingsTabView: View {
 
             if let feedbackMessage {
                 Text(feedbackMessage)
-                    .font(.caption)
-                    .foregroundStyle(feedbackIsError ? Color.red : Color.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(feedbackIsError ? AppleTheme.accentText : AppleTheme.textSecondary)
             }
         }
     }
@@ -172,17 +172,17 @@ struct AgentSettingsTabView: View {
     @ViewBuilder
     private func mcpClientRow(client: MCPClientKind, binaryPath: String) -> some View {
         let status = clientStatuses[client] ?? .notConfigured
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            HStack(spacing: AppSpacing.md) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    HStack(spacing: AppSpacing.sm) {
                         Text(client.displayName)
-                            .font(.body)
+                            .font(AppFont.body)
                         clientStatusPill(status)
                     }
                     Text("~/\(client.defaultRelativeConfigPath) (\(client.configFormatTitle))")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.mono(10))
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -248,15 +248,15 @@ struct AgentSettingsTabView: View {
 
             if case .legacyDetected(let legacyPath) = status {
                 Text("Legacy Antigravity file detected at \(legacyPath); Install targets ~/.gemini/config/mcp_config.json.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             } else if case .error(let detail) = status {
                 Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.accentText)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, AppSpacing.xxs)
     }
 
     private func statusLabelForInstall(_ status: MCPClientInstallStatus) -> String {
@@ -270,18 +270,18 @@ struct AgentSettingsTabView: View {
     private func clientStatusPill(_ status: MCPClientInstallStatus) -> some View {
         let (title, color): (String, Color) = {
             switch status {
-            case .installed: return ("Configured", .green)
-            case .needsUpdate: return ("Update Needed", .orange)
-            case .legacyDetected: return ("Legacy Config", .orange)
-            case .error: return ("Error", .red)
-            case .notConfigured: return ("Not Configured", .secondary)
+            case .installed: return ("Configured", AppleTheme.positive)
+            case .needsUpdate: return ("Update Needed", AppleTheme.warning)
+            case .legacyDetected: return ("Legacy Config", AppleTheme.warning)
+            case .error: return ("Error", AppleTheme.accentText)
+            case .notConfigured: return ("Not Configured", AppleTheme.textSecondary)
             }
         }()
         Text(title)
-            .font(.caption2.weight(.medium))
+            .font(AppFont.micro(weight: .medium))
             .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
+            .padding(.horizontal, AppSpacing.sm)
+            .padding(.vertical, AppSpacing.xxs)
             .background(color.opacity(0.14), in: Capsule())
     }
 
@@ -291,19 +291,19 @@ struct AgentSettingsTabView: View {
     private func httpServerSection(settings: AppSettings) -> some View {
         @Bindable var bindableSettings = settings
         Section("Local Streamable HTTP MCP (Opt-In · 127.0.0.1 Only)") {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                HStack(spacing: AppSpacing.md) {
                     Toggle("Enable Local HTTP MCP Server", isOn: $bindableSettings.agentHTTPServerEnabled)
                         .disabled(!settings.agentControlEnabled)
                     Spacer()
                     httpStatusLabel
                 }
                 Text("Binds strictly to 127.0.0.1/mcp with Host, Origin, and Bearer token enforcement.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppSpacing.md) {
                 Text("Port")
                 TextField("", text: $httpPortText, prompt: Text("41773"))
                     .labelsHidden()
@@ -318,20 +318,20 @@ struct AgentSettingsTabView: View {
                 .fixedSize()
                 Spacer()
                 Text(verbatim: "http://127.0.0.1:\(settings.agentHTTPPort)/mcp")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.mono(11))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
             .disabled(!settings.agentControlEnabled)
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppSpacing.md) {
                 Text("Bearer Token")
                 Spacer()
                 Text(revealToken ? bridge.currentHTTPToken : "••••••••••••••••••••••••••••••••")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.mono(11))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -353,7 +353,7 @@ struct AgentSettingsTabView: View {
                 .fixedSize()
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppSpacing.md) {
                 Text("HTTP Snippet")
                 Spacer()
                 Picker("HTTP Client Snippet", selection: $selectedHTTPClient) {
@@ -385,21 +385,21 @@ struct AgentSettingsTabView: View {
     private var httpStatusLabel: some View {
         let (text, color): (String, Color) = {
             if !coordinator.settings.agentControlEnabled || !coordinator.settings.agentHTTPServerEnabled {
-                return ("Disabled", .secondary)
+                return ("Disabled", AppleTheme.textSecondary)
             }
             switch bridge.httpServerStatus {
             case .listening(let port):
-                return ("Listening :\(port)", .green)
+                return ("Listening :\(port)", AppleTheme.positive)
             case .starting(let port):
-                return ("Starting :\(port)…", .secondary)
+                return ("Starting :\(port)…", AppleTheme.textSecondary)
             case .failed(_, let reason):
-                return ("Failed: \(reason)", .red)
+                return ("Failed: \(reason)", AppleTheme.accentText)
             case .disabled:
-                return ("Disabled", .secondary)
+                return ("Disabled", AppleTheme.textSecondary)
             }
         }()
         Text(text)
-            .font(.caption)
+            .font(AppFont.caption(tabular: true))
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -410,13 +410,13 @@ struct AgentSettingsTabView: View {
     @ViewBuilder
     private var siriAndShortcutsSection: some View {
         Section("Siri, Apple Intelligence & Shortcuts") {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: AppSpacing.md) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Text("Native App Intents & App Shortcuts")
-                        .font(.body)
+                        .font(AppFont.body)
                     Text("Say \"What's playing in GlassGrid You\", \"Open YouTube TV in GlassGrid You\", or \"Toggle Mini-Player in GlassGrid You\".")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
                 Spacer()
                 Button("Open Shortcuts") {
@@ -436,36 +436,37 @@ struct AgentSettingsTabView: View {
         Section {
             if bridge.activityLog.isEmpty {
                 Text("No AI agent or shortcut activity yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, AppSpacing.sm)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
+                    LazyVStack(alignment: .leading, spacing: AppSpacing.sm) {
                         ForEach(bridge.activityLog) { entry in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            HStack(alignment: .firstTextBaseline, spacing: AppSpacing.md) {
                                 Image(systemName: entry.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(entry.succeeded ? Color.green : Color.orange)
+                                    .font(AppIconFont.sm())
+                                    .foregroundStyle(entry.succeeded ? AppleTheme.positive : AppleTheme.warning)
+                                    .frame(width: 16, alignment: .center)
 
                                 Text(Self.timeFormatter.string(from: entry.timestamp))
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                    .font(AppFont.micro(tabular: true))
+                                    .foregroundStyle(AppleTheme.textSecondary)
 
                                 Text(entry.source.badgeTitle)
-                                    .font(.caption2.weight(.semibold))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                                    .font(AppFont.micro(weight: .semibold))
+                                    .padding(.horizontal, AppSpacing.sm)
+                                    .padding(.vertical, AppSpacing.xxs)
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.xs))
 
                                 Text(entry.action)
-                                    .font(.caption.monospaced())
+                                    .font(AppFont.mono(11))
                                     .lineLimit(1)
 
                                 Text(entry.summary)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(AppFont.caption)
+                                    .foregroundStyle(AppleTheme.textSecondary)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
@@ -481,11 +482,15 @@ struct AgentSettingsTabView: View {
                 Text("Recent Activity")
                 Spacer()
                 if !bridge.activityLog.isEmpty {
-                    Button("Clear") {
+                    Button {
                         bridge.clearActivityLog()
+                    } label: {
+                        Text("Clear")
+                            .font(AppFont.caption(weight: .medium))
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
                     }
                     .buttonStyle(.borderless)
-                    .font(.caption)
                 }
             }
         }

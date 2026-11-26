@@ -79,8 +79,8 @@ struct CachedThumbnailImage: View {
                     .fill(Color.primary.opacity(0.08))
                     .overlay(
                         Image(systemName: "play.rectangle.fill")
-                            .font(.system(size: placeholderIconSize))
-                            .foregroundStyle(.secondary.opacity(0.48))
+                            .font(resolvedPlaceholderIconFont)
+                            .foregroundStyle(AppleTheme.textMuted)
                     )
             }
         }
@@ -105,5 +105,15 @@ struct CachedThumbnailImage: View {
             return ThumbnailImageCache.shared.cachedImage(for: url)
         }
         return nil
+    }
+
+    private var resolvedPlaceholderIconFont: Font {
+        switch placeholderIconSize {
+        case 22...: return AppIconFont.hero
+        case 18...: return AppIconFont.xl
+        case 15...: return AppIconFont.lg
+        case 13...: return AppIconFont.toolbar
+        default: return AppIconFont.md
+        }
     }
 }

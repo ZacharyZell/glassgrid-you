@@ -159,7 +159,7 @@ private struct MiniPlayerProgressHairlineView: View {
                     Rectangle()
                         .fill(Color.white.opacity(0.18))
                     Rectangle()
-                        .fill(AppleTheme.accent.opacity(0.92))
+                        .fill(AppleTheme.accentFill.opacity(0.92))
                         .frame(width: proxy.size.width * min(max(timeline.progressFraction, 0), 1))
                 }
             }
@@ -195,7 +195,7 @@ private struct FloatingMultiviewGridOverlayView: View {
 
                         RoundedRectangle(cornerRadius: MultiviewGridLayout.floatingTileCornerRadius, style: .continuous)
                             .strokeBorder(
-                                isAudioActive ? AppleTheme.accent : Color.white.opacity(0.16),
+                                isAudioActive ? AppleTheme.accentFill : Color.white.opacity(0.16),
                                 lineWidth: isAudioActive ? 2.0 : 0.75
                             )
                             .frame(width: rect.width, height: rect.height)
@@ -203,24 +203,24 @@ private struct FloatingMultiviewGridOverlayView: View {
                             .allowsHitTesting(false)
 
                         if !hideCornerBadgeForTopHeader {
-                            HStack(spacing: 4) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Text("\(index + 1)")
-                                    .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
+                                    .font(AppFont.micro(weight: .bold, tabular: true))
                                 Image(systemName: isAudioActive ? "waveform" : "speaker.slash.fill")
-                                    .font(.system(size: 8.5, weight: .semibold))
+                                    .font(AppIconFont.xs(weight: .semibold))
                             }
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .frame(height: 18)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .frame(height: 20)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(isAudioActive ? AppleTheme.accent.opacity(0.92) : Color.black.opacity(0.62))
+                                    .fill(isAudioActive ? AppleTheme.accentFill.opacity(0.92) : Color.black.opacity(0.62))
                             )
                             .overlay(
                                 Capsule(style: .continuous)
                                     .strokeBorder(.white.opacity(isAudioActive ? 0.28 : 0.16), lineWidth: 0.75)
                             )
-                            .offset(x: rect.minX + 6, y: rect.minY + 6)
+                            .offset(x: rect.minX + AppSpacing.sm, y: rect.minY + AppSpacing.sm)
                             .allowsHitTesting(false)
                         }
                     }
@@ -297,55 +297,44 @@ private struct FloatingMiniPlayerOverlayView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if hoverState.isHeaderVisible {
-                VStack(spacing: 4) {
+                VStack(spacing: AppSpacing.xs) {
                     Capsule(style: .continuous)
                         .fill(.white.opacity(0.55))
-                        .frame(width: 34, height: 3.5)
+                        .frame(width: 34, height: 4)
                         .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
                         .allowsHitTesting(false)
 
-                    LiquidGlassGroup(spacing: 8) {
-                        HStack(spacing: 8) {
-                            HStack(spacing: 6) {
+                    LiquidGlassGroup(spacing: AppSpacing.md) {
+                        HStack(spacing: AppSpacing.md) {
+                            HStack(spacing: AppSpacing.sm) {
                                 if tab.mediaStatus.isHDR {
-                                    Text("HDR")
-                                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.white.opacity(0.88))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                                .strokeBorder(.white.opacity(0.35), lineWidth: 0.75)
-                                        )
+                                    AppleHDRBadge(onDarkMedia: true)
                                 }
 
                                 if let rateText = tab.mediaStatus.formattedPlaybackRate {
-                                    Text(rateText)
-                                        .font(.system(size: 8.5, weight: .semibold, design: .rounded).monospacedDigit())
-                                        .foregroundStyle(.white.opacity(0.92))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                    AppleSpeedBadge(rateText: rateText, onDarkMedia: true)
                                 }
 
                                 Text(tab.displayTitle)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(AppFont.caption(weight: .medium))
                                     .foregroundStyle(.white.opacity(0.94))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, AppSpacing.md)
+                            .frame(height: 26)
                             .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.42))
                             .allowsHitTesting(false)
 
-                            Spacer(minLength: 8)
+                            Spacer(minLength: AppSpacing.md)
 
-                            HStack(spacing: 9) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Button {
                                     onSeek(-10)
                                 } label: {
                                     Image(systemName: "gobackward.10")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Rewind 10s")
                                 .accessibilityLabel("Rewind 10 seconds")
@@ -354,6 +343,8 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     onTogglePlay()
                                 } label: {
                                     Image(systemName: tab.mediaStatus.isPlaying ? "pause.fill" : "play.fill")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Play / Pause")
                                 .accessibilityLabel(tab.mediaStatus.isPlaying ? "Pause" : "Play")
@@ -362,6 +353,8 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     onSeek(10)
                                 } label: {
                                     Image(systemName: "goforward.10")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Forward 10s")
                                 .accessibilityLabel("Forward 10 seconds")
@@ -370,7 +363,9 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     onToggleMute()
                                 } label: {
                                     Image(systemName: tab.mediaStatus.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                        .foregroundStyle(tab.mediaStatus.isMuted ? AppleTheme.accent : .white)
+                                        .foregroundStyle(tab.mediaStatus.isMuted ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help(tab.mediaStatus.isMuted ? "Unmute" : "Mute")
                                 .accessibilityLabel(tab.mediaStatus.isMuted ? "Unmute" : "Mute")
@@ -396,8 +391,9 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     }
                                 } label: {
                                     Image(systemName: "airplayvideo")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(tab.mediaStatus.isAirPlayActive ? AppleTheme.accent : .white)
+                                        .foregroundStyle(tab.mediaStatus.isAirPlayActive ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("AirPlay Video")
                                 .accessibilityLabel("AirPlay Video")
@@ -408,16 +404,17 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     ),
                                     arrowEdge: .bottom
                                 ) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack(spacing: 6) {
+                                    VStack(alignment: .leading, spacing: AppSpacing.md) {
+                                        HStack(spacing: AppSpacing.sm) {
                                             Image(systemName: "airplayvideo")
-                                                .foregroundStyle(AppleTheme.accent)
+                                                .font(AppIconFont.md(weight: .semibold))
+                                                .foregroundStyle(AppleTheme.accentText)
                                             Text("AirPlay Video")
-                                                .font(.system(size: 12, weight: .semibold))
+                                                .font(AppFont.callout(weight: .semibold))
                                         }
                                         Text(airPlayFeedbackMessage ?? "")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                            .font(AppFont.caption)
+                                            .foregroundStyle(AppleTheme.textSecondary)
                                             .fixedSize(horizontal: false, vertical: true)
                                         Button("Open Displays Settings…") {
                                             airPlayFeedbackMessage = nil
@@ -426,7 +423,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
                                     }
-                                    .padding(12)
+                                    .padding(AppSpacing.lg)
                                     .frame(width: 240)
                                 }
 
@@ -434,21 +431,22 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     isDisplayOptionsPresented.toggle()
                                 } label: {
                                     Image(systemName: "slider.horizontal.3")
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accent : .white)
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Mini-Player Opacity, Speed & Size")
                                 .accessibilityLabel("Mini-Player Display Options")
                                 .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 5) {
+                                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             HStack {
                                                 Text("Opacity")
-                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .font(AppFont.caption(weight: .semibold))
                                                 Spacer()
                                                 Text("\(Int((hoverState.opacity * 100).rounded()))%")
-                                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                                                    .foregroundStyle(.secondary)
+                                                    .font(AppFont.caption(weight: .medium, tabular: true))
+                                                    .foregroundStyle(AppleTheme.textSecondary)
                                             }
                                             Slider(
                                                 value: Binding(
@@ -463,22 +461,22 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                                         Divider()
 
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             Text("Playback Speed")
-                                                .font(.system(size: 11, weight: .semibold))
-                                            HStack(spacing: 4) {
+                                                .font(AppFont.caption(weight: .semibold))
+                                            HStack(spacing: AppSpacing.xs) {
                                                 ForEach(speedPresets, id: \.self) { rate in
                                                     let isSelected = abs(tab.mediaStatus.playbackRate - rate) < 0.03
                                                     Button {
                                                         onSetPlaybackRate(rate)
                                                     } label: {
                                                         Text(rate == 1.0 ? "1×" : (rate.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(rate))×" : String(format: "%.2g×", rate)))
-                                                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium).monospacedDigit())
-                                                            .padding(.horizontal, 6)
-                                                            .padding(.vertical, 3)
+                                                            .font(AppFont.micro(weight: isSelected ? .semibold : .medium, tabular: true))
+                                                            .padding(.horizontal, AppSpacing.sm)
+                                                            .minHitTarget(24, shape: Capsule(style: .continuous))
                                                             .background(
                                                                 Capsule(style: .continuous)
-                                                                    .fill(isSelected ? AppleTheme.accent : Color.primary.opacity(0.08))
+                                                                    .fill(isSelected ? AppleTheme.accentFill : Color.primary.opacity(0.08))
                                                             )
                                                             .foregroundStyle(isSelected ? Color.white : Color.primary)
                                                     }
@@ -489,38 +487,40 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                                         Divider()
 
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             Text("Window Size")
-                                                .font(.system(size: 11, weight: .semibold))
-                                            HStack(spacing: 6) {
+                                                .font(AppFont.caption(weight: .semibold))
+                                            HStack(spacing: AppSpacing.sm) {
                                                 ForEach(MiniPlayerSizePreset.allCases) { preset in
                                                     let isSelected = hoverState.currentSizePreset == preset
                                                     Button {
                                                         onSelectSizePreset(preset)
                                                     } label: {
                                                         Text(preset.title)
-                                                            .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                                                            .padding(.horizontal, 9)
-                                                            .padding(.vertical, 4)
+                                                            .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
+                                                            .padding(.horizontal, AppSpacing.md)
+                                                            .minHitTarget(24, shape: Capsule(style: .continuous))
                                                             .background(
                                                                 Capsule(style: .continuous)
-                                                                    .fill(isSelected ? AppleTheme.accent.opacity(0.22) : Color.primary.opacity(0.07))
+                                                                    .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.07))
                                                             )
-                                                            .foregroundStyle(isSelected ? AppleTheme.accent : Color.primary)
+                                                            .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary)
                                                     }
                                                     .buttonStyle(.plain)
                                                 }
                                             }
                                         }
                                     }
-                                    .padding(12)
-                                    .frame(width: 278)
+                                    .padding(AppSpacing.lg)
+                                    .frame(width: 288)
                                 }
 
                                 Button {
                                     onDock()
                                 } label: {
-                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Return to Main Window")
                                 .accessibilityLabel("Return to Main Window")
@@ -529,22 +529,24 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     onClose()
                                 } label: {
                                     Image(systemName: "xmark")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Close Mini-Player")
                                 .accessibilityLabel("Close Mini-Player")
                             }
                             .buttonStyle(.plain)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(AppIconFont.md(weight: .semibold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .frame(height: 26)
                             .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.48), interactive: true)
                             .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
                         }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.top, 5)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.top, AppSpacing.xs)
                 .environment(\.colorScheme, .dark)
                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -587,66 +589,73 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if hoverState.isHeaderVisible {
-                VStack(spacing: 3.5) {
+                VStack(spacing: AppSpacing.xs) {
                     Capsule(style: .continuous)
                         .fill(.white.opacity(0.55))
-                        .frame(width: 34, height: 3.5)
+                        .frame(width: 34, height: 4)
                         .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
                         .allowsHitTesting(false)
 
-                    LiquidGlassGroup(spacing: 6) {
-                        HStack(spacing: 6) {
+                    LiquidGlassGroup(spacing: AppSpacing.sm) {
+                        HStack(spacing: AppSpacing.sm) {
                             // Leading clickable slot audio pills [1] [2] [3] [4]
-                            HStack(spacing: 4) {
+                            HStack(spacing: AppSpacing.xs) {
                                 ForEach(Array(hoverState.hostedTabs.enumerated()), id: \.element.id) { index, tab in
                                     let isAudio = tab.id == hoverState.audioTabID
                                     Button {
                                         onFocusAudio(tab.id)
                                     } label: {
-                                        HStack(spacing: 3) {
+                                        HStack(spacing: AppSpacing.xs) {
                                             Text("\(index + 1)")
-                                                .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                                                .font(AppFont.micro(weight: .bold, tabular: true))
                                             if isAudio {
                                                 Image(systemName: "waveform")
-                                                    .font(.system(size: 8.5, weight: .semibold))
+                                                    .font(AppIconFont.xs(weight: .semibold))
                                             }
                                         }
                                         .foregroundStyle(isAudio ? .white : .white.opacity(0.84))
-                                        .padding(.horizontal, isAudio ? 7 : 6)
-                                        .frame(height: 20)
+                                        .padding(.horizontal, isAudio ? AppSpacing.md : AppSpacing.sm)
+                                        .frame(height: 24)
                                         .background(
                                             Capsule(style: .continuous)
-                                                .fill(isAudio ? AppleTheme.accent : Color.white.opacity(0.14))
+                                                .fill(isAudio ? AppleTheme.accentFill : Color.white.opacity(0.14))
                                         )
+                                        .contentShape(Capsule(style: .continuous))
                                     }
                                     .buttonStyle(.plain)
                                     .help("Audio Focus: Stream \(index + 1) — \(tab.displayTitle)")
                                     .accessibilityLabel("Switch Audio to Stream \(index + 1)")
                                 }
                             }
-                            .padding(.horizontal, 6)
-                            .frame(height: 28)
+                            .padding(.horizontal, AppSpacing.xxs)
+                            .frame(height: 26)
                             .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.48), interactive: true)
 
-                            Spacer(minLength: 6)
+                            Spacer(minLength: AppSpacing.sm)
 
                             // Trailing Multiview Grid controls capsule
-                            HStack(spacing: 8) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Button(action: onCycleLayout) {
                                     Image(systemName: hoverState.layoutMode.systemImage)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Layout: \(hoverState.layoutMode.title) (Click to Cycle)")
                                 .accessibilityLabel("Cycle Grid Layout")
 
                                 Button(action: onToggleMuteAll) {
                                     Image(systemName: hoverState.allMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                        .foregroundStyle(hoverState.allMuted ? AppleTheme.accent : .white)
+                                        .foregroundStyle(hoverState.allMuted ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help(hoverState.allMuted ? "Unmute Active Stream" : "Mute All Streams")
                                 .accessibilityLabel(hoverState.allMuted ? "Unmute Active Stream" : "Mute All Streams")
 
                                 Button(action: onTogglePlayActive) {
                                     Image(systemName: (activeAudioTab?.mediaStatus.isPlaying ?? false) ? "pause.fill" : "play.fill")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help((activeAudioTab?.mediaStatus.isPlaying ?? false) ? "Pause Active Stream" : "Play Active Stream")
                                 .accessibilityLabel((activeAudioTab?.mediaStatus.isPlaying ?? false) ? "Pause Active Stream" : "Play Active Stream")
@@ -655,20 +664,22 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                     isDisplayOptionsPresented.toggle()
                                 } label: {
                                     Image(systemName: "slider.horizontal.3")
-                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accent : .white)
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Grid Opacity, Layout & Size Presets")
                                 .accessibilityLabel("Floating Grid Options")
                                 .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
-                                    VStack(alignment: .leading, spacing: 11) {
-                                        VStack(alignment: .leading, spacing: 5) {
+                                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             HStack {
                                                 Text("Opacity")
-                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .font(AppFont.caption(weight: .semibold))
                                                 Spacer()
                                                 Text("\(Int((hoverState.opacity * 100).rounded()))%")
-                                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                                                    .foregroundStyle(.secondary)
+                                                    .font(AppFont.caption(weight: .medium, tabular: true))
+                                                    .foregroundStyle(AppleTheme.textSecondary)
                                             }
                                             Slider(
                                                 value: Binding(
@@ -683,24 +694,28 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                                         Divider()
 
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             Text("Layout Mode")
-                                                .font(.system(size: 11, weight: .semibold))
-                                            HStack(spacing: 6) {
+                                                .font(AppFont.caption(weight: .semibold))
+                                            HStack(spacing: AppSpacing.sm) {
                                                 ForEach(MultiviewLayoutMode.allCases) { mode in
                                                     let isSelected = hoverState.layoutMode == mode
                                                     Button {
                                                         onSelectLayout(mode)
                                                     } label: {
-                                                        Label(mode.title, systemImage: mode.systemImage)
-                                                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
-                                                            .padding(.horizontal, 8)
-                                                            .padding(.vertical, 5)
-                                                            .background(
-                                                                Capsule(style: .continuous)
-                                                                    .fill(isSelected ? AppleTheme.accent : Color.primary.opacity(0.10))
-                                                            )
-                                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                                        HStack(spacing: AppSpacing.xs) {
+                                                            Image(systemName: mode.systemImage)
+                                                                .font(AppIconFont.xs(weight: .semibold))
+                                                            Text(mode.title)
+                                                                .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
+                                                        }
+                                                        .padding(.horizontal, AppSpacing.md)
+                                                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                        .background(
+                                                            Capsule(style: .continuous)
+                                                                .fill(isSelected ? AppleTheme.accentFill : Color.primary.opacity(0.10))
+                                                        )
+                                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
                                                     }
                                                     .buttonStyle(.plain)
                                                 }
@@ -709,29 +724,29 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                                         Divider()
 
-                                        VStack(alignment: .leading, spacing: 6) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             HStack {
                                                 Text("Grid Size")
-                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .font(AppFont.caption(weight: .semibold))
                                                 Spacer()
                                                 let sz = hoverState.currentGridSizePreset.size
                                                 Text("\(Int(sz.width))×\(Int(sz.height))")
-                                                    .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                                                    .foregroundStyle(.secondary)
+                                                    .font(AppFont.caption(weight: .medium, tabular: true))
+                                                    .foregroundStyle(AppleTheme.textSecondary)
                                             }
-                                            HStack(spacing: 6) {
+                                            HStack(spacing: AppSpacing.sm) {
                                                 ForEach(MiniPlayerGridSizePreset.allCases) { preset in
                                                     let isSelected = hoverState.currentGridSizePreset == preset
                                                     Button {
                                                         onSelectGridPreset(preset)
                                                     } label: {
                                                         Text(preset.shortTitle)
-                                                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
-                                                            .padding(.horizontal, 10)
-                                                            .padding(.vertical, 5)
+                                                            .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
+                                                            .padding(.horizontal, AppSpacing.md)
+                                                            .minHitTarget(24, shape: Capsule(style: .continuous))
                                                             .background(
                                                                 Capsule(style: .continuous)
-                                                                    .fill(isSelected ? AppleTheme.accent : Color.primary.opacity(0.10))
+                                                                    .fill(isSelected ? AppleTheme.accentFill : Color.primary.opacity(0.10))
                                                             )
                                                             .foregroundStyle(isSelected ? Color.white : Color.primary)
                                                     }
@@ -743,63 +758,75 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                                         Divider()
 
-                                        HStack(spacing: 8) {
+                                        HStack(spacing: AppSpacing.md) {
                                             Button(action: onPlayAll) {
-                                                Label("Play All", systemImage: "play.fill")
-                                                    .font(.system(size: 11, weight: .medium))
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 5)
-                                                    .background(
-                                                        Capsule(style: .continuous)
-                                                            .fill(Color.primary.opacity(0.10))
-                                                    )
-                                                    .foregroundStyle(Color.primary)
+                                                HStack(spacing: AppSpacing.xs) {
+                                                    Image(systemName: "play.fill")
+                                                        .font(AppIconFont.xs(weight: .medium))
+                                                    Text("Play All")
+                                                        .font(AppFont.caption(weight: .medium))
+                                                }
+                                                .padding(.horizontal, AppSpacing.md)
+                                                .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                .background(
+                                                    Capsule(style: .continuous)
+                                                        .fill(Color.primary.opacity(0.10))
+                                                )
+                                                .foregroundStyle(Color.primary)
                                             }
                                             .buttonStyle(.plain)
 
                                             Button(action: onPauseAll) {
-                                                Label("Pause All", systemImage: "pause.fill")
-                                                    .font(.system(size: 11, weight: .medium))
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 5)
-                                                    .background(
-                                                        Capsule(style: .continuous)
-                                                            .fill(Color.primary.opacity(0.10))
-                                                    )
-                                                    .foregroundStyle(Color.primary)
+                                                HStack(spacing: AppSpacing.xs) {
+                                                    Image(systemName: "pause.fill")
+                                                        .font(AppIconFont.xs(weight: .medium))
+                                                    Text("Pause All")
+                                                        .font(AppFont.caption(weight: .medium))
+                                                }
+                                                .padding(.horizontal, AppSpacing.md)
+                                                .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                .background(
+                                                    Capsule(style: .continuous)
+                                                        .fill(Color.primary.opacity(0.10))
+                                                )
+                                                .foregroundStyle(Color.primary)
                                             }
                                             .buttonStyle(.plain)
                                         }
                                     }
-                                    .padding(12)
+                                    .padding(AppSpacing.lg)
                                     .frame(width: 286)
                                 }
 
                                 Button(action: onDock) {
-                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Dock Grid to Main Window")
                                 .accessibilityLabel("Dock Grid to Main Window")
 
                                 Button(action: onClose) {
                                     Image(systemName: "xmark")
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
                                 }
                                 .help("Close Floating Grid & Pause")
                                 .accessibilityLabel("Close Floating Grid")
                             }
                             .buttonStyle(.plain)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(AppIconFont.md(weight: .semibold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .frame(height: 28)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .frame(height: 26)
                             .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.48), interactive: true)
                             .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
                         }
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-                .padding(.bottom, 5)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.top, AppSpacing.xs)
+                .padding(.bottom, AppSpacing.xs)
                 .environment(\.colorScheme, .dark)
                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -1379,6 +1406,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onDock: onDock,
                 onClose: onClose
             )
+            .environment(\.font, AppFont.body)
         )
         overlay.safeAreaRegions = []
         overlay.translatesAutoresizingMaskIntoConstraints = false
@@ -1401,7 +1429,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
 
         let host = PassThroughGridBorderHostView(frame: rootView.bounds)
         host.autoresizingMask = [.width, .height]
-        let borderView = NSHostingView(rootView: FloatingMultiviewGridOverlayView(hoverState: hoverState))
+        let borderView = NSHostingView(
+            rootView: FloatingMultiviewGridOverlayView(hoverState: hoverState)
+                .environment(\.font, AppFont.body)
+        )
         borderView.safeAreaRegions = []
         borderView.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(borderView)
@@ -1458,6 +1489,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onDock: onDock,
                 onClose: onClose
             )
+            .environment(\.font, AppFont.body)
         )
         overlay.safeAreaRegions = []
         overlay.translatesAutoresizingMaskIntoConstraints = false
@@ -1477,7 +1509,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
 
         let host = PassThroughProgressHostView(frame: .zero)
         host.translatesAutoresizingMaskIntoConstraints = false
-        let hairline = NSHostingView(rootView: MiniPlayerProgressHairlineView(timeline: tab.timeline))
+        let hairline = NSHostingView(
+            rootView: MiniPlayerProgressHairlineView(timeline: tab.timeline)
+                .environment(\.font, AppFont.body)
+        )
         hairline.safeAreaRegions = []
         hairline.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(hairline)

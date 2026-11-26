@@ -106,15 +106,44 @@ struct SettingsView: View {
                         Text(appearance.title).tag(appearance)
                     }
                 }
+
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Picker("Holiday Theme", selection: $settings.holidayThemeSelection) {
+                        ForEach(HolidayThemeSelection.allCases) { selection in
+                            Text(selection.title).tag(selection)
+                        }
+                    }
+
+                    if settings.holidayThemeSelection == .auto {
+                        let autoCaption = settings.calendarHolidayThemeID == .classic
+                            ? "Following seasonal calendar (Classic Crimson today)"
+                            : "Currently active for today: \(settings.activeHolidayPalette.displayName)"
+                        Text(autoCaption)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Picker("Holiday Effects", selection: $settings.holidayEffectsIntensity) {
+                        ForEach(HolidayEffectsIntensity.allCases) { intensity in
+                            Text(intensity.title).tag(intensity)
+                        }
+                    }
+
+                    Text("Subtle Core Animation chrome effects pause automatically in Fullscreen, Focus Mode, and Reduce Motion.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
             }
 
             Section("Streaming Services") {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("Streaming Services & Sign-In Hub")
                         Text("\(coordinator.settings.enabledStreamingServices.count) enabled · Appears in Sidebar & \"Add Screen\" picker.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption(tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Manage Services…") {
@@ -133,6 +162,7 @@ struct SettingsView: View {
                 Toggle("Show Home Shelf (Continue Watching, Subscriptions & Suggested)", isOn: $settings.showHomeShelf)
                 Toggle("Show live YouTube search suggestions in Command Palette (⌘K)", isOn: $settings.searchAutocompleteEnabled)
                 Toggle("Open non-YouTube links in default browser", isOn: $settings.openExternalLinksInBrowser)
+                Toggle("Compact single-row header (⌘⌥\\)", isOn: $settings.compactHeaderMode)
                 Toggle("Always show tab bar", isOn: $settings.alwaysShowTabBar)
                 Toggle("Show menu bar quick-controls", isOn: $settings.showMenuBarControls)
             }
@@ -140,13 +170,13 @@ struct SettingsView: View {
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: $updater.automaticallyChecksForUpdates)
 
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: AppSpacing.md) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("GlassGrid You v\(updater.currentAppVersion)")
-                            .font(.body)
+                            .font(AppFont.body(tabular: true))
                         Text(updateStatusCaption)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption(tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     if !updater.isSparkleConfigured,
@@ -197,25 +227,25 @@ struct SettingsView: View {
                 Toggle("Auto-dismiss \"Video paused. Continue watching?\" prompt", isOn: $settings.autoDismissContinueWatching)
                 Toggle("Prefer original audio track (avoid auto-dubbed audio)", isOn: $settings.preferOriginalAudio)
                 Toggle("Auto-pause on screen lock, sleep, or audio disconnect", isOn: $settings.autoPauseOnSystemEvents)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Toggle("Duck background Multiview audio to 15% (instead of mute)", isOn: $settings.multiviewAudioDuckingEnabled)
                     Text("Opt-in: keeps non-focused Multiview streams softly audible at 15% volume and restores 100% on focus or exit.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
             }
 
             Section("Segments") {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     Toggle("Auto-skip sponsored segments (SponsorBlock)", isOn: $settings.sponsorBlockEnabled)
                     Text("Opt-in: queries sponsor.ajay.app using a privacy-preserving 4-character SHA-256 video ID prefix and fails silently offline.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
             }
         }
         .formStyle(.grouped)
-        .padding(.vertical, 4)
+        .padding(.vertical, AppSpacing.xs)
     }
 
     @ViewBuilder
@@ -240,12 +270,12 @@ struct SettingsView: View {
                 Toggle("Hide right-side recommendations", isOn: $settings.hideWatchRecommendations)
                 Toggle("Hide video comments", isOn: $settings.hideComments)
                 Text("Promotes the native video player edge-to-edge on streaming services once playback starts. Browse pages stay untouched; press ⌘⇧B anytime for Full Page.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
         }
         .formStyle(.grouped)
-        .padding(.vertical, 4)
+        .padding(.vertical, AppSpacing.xs)
     }
 
     @ViewBuilder
@@ -253,12 +283,12 @@ struct SettingsView: View {
         Form {
             Section("Google Account") {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("YouTube Sign-In")
-                            .font(.body)
+                            .font(AppFont.body)
                         Text("Cookies are stored securely in WebKit's persistent data store.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Sign In…") {
@@ -277,11 +307,11 @@ struct SettingsView: View {
 
             Section("Storage") {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("Streaming Service Sign-In Hub")
                         Text("Sign in or reset cookies for an individual service without affecting others.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Sign-In Hub…") {
@@ -300,11 +330,11 @@ struct SettingsView: View {
                 }
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("Clear Local History & Presets")
                         Text("Clears Continue Watching, Most Watched Channels & saved Multiview presets without signing you out.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Clear History") {
@@ -319,11 +349,11 @@ struct SettingsView: View {
                 }
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("Clear Web Cache")
                         Text("Frees cached assets while keeping your Google login intact.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Clear Cache") {
@@ -335,11 +365,11 @@ struct SettingsView: View {
                 }
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("Sign Out & Reset Data")
                         Text("Removes all cookies, local storage, and cached media.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Clear All Data…", role: .destructive) {
@@ -352,27 +382,32 @@ struct SettingsView: View {
             if let statusMessage {
                 Section {
                     Text(statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
             }
 
             Section("Open Source") {
-                HStack {
-                    Text("MIT Licensed — zero paywalls, telemetry, or nags.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: AppSpacing.md) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                        Text("MIT Licensed — zero paywalls, telemetry, or nags.")
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
+                        Text("Typography: Inter v4.1 (SIL Open Font License 1.1) · Updates powered by Sparkle 2.")
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textMuted)
+                    }
                     Spacer()
                     Button("Support on GitHub") {
                         coordinator.updater.openTrustedGitHubURL(UpdateChecker.sponsorsURL)
                     }
                     .buttonStyle(.link)
-                    .font(.caption)
+                    .font(AppFont.caption(weight: .medium))
                 }
             }
         }
         .formStyle(.grouped)
-        .padding(.vertical, 4)
+        .padding(.vertical, AppSpacing.xs)
     }
 
     private var updateStatusCaption: String {

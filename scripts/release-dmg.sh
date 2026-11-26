@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="GlassGrid You"
-VERSION="1.2.0"
-BUILD_NUMBER="5"
+VERSION="1.3.0"
+BUILD_NUMBER="6"
 IDENTITY=""
 NOTARY_PROFILE="GlassGridYouNotary"
 AD_HOC="0"
@@ -22,8 +22,8 @@ Usage: ./scripts/release-dmg.sh [options]
 Builds, embeds Sparkle 2, signs inside-out (Hardened Runtime), packages, and optionally notarizes GlassGrid You as a macOS .dmg.
 
 Options:
-  --version <semver>             CFBundleShortVersionString (default: 1.2.0)
-  --build <number>               CFBundleVersion (default: 5)
+  --version <semver>             CFBundleShortVersionString (default: 1.3.0)
+  --build <number>               CFBundleVersion (default: 6)
   --identity <name>              Codesigning identity (auto-detects "Developer ID Application" if omitted)
   --notary-profile <name>        notarytool Keychain profile name (default: GlassGridYouNotary)
   --sparkle-public-key <base64>  Optional Sparkle Ed25519 public key (SUPublicEDKey) for signed auto-updates

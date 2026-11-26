@@ -30,12 +30,15 @@ public final class AppSettings {
         static let autoMiniPlayerOnLeave = "ytmac.autoMiniPlayerOnLeave"
         static let showMenuBarControls = "ytmac.showMenuBarControls"
         static let isSidebarVisible = "ytmac.isSidebarVisible"
+        static let compactHeaderMode = "ytmac.compactHeaderMode"
         static let showHomeShelf = "ytmac.showHomeShelf"
         static let savedMiniPlayerFrame = "ytmac.savedMiniPlayerFrame"
         static let savedMiniPlayerGridFrame = "ytmac.savedMiniPlayerGridFrame"
         static let cleanBoxStreamingPlayers = "ytmac.cleanBoxStreamingPlayers"
         static let startupDestination = "ytmac.startupDestination"
         static let appearance = "ytmac.appearance"
+        static let holidayThemeSelection = "ytmac.holidayThemeSelection"
+        static let holidayEffectsIntensity = "ytmac.holidayEffectsIntensity"
         static let pinnedItems = "ytmac.pinnedItems"
         static let pinnedFolders = "ytmac.pinnedFolders"
         static let continueWatching = "ytmac.continueWatching"
@@ -84,6 +87,9 @@ public final class AppSettings {
     var onAppearanceDidChange: (() -> Void)?
 
     @ObservationIgnored
+    var onHolidayThemeDidChange: (() -> Void)?
+
+    @ObservationIgnored
     var onSponsorBlockSettingDidChange: ((Bool) -> Void)?
 
     @ObservationIgnored
@@ -103,6 +109,9 @@ public final class AppSettings {
 
     @ObservationIgnored
     public var onLivePulseSettingsDidChange: (() -> Void)?
+
+    @ObservationIgnored
+    var onCompactHeaderModeDidChange: ((Bool) -> Void)?
 
     public var hideShorts: Bool {
         didSet {
@@ -276,6 +285,14 @@ public final class AppSettings {
         }
     }
 
+    public var compactHeaderMode: Bool {
+        didSet {
+            guard compactHeaderMode != oldValue else { return }
+            defaults.set(compactHeaderMode, forKey: Keys.compactHeaderMode)
+            onCompactHeaderModeDidChange?(compactHeaderMode)
+        }
+    }
+
     public var showHomeShelf: Bool {
         didSet {
             guard showHomeShelf != oldValue else { return }
@@ -369,6 +386,24 @@ public final class AppSettings {
             onAppearanceDidChange?()
         }
     }
+
+    public var holidayThemeSelection: HolidayThemeSelection {
+        didSet {
+            guard holidayThemeSelection != oldValue else { return }
+            defaults.set(holidayThemeSelection.rawValue, forKey: Keys.holidayThemeSelection)
+            onHolidayThemeDidChange?()
+        }
+    }
+
+    public var holidayEffectsIntensity: HolidayEffectsIntensity {
+        didSet {
+            guard holidayEffectsIntensity != oldValue else { return }
+            defaults.set(holidayEffectsIntensity.rawValue, forKey: Keys.holidayEffectsIntensity)
+            onHolidayThemeDidChange?()
+        }
+    }
+
+    public private(set) var calendarHolidayThemeID: HolidayThemeID
 
     public var pinnedItems: [PinnedItem] {
         didSet {
@@ -706,6 +741,7 @@ public final class AppSettings {
         self.autoMiniPlayerOnLeave = defaults.object(forKey: Keys.autoMiniPlayerOnLeave) as? Bool ?? true
         self.showMenuBarControls = defaults.object(forKey: Keys.showMenuBarControls) as? Bool ?? true
         self.isSidebarVisible = defaults.object(forKey: Keys.isSidebarVisible) as? Bool ?? true
+        self.compactHeaderMode = defaults.object(forKey: Keys.compactHeaderMode) as? Bool ?? false
         self.showHomeShelf = defaults.object(forKey: Keys.showHomeShelf) as? Bool ?? true
         self.restoreTabsOnLaunch = defaults.object(forKey: Keys.restoreTabsOnLaunch) as? Bool ?? true
         self.autoPauseOnSystemEvents = defaults.object(forKey: Keys.autoPauseOnSystemEvents) as? Bool ?? true
@@ -781,6 +817,22 @@ public final class AppSettings {
         } else {
             self.appearance = .system
         }
+
+        if let rawHolidayTheme = defaults.string(forKey: Keys.holidayThemeSelection),
+           let parsedHolidayTheme = HolidayThemeSelection(rawValue: rawHolidayTheme) {
+            self.holidayThemeSelection = parsedHolidayTheme
+        } else {
+            self.holidayThemeSelection = .auto
+        }
+
+        if let rawEffectsIntensity = defaults.string(forKey: Keys.holidayEffectsIntensity),
+           let parsedEffectsIntensity = HolidayEffectsIntensity(rawValue: rawEffectsIntensity) {
+            self.holidayEffectsIntensity = parsedEffectsIntensity
+        } else {
+            self.holidayEffectsIntensity = .subtle
+        }
+
+        self.calendarHolidayThemeID = HolidayCalendarEngine.activeHoliday(for: Date())
 
         if let data = defaults.data(forKey: Keys.pinnedItems),
            let decoded = try? JSONDecoder().decode([PinnedItem].self, from: data) {
@@ -890,6 +942,23 @@ public final class AppSettings {
         case .light:
             app.appearance = NSAppearance(named: .aqua)
         }
+    }
+
+    public var resolvedHolidayThemeID: HolidayThemeID {
+        holidayThemeSelection.resolvedThemeID(calendarHoliday: calendarHolidayThemeID)
+    }
+
+    public var activeHolidayPalette: HolidayThemePalette {
+        HolidayThemeCatalog.palette(for: resolvedHolidayThemeID)
+    }
+
+    @discardableResult
+    public func refreshCalendarHolidayIfNeeded(now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        let next = HolidayCalendarEngine.activeHoliday(for: now, calendar: calendar)
+        guard next != calendarHolidayThemeID else { return false }
+        calendarHolidayThemeID = next
+        onHolidayThemeDidChange?()
+        return true
     }
 
     public func distractionFreeConfig(

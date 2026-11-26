@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import YouTubeMacCore
 
-/// Sleek Liquid Glass AirPlay & TV Display popover (`280pt` wide) supporting:
+/// Sleek Liquid Glass AirPlay & TV Display popover (`320pt` wide) supporting:
 /// 1. Element-level AirPlay Video (`webkitShowPlaybackTargetPicker`) with honest YouTube MSE guidance,
 /// 2. Live CoreAudio Output / AirPlay Audio status + 1-click macOS Sound Output picker,
 /// 3. 1-click "Send Window to Display (Multiview Wall)" across connected external & AirPlay TV displays.
@@ -46,61 +46,62 @@ struct AirPlayPopoverView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: AppSpacing.lg) {
             // Header
-            HStack(spacing: 7) {
+            HStack(spacing: AppSpacing.md) {
                 Image(systemName: "airplayvideo")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppIconFont.toolbar(weight: .semibold))
+                    .foregroundStyle(AppleTheme.accentText)
+                    .frame(width: 20, alignment: .center)
 
                 Text("AirPlay & TV Displays")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(AppFont.body(weight: .semibold))
 
                 Spacer()
 
                 if controller.isAirPlayActive {
                     Text("Active")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(AppFont.micro(weight: .semibold))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                        .padding(.horizontal, AppSpacing.md)
+                        .padding(.vertical, AppSpacing.xxs)
+                        .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
                 }
             }
 
             // Row 1: AirPlay Video
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 Button {
                     controller.triggerAirPlayVideo()
                 } label: {
-                    HStack(spacing: 9) {
+                    HStack(spacing: AppSpacing.md) {
                         Image(systemName: isVideoAirPlayActive ? "airplayvideo.circle.fill" : "airplayvideo")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(isVideoAirPlayActive ? AppleTheme.accent : .primary)
-                            .frame(width: 24)
+                            .font(AppIconFont.lg(weight: .semibold))
+                            .foregroundStyle(isVideoAirPlayActive ? AppleTheme.accentText : .primary)
+                            .frame(width: 20, alignment: .center)
 
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                             Text("AirPlay Video")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(AppFont.callout(weight: .semibold))
                                 .foregroundStyle(.primary)
                             Text(videoSubtitle)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.secondary)
+                                .font(AppFont.caption)
+                                .foregroundStyle(AppleTheme.textSecondary)
                                 .lineLimit(2)
                         }
 
-                        Spacer(minLength: 4)
+                        Spacer(minLength: AppSpacing.xs)
 
                         if isVideoAirPlayActive {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 13))
-                                .foregroundStyle(AppleTheme.accent)
+                                .font(AppIconFont.toolbar())
+                                .foregroundStyle(AppleTheme.accentText)
                         }
                     }
-                    .padding(9)
+                    .padding(AppSpacing.md)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(!activeMediaStatus.hasVideo || controller.isMultiviewActive)
@@ -108,43 +109,43 @@ struct AirPlayPopoverView: View {
 
                 if let hint = controller.airPlayVideoHint {
                     Text(hint)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.xs)
                 }
             }
 
             Divider()
 
             // Row 2: Live CoreAudio Output / AirPlay Audio
-            HStack(spacing: 9) {
+            HStack(spacing: AppSpacing.md) {
                 Image(systemName: isAudioAirPlayActive ? "airplayaudio.circle.fill" : "airplayaudio")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(isAudioAirPlayActive ? AppleTheme.accent : .secondary)
-                    .frame(width: 24)
+                    .font(AppIconFont.lg(weight: .semibold))
+                    .foregroundStyle(isAudioAirPlayActive ? AppleTheme.accentText : AppleTheme.textSecondary)
+                    .frame(width: 20, alignment: .center)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    HStack(spacing: AppSpacing.sm) {
                         Text("Audio Output")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(AppFont.callout(weight: .semibold))
                         if isAudioAirPlayActive {
                             Text("AirPlay")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(AppleTheme.accent)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(AppleTheme.accent.opacity(0.14), in: Capsule(style: .continuous))
+                                .font(AppFont.micro(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .padding(.horizontal, AppSpacing.sm)
+                                .padding(.vertical, AppSpacing.xxs)
+                                .background(AppleTheme.accentText.opacity(0.14), in: Capsule(style: .continuous))
                         }
                     }
                     Text(currentAudioOutputName)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
                 .layoutPriority(1)
 
-                Spacer(minLength: 6)
+                Spacer(minLength: AppSpacing.sm)
 
                 Button("Choose Output…") {
                     controller.coordinator?.openSoundOutputSettings()
@@ -158,15 +159,15 @@ struct AirPlayPopoverView: View {
             Divider()
 
             // Section 3: TV & AirPlay Displays (Multiview Wall)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
                 Text("Send Window to Display (Multiview Wall)")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
 
                 if otherDisplays.isEmpty {
                     Text("Connect an Apple TV or AirPlay 2 TV in Displays to beam your full window or 4-stream Multiview wall wirelessly.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(otherDisplays) { display in
@@ -174,32 +175,33 @@ struct AirPlayPopoverView: View {
                             controller.moveWindowToDisplay(id: display.id)
                             onDismiss()
                         } label: {
-                            HStack(spacing: 8) {
+                            HStack(spacing: AppSpacing.md) {
                                 Image(systemName: display.name.localizedCaseInsensitiveContains("tv") ? "appletv" : "display")
-                                    .font(.system(size: 12.5, weight: .semibold))
-                                    .foregroundStyle(AppleTheme.accent)
-                                    .frame(width: 20)
+                                    .font(AppIconFont.md(weight: .semibold))
+                                    .foregroundStyle(AppleTheme.accentText)
+                                    .frame(width: 20, alignment: .center)
 
-                                VStack(alignment: .leading, spacing: 1) {
+                                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                                     Text("Move to \(display.name)")
-                                        .font(.system(size: 11.5, weight: .semibold))
+                                        .font(AppFont.callout(weight: .semibold))
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
                                     Text(display.resolutionLabel)
-                                        .font(.system(size: 10).monospacedDigit())
-                                        .foregroundStyle(.secondary)
+                                        .font(AppFont.micro(tabular: true))
+                                        .foregroundStyle(AppleTheme.textSecondary)
                                 }
 
                                 Spacer()
 
                                 Image(systemName: "arrow.up.right.square")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
+                                    .font(AppIconFont.sm())
+                                    .foregroundStyle(AppleTheme.textSecondary)
                             }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .padding(.horizontal, AppSpacing.md)
+                            .padding(.vertical, AppSpacing.sm)
+                            .minHitTarget(28, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .disabled(controller.anyTabInFullscreen)
@@ -210,23 +212,26 @@ struct AirPlayPopoverView: View {
                     controller.coordinator?.openDisplaysSettings()
                     onDismiss()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: AppSpacing.md) {
                         Image(systemName: "rectangle.on.rectangle.angled")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(AppIconFont.md(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                            .frame(width: 20, alignment: .center)
                         Text("Connect AirPlay TV in Displays…")
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(AppFont.callout(weight: .semibold))
                         Spacer()
                     }
                     .foregroundStyle(.primary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .minHitTarget(28, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(13)
+        .padding(AppSpacing.lg)
         .frame(width: 320)
         .onAppear {
             controller.coordinator?.refreshConnectedDisplays()

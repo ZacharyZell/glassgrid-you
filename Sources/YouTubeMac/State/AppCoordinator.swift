@@ -44,6 +44,12 @@ public final class AppCoordinator {
     private var screenParametersObserver: (any NSObjectProtocol)?
 
     @ObservationIgnored
+    private var calendarDayObserver: (any NSObjectProtocol)?
+
+    @ObservationIgnored
+    private var midnightRolloverTask: Task<Void, Never>?
+
+    @ObservationIgnored
     private var controllersByID: [UUID: AppController] = [:]
 
     @ObservationIgnored
@@ -94,6 +100,7 @@ public final class AppCoordinator {
         _ = self.agentBridge
 
         bindSharedSettingsObservers()
+        ThemeRuntime.shared.apply(palette: settings.activeHolidayPalette)
         bindSharedFloatingMiniPlayerCallbacks()
         refreshAudioOutputStatus()
         refreshConnectedDisplays()
@@ -106,6 +113,16 @@ public final class AppCoordinator {
                 self?.refreshConnectedDisplays()
             }
         }
+        calendarDayObserver = NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleCalendarDayDidChange()
+            }
+        }
+        scheduleMidnightRolloverTask()
         updateSystemPlaybackGuard(enabled: settings.autoPauseOnSystemEvents)
 
         // Sync YouTube's PREF cookie once before the first window sends its initial HTTP request.
@@ -359,6 +376,12 @@ public final class AppCoordinator {
         appearanceSyncTask = nil
         initialThemeCookieSyncTask?.cancel()
         initialThemeCookieSyncTask = nil
+        midnightRolloverTask?.cancel()
+        midnightRolloverTask = nil
+        if let calendarDayObserver {
+            NotificationCenter.default.removeObserver(calendarDayObserver)
+            self.calendarDayObserver = nil
+        }
         systemPlaybackGuard.stop()
         livePulseStore.shutdown()
         agentBridge.shutdown()
@@ -609,6 +632,10 @@ public final class AppCoordinator {
         settings.onAppearanceDidChange = { [weak self] in
             self?.handleAppearanceDidChange()
         }
+        settings.onHolidayThemeDidChange = { [weak self] in
+            guard let self else { return }
+            ThemeRuntime.shared.apply(palette: self.settings.activeHolidayPalette)
+        }
         settings.onSponsorBlockSettingDidChange = { [weak self] enabled in
             guard let self else { return }
             for controller in self.openWindows {
@@ -639,6 +666,12 @@ public final class AppCoordinator {
                 controller.syncLivePulseVisibilityFromSettings()
             }
             self.livePulseStore.reconcileLifecycle()
+        }
+        settings.onCompactHeaderModeDidChange = { [weak self] _ in
+            guard let self else { return }
+            for controller in self.openWindows {
+                controller.syncCompactHeaderModeFromSettings()
+            }
         }
     }
 
@@ -676,6 +709,25 @@ public final class AppCoordinator {
         } else {
             systemPlaybackGuard.stop()
             refreshAudioOutputStatus()
+        }
+    }
+
+    private func handleCalendarDayDidChange() {
+        _ = settings.refreshCalendarHolidayIfNeeded()
+        scheduleMidnightRolloverTask()
+    }
+
+    private func scheduleMidnightRolloverTask() {
+        midnightRolloverTask?.cancel()
+        midnightRolloverTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                let now = Date()
+                let rollover = HolidayCalendarEngine.nextMidnightRollover(after: now)
+                let delaySeconds = max(1.0, rollover.timeIntervalSince(now))
+                try? await Task.sleep(for: .seconds(delaySeconds))
+                guard !Task.isCancelled, let self else { return }
+                _ = self.settings.refreshCalendarHolidayIfNeeded()
+            }
         }
     }
 

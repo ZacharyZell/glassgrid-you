@@ -148,7 +148,7 @@ public enum StreamingServiceCatalog {
             symbolName: "play.rectangle.fill",
             monogram: nil,
             accentHexStart: "#B9141C",
-            accentHexEnd: "#FF363D"
+            accentHexEnd: "#D71920"
         ),
         StreamingService(
             id: "yttv",
@@ -195,8 +195,8 @@ public enum StreamingServiceCatalog {
             requiresStrictDRM: false,
             symbolName: "antenna.radiowaves.left.and.right",
             monogram: "FB",
-            accentHexStart: "#C94715",
-            accentHexEnd: "#FF6B2B"
+            accentHexStart: "#942F09",
+            accentHexEnd: "#BD3F0C"
         ),
         StreamingService(
             id: "sling",
@@ -211,8 +211,8 @@ public enum StreamingServiceCatalog {
             requiresStrictDRM: false,
             symbolName: "tv.and.mediabox",
             monogram: "SL",
-            accentHexStart: "#0069B4",
-            accentHexEnd: "#00A3E0"
+            accentHexStart: "#004E8A",
+            accentHexEnd: "#006A96"
         ),
 
         // MARK: - Live Sports (Tier 1 Native WKWebView)
@@ -296,7 +296,7 @@ public enum StreamingServiceCatalog {
             symbolName: "sparkles.tv.fill",
             monogram: "PK",
             accentHexStart: "#1D1F29",
-            accentHexEnd: "#F5B800"
+            accentHexEnd: "#8A6200"
         ),
         StreamingService(
             id: "paramount",
@@ -327,8 +327,8 @@ public enum StreamingServiceCatalog {
             requiresStrictDRM: true,
             symbolName: "play.square.stack.fill",
             monogram: "PV",
-            accentHexStart: "#0A4F7A",
-            accentHexEnd: "#00A8E1"
+            accentHexStart: "#073C5E",
+            accentHexEnd: "#006B94"
         ),
         StreamingService(
             id: "disneyplus",
@@ -359,8 +359,8 @@ public enum StreamingServiceCatalog {
             requiresStrictDRM: true,
             symbolName: "rectangle.stack.fill",
             monogram: "HU",
-            accentHexStart: "#0C6E42",
-            accentHexEnd: "#1CE783"
+            accentHexStart: "#085432",
+            accentHexEnd: "#0F7A48"
         ),
         StreamingService(
             id: "max",
@@ -423,8 +423,8 @@ public enum StreamingServiceCatalog {
             requiresStrictDRM: true,
             symbolName: "play.tv.fill",
             monogram: "CR",
-            accentHexStart: "#C24600",
-            accentHexEnd: "#F47521"
+            accentHexStart: "#8F3200",
+            accentHexEnd: "#B84700"
         )
     ]
 

@@ -399,7 +399,7 @@ public final class LivePulseStore {
         return coordinator.openWindows.contains { controller in
             !controller.isMainWindowMiniaturized
             && controller.isMainWindowVisible
-            && (controller.isLivePulseTickerVisible || controller.isLivePulseDrawerVisible)
+            && (controller.isLivePulseTickerRendered || controller.isLivePulseDrawerVisible)
         }
     }
 

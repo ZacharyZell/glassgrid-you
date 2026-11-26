@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Release Log — GlassGrid You for macOS</title>
-  <meta name="description" content="Complete GlassGrid You release history and exact version-to-version differences across v1.3.0 Preview, v1.2.0, v1.1.1, v1.1.0, and v1.0.0.">
+  <meta name="description" content="Complete GlassGrid You release history and exact version-to-version differences across v1.3.0, v1.2.0, v1.1.1, v1.1.0, and v1.0.0.">
   <meta name="theme-color" content="#0A0A0B">
   <link rel="canonical" href="https://glassgridyou.com/changelog.html">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -56,16 +56,16 @@
         <span class="section-label">Release Log &amp; Version Diffs</span>
         <h1>What changed in every update.</h1>
         <p class="changelog-sub">
-          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a>; <strong>v1.3.0 Preview</strong> changes are live today when building from source on <code>main</code> while the notarized installer prepares.
+          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.3.0</strong>, Build 6).
         </p>
 
         <nav class="release-jump-strip" aria-label="Jump to version">
           <a class="release-jump-pill" href="#v1-3-0">
-            <span class="jump-dot jump-dot--preview" aria-hidden="true"></span>
-            <span>v1.3.0 Preview</span>
+            <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span>v1.3.0</span>
           </a>
           <a class="release-jump-pill" href="#v1-2-0">
-            <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
             <span>v1.2.0</span>
           </a>
           <a class="release-jump-pill" href="#v1-1-1">
@@ -118,23 +118,27 @@
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.3.0</h2>
-              <span class="release-status release-status--preview">Preview · Source (main) · Signed .dmg Preparing</span>
+              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 6</span>
             </div>
             <div class="release-meta-row">
-              <time datetime="2026-11-25">Nov 25, 2026</time>
-              <span>Source Preview (next Build 6)</span>
-              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commits/main" target="_blank" rel="noopener noreferrer">View Commits on GitHub &rarr;</a>
+              <time datetime="2026-11-26">Nov 26, 2026</time>
+              <span>DMG: 8,564,552 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/566b6df...main" target="_blank" rel="noopener noreferrer">Diff v1.2.0 &rarr; v1.3.0 &rarr;</a>
             </div>
           </div>
 
           <div class="release-delta-summary">
-            <p><strong>Compared to v1.2.0:</strong> Introduces opt-in <strong>Live Pulse</strong> (live NFL/NBA/MLB/NHL scoreboards, Sleeper &amp; ESPN Public Fantasy tracking, strictly read-only Kalshi &amp; Polymarket odds, Spoiler Delay Buffer, Reactive Ticker &amp; Companion Drawer), opt-in AI Agent control (28 MCP tools, <code>glassgrid</code> CLI, 12 Siri App Intents), expands the hub to 18 services with Crunchyroll and hardened Prime Video sign-in, renders video Clean-Box across all services, and floats full 2&ndash;4 stream Multiview Grids.</p>
+            <p><strong>Compared to v1.2.0:</strong> Introduces opt-in <strong>Live Pulse</strong> (live NFL/NBA/MLB/NHL scoreboards, Sleeper &amp; ESPN Public Fantasy tracking, strictly read-only Kalshi &amp; Polymarket odds, Spoiler Delay Buffer, Reactive Ticker &amp; Companion Drawer), opt-in AI Agent control (28 MCP tools, <code>glassgrid</code> CLI, 12 Siri App Intents), a <strong>Compact Single-Row Header (<kbd>⌘⌥\</kbd>)</strong> and unified <strong><code>+</code> Add-to-Grid / Tab Picker</strong>, expands the hub to 18 services with Crunchyroll and hardened Prime Video sign-in, renders video Clean-Box across all services, floats full 2&ndash;4 stream Multiview Grids, adopts bundled <strong>Inter v4.1</strong> typography with a unified WCAG 2.1 AA Liquid Glass design system, and adds <strong>Seasonal Holiday Color Themes &amp; Ambient Effects</strong> across 9 Day/Night palettes.</p>
             <div class="delta-pills">
+              <span class="delta-pill">+Compact 52pt Header (<kbd>⌘⌥\</kbd>)</span>
+              <span class="delta-pill">+Unified + Grid/Tab Picker</span>
               <span class="delta-pill">+Live Pulse (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>)</span>
               <span class="delta-pill">0 &rarr; 28 MCP Tools &amp; 12 Siri Intents</span>
               <span class="delta-pill">17 &rarr; 18 Services (+Crunchyroll)</span>
               <span class="delta-pill">Single &rarr; Floating Multiview Grid</span>
               <span class="delta-pill">+Universal Clean-Box (<kbd>⌘⇧B</kbd>)</span>
+              <span class="delta-pill">+Inter v4.1 &amp; WCAG AA Chrome</span>
+              <span class="delta-pill">+9 Holiday Themes &amp; Effects</span>
             </div>
           </div>
 
@@ -142,6 +146,8 @@
             <section class="diff-group">
               <span class="diff-tag diff-tag--added">Added</span>
               <ul class="diff-list">
+                <li><strong>Compact Single-Row Header (<kbd>⌘⌥\</kbd>):</strong> 1-click header minimize button (plus View menu &amp; <kbd>⌘K</kbd> command) collapsing stacked multi-row chrome (<code>118&ndash;170pt</code>) into a single <code>52pt</code> Liquid Glass row with inline compact tabs, in-place Smart Omnibox morphing, compact <code>⊞ N</code> Multiview pill, narrow Split Screen secondary-control folding (<code>&lt; 920pt</code>) &amp; tab collapsing (<code>&lt; 880pt</code>), preserved flanking drag gutters on the <code>26pt</code> traffic-light axis, fullscreen immutability guardrails, and automatic <code>LivePulseStore</code> background-polling pause when collapsed.</li>
+                <li><strong>Unified <code>+</code> Add-to-Grid &amp; Tab Picker:</strong> Header <kbd>+</kbd>, Tab Strip <kbd>+</kbd>, and Multiview <em>Add Screen</em> now open the shared <code>340pt</code> <em>Add to Grid / New Tab</em> catalog covering all 18 streaming services, 8 deduplicated Sports/Fantasy/Markets companion sites (<code>ESPN Scores</code>, <code>NFL.com</code>, <code>Sleeper</code>, <code>ESPN Fantasy</code>, <code>Yahoo Fantasy</code>, <code>NFL Fantasy</code>, <code>Kalshi</code>, <code>Polymarket</code>), Saved Multiview Presets, Open Tabs, Pinned Channels &amp; Playlists, Clipboard URLs, and custom HTTPS URLs.</li>
                 <li><strong>Live Pulse Sports, Fantasy &amp; Read-Only Markets (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>):</strong> Strictly opt-in (<strong>OFF by default</strong>) live sports companion supporting NFL, NBA, MLB, and NHL scoreboards (ESPN public feeds), head-to-head fantasy matchups via <strong>Sleeper</strong> and <strong>ESPN Public</strong> leagues, and strictly read-only implied probability odds from <strong>Kalshi</strong> and <strong>Polymarket</strong> (REST + live CLOB WebSocket with 1m/5m delta tracking).</li>
                 <li><strong>Starter vs. Bench (<code>BN</code>) UX &amp; Sport-Aware 1-Line Boxscores:</strong> Matchup totals count Starters only while live Bench (<code>BN</code>) players appear across Matchup (collapsed <code>Bench (N · M live)</code> disclosure), Players (inline <code>Bench</code> filter chip), and Ticker (capped hollow <code>BN</code> pill); added sport/category-aware 1-line boxscores for NFL (<code>QB</code>, <code>RB</code>, <code>WR/TE</code>, <code>K</code>, <code>D/ST</code>), NBA, MLB, and NHL with diacritic/suffix-insensitive name+team fallback matching for rookies without an <code>espn_id</code>.</li>
                 <li><strong>Custom Sport Priority, Watched Stream Focus &amp; Freshness Controls:</strong> Rank NFL/NBA/MLB/NHL priority (<code>#1–#4</code>) to drive Smart Priority ordering, toggle 1-click <strong>Focus</strong> to isolate only the active stream&rsquo;s game(s), and track feed health with a 15s-bucketed freshness indicator (<code>Live</code> / <code>Synced</code> / <code>&lt;1m</code> / <code>2m</code> / <code>5m+</code> / <code>Offline</code>) plus a <code>2.0s</code>-debounced manual refresh button with immediate spoiler-buffer drain.</li>
@@ -152,13 +158,17 @@
                 <li><strong>Universal Clean-Box Service Rendering (<kbd>⌘⇧B</kbd>):</strong> Automatically isolates only the active video player container edge-to-edge across all <strong>18 built-in streaming services</strong> (including cross-origin player iframes like Crunchyroll and overlay SDK players like Prime Video &amp; Apple TV+), while keeping home, browse, guide, and login pages untouched. Toggle anytime with <kbd>⌘⇧B</kbd> or the header pill for Full Page.</li>
                 <li><strong>Floating Multiview Grid Mini-Player (<kbd>⌘⇧M</kbd>):</strong> Float an entire 2-up, 3-up, or 2&times;2 Quad-Box grid into the always-on-top borderless 16:9 panel with zero reload, crimson active-audio borders, click-any-tile audio focus, compact <code>44pt</code> hover header, Display Options popover (40%&ndash;100% opacity, Grid/Spotlight/Stacked layouts, Play/Pause All), and Grid size presets (<strong>Compact 540&times;304</strong>, <strong>Standard 680&times;383</strong>, <strong>Large 880&times;495</strong>; minimum 440&times;248).</li>
                 <li><strong>Crunchyroll in Streaming Hub:</strong> Added Crunchyroll to <em>Movies &amp; Shows</em> (growing the catalog from <strong>17 &rarr; 18 services</strong>: 11 native WKWebView + 7 Safari-DRM-badged) with native OAuth popup isolation and Safari DRM fallback.</li>
+                <li><strong>Bundled Inter v4.1 Typography &amp; Accessible Design System (<code>DesignSystemMetrics</code> &amp; <code>DesignTokens</code>):</strong> Bundled unmodified offline <strong>Inter v4.1</strong> (<code>InterVariable.ttf</code> + SIL Open Font License 1.1 <code>OFL.txt</code>) registered synchronously via CoreText with <code>wght</code>/<code>opsz</code> variable axes and <code>cv05</code>/<code>tnum</code>/<code>ss01</code> OpenType features, added shared <code>AppFont</code>, <code>AppIconFont</code>, <code>AppSpacing</code>, <code>AppRadius</code>, and <code>.minHitTarget</code> tokens, and wired native <em>Reduce Transparency</em> &amp; <em>Increase Contrast</em> adaptation into <code>.appleGlass</code>.</li>
+                <li><strong>Seasonal Holiday Color Themes &amp; Ambient Effects (<code>HolidayTheme</code>):</strong> Added offline Gregorian &amp; Anonymous Gregorian Computus calendar auto-detection across <strong>9 WCAG 2.1 AA Day &amp; Night palettes</strong> (<em>Classic Crimson</em>, <em>Thanksgiving Harvest</em>, <em>Winter Holidays</em>, <em>New Year&rsquo;s</em>, <em>Valentine&rsquo;s Day</em>, <em>St. Patrick&rsquo;s Day</em>, <em>Spring &amp; Easter</em>, <em>Independence Day</em>, and <em>Halloween</em>) with zero-polling <code>00:00:05</code> midnight rollover, manual pinning in <strong>View &rarr; Holiday Theme</strong>, <strong>Settings &rarr; General</strong>, and <kbd>⌘K</kbd> (<code>Cycle Holiday Theme</code> / <code>Toggle Holiday Effects</code>), plus chrome-only WindowServer Core Animation <code>CAEmitterLayer</code> effects (<code>Off</code> / <code>Subtle</code> / <code>Festive</code>) that automatically pause in Native Fullscreen, Focus Mode, and macOS <em>Reduce Motion</em>.</li>
               </ul>
             </section>
 
             <section class="diff-group">
               <span class="diff-tag diff-tag--changed">Changed</span>
               <ul class="diff-list">
+                <li><strong>Unified <code>+</code> Picker Entry Points &amp; General Settings Toggle:</strong> Upgraded single-tab Header <kbd>+</kbd> and Tab Strip <kbd>+</kbd> from blank YouTube tab creation to the full <em>Add to Grid / New Tab</em> picker (while keeping <kbd>⌘T</kbd> as instant New YouTube Tab), and added the <em>Compact single-row header (<kbd>⌘⌥\</kbd>)</em> toggle under <strong>Settings &rarr; General</strong>.</li>
                 <li><strong>New Settings &rarr; Live Pulse &amp; Settings &rarr; AI &amp; Automation Tabs:</strong> Added a dedicated <strong>Live Pulse</strong> Preferences pane (master opt-in toggle, Spoiler Delay selector, ordered <code>#1–#4</code> <strong>Sport Priority &amp; Leagues</strong> list, Markets toggle, Sleeper username league lookup, ESPN Public League config, and local cache clear) alongside the <strong>AI &amp; Automation</strong> pane (master toggle, 3 permission tiers, socket/HTTP status, Bearer token controls, and 100-entry Activity Log), widening Settings to <code>660&times;560</code>.</li>
+                <li><strong>WCAG 2.1 AA Palette, <code>&gt;= 10pt</code> Integer Ramp &amp; <code>&gt;= 24pt</code> Hit Targets:</strong> Split <code>AppleTheme.accent</code> into <code>accentFill</code> (white-text fills) and adaptive <code>accentText</code> alongside WCAG 2.1 AA semantic tokens (<code>&gt;= 4.5:1</code> across Day/Night glass surfaces and all 18 streaming service badges), standardized every text size onto a strict <code>&gt;= 10pt</code> integer ramp (<code>[10, 11, 12, 13, 15, 17, 22, 26]</code>; removing all sub-<code>10pt</code> text and fractional half-points), aligned spacing onto <code>[2, 4, 6, 8, 12, 16, 20, 24]</code> with concentric radii, and enforced <code>&gt;= 24&times;24pt</code> hit targets on compact controls.</li>
                 <li><strong>Compact Ticker &amp; Drawer Controls + Reduce-Motion-Safe Play Flashes:</strong> Added the 1-click <strong>Focus</strong> toggle and compact <code>0s</code>/<code>20s</code>/<code>35s</code> spoiler pill across the Ticker and Drawer, and added animated numeric transitions + 1-shot <code>1.4s</code> point-delta row highlights gated on <code>!isFrozen &amp;&amp; !accessibilityReduceMotion</code>.</li>
                 <li><strong>Split Screen–Aware Auto Pop-Out for Multiview:</strong> Leaving or covering the app while a Multiview stream is playing now floats the entire Multiview Grid instead of detaching only a single video, and docks cleanly when switching back.</li>
               </ul>
@@ -172,6 +182,7 @@
                 <li><strong>Connected Streaming Services, SPA Auth &amp; App-Handoff Hardening:</strong> Updated HBO Max (<code>play.hbomax.com</code> / <code>hbomax.com/auth/*</code>), fixed Disney+ <code>/identity/login</code> &amp; MyDisney SSO isolation, prevented false-positive sign-in completion on YouTube TV (<code>/welcome</code>) and Apple TV+, added lazy post-auth SPA script bootstrapping &amp; Sign-In Hub URL KVO, blocked streaming app-handoff URI schemes, and added natural service aliases (<code>hbomax</code>, <code>disney+</code>, <code>appletv+</code>) + MCP discovery completeness across CLI/Siri/MCP clients.</li>
                 <li><strong>Crunchyroll Dual-Path Clean-Box &amp; Wrapper Fill Hardening:</strong> Added dual-path resolution across Crunchyroll Vilos player iframes and modern Katamari inline HTML5 players (with direct no-clobber iframe promotion, intermediate aspect-ratio wrapper neutralization via <code>data-ytmac-cb=&quot;chain&quot;</code>, 4-step SPA settle retries, lazy subframe sizing, and modal-dismiss recovery) so Crunchyroll fills Multiview, Single View, and Mini-Player boxes edge-to-edge while preserving controls and tall-tile letterboxing.</li>
                 <li><strong>YouTube Live Chat Overlap in Tiles &amp; Floating Overlay Alignment:</strong> Suppressed narrow-viewport live chat drawers (<code>#panels-full-bleed-container</code>, <code>ytd-live-chat-frame</code>) inside compact Multiview tiles and stripped titlebar safe-area insets from floating grid borders for <code>0pt</code> pixel alignment.</li>
+                <li><strong>Tight-Layout Contrast, Focus Stability &amp; Floating Mini-Player Font Injection:</strong> Resolved <code>10pt</code> Focus-banner layout jump in the Live Pulse Drawer, unified duplicate spoiler popovers onto shared <code>SpoilerDelayPopover</code>, injected Inter typography across all 4 <code>FloatingMiniPlayerController</code> <code>NSHostingView</code> roots, and enlarged Sign-In Hub monogram badges so 3-letter badges never clip.</li>
               </ul>
             </section>
 
@@ -180,14 +191,15 @@
               <ul class="diff-list">
                 <li><strong>Opt-In, Cookieless &amp; Read-Only Live Pulse Defaults:</strong> Live Pulse ships strictly <strong>OFF by default</strong> (zero background polling, disk reads, or WebSockets when disabled), uses dedicated cookieless <code>URLSessionConfiguration.ephemeral</code> sessions isolated from WebKit cookies, performs passive local-only stream matching (URL, title, <code>navigator.mediaSession</code>, <code>og:title</code>, watch <code>h1</code>) with immediate empty-string bailout on all login/SSO/MFA/CAPTCHA pages, and is strictly read-only with zero order execution, wallet signing, or wagering (see <a href="terms.html">Terms</a> &amp; <a href="privacy.html">Privacy Policy</a>).</li>
                 <li><strong>Fail-Closed Local Automation Defaults:</strong> AI Agent control, HTTP MCP, and URL triggers ship strictly <strong>OFF by default</strong>. Stdio CLI IPC uses owner-only UNIX domain sockets (<code>0600</code> in <code>0700</code>, <code>getpeereid</code> EUID check, zero tokens in config files); optional HTTP binds strictly to <code>127.0.0.1</code> with <code>Host</code>/<code>Origin</code>/256-bit Bearer token (<code>0600</code> in Application Support) + 60 req/min rate limiting; cookies, SSO logins, arbitrary JS, and site-data wipes are permanently blocked.</li>
+                <li><strong>100% Offline Bundled Typography:</strong> Inter v4.1 loads locally from <code>Contents/Resources/Fonts/InterVariable.ttf</code> via <code>ATSApplicationFontsPath</code> with zero external font CDNs, zero analytics, and full SIL OFL 1.1 attribution in <code>OFL.txt</code>.</li>
               </ul>
             </section>
           </div>
 
           <details class="release-technical">
-            <summary>Technical details: v1.3.0 Preview build invariants &amp; CLI summary</summary>
+            <summary>Technical details: v1.3.0 build invariants &amp; CLI summary</summary>
             <div class="release-technical-body">
-              <p><strong>WebKit Invariants:</strong> Zero CSS <code>:has(</code>, zero <code>MutationObserver</code>, zero <code>AudioContext</code>, zero static <code>ytInitialPlayerResponse</code>, zero <code>TimelineView(.animation)</code> (freshness uses 15s leaf <code>TimelineView(.periodic)</code> gated on <code>!isFrozen</code>); Swift 6 strict concurrency (0 warnings Debug &amp; Release); 105 unit tests covering offline <code>WKWebView</code> Clean-Box &amp; SPA auth-exit DOM geometry fixtures, Live Pulse v2 matcher/boxscore/freshness/spoiler/layout tests, 18-service matrix, MCP discovery &amp; security verification.</p>
+              <p><strong>WebKit &amp; Design System Invariants:</strong> Zero CSS <code>:has(</code>, zero <code>MutationObserver</code>, zero <code>AudioContext</code>, zero static <code>ytInitialPlayerResponse</code>, zero <code>TimelineView(.animation)</code> (freshness uses 15s leaf <code>TimelineView(.periodic)</code> gated on <code>!isFrozen</code>); Swift 6 strict concurrency (0 warnings Debug &amp; Release); <code>DesignSystemMetrics</code> keeps <code>glassgrid</code> CLI free of CoreText/AppKit linkage; 125 unit tests covering <code>HolidayThemeTests</code> (21-year 7,671-day zero-overlap calendar audit, Computus Easter &amp; Thanksgiving windows, WCAG 2.1 AA contrast across all 9 Day/Night palettes, DST-safe midnight rollover, and Command Palette ranking), <code>CompactHeaderAndPickerTests</code> (<code>52pt</code>/<code>26pt</code> compact header &amp; narrow Split Screen budgets, 8 deduplicated companion sites, <code>GridPickerTargetMode</code>, and <code>CommandPaletteEngine</code> compact-header ranking), offline <code>WKWebView</code> Clean-Box &amp; SPA auth-exit DOM geometry fixtures, Live Pulse v2 matcher/boxscore/freshness/spoiler/layout tests, <code>DesignSystemTests</code> WCAG 2.1 AA Light/Dark &amp; 18-service contrast + CoreText Inter v4.1 axis verification, 18-service matrix, and MCP discovery &amp; security verification.</p>
               <p><strong>CLI Quick Commands:</strong> <code>glassgrid mcp</code>, <code>glassgrid status</code>, <code>glassgrid now-playing</code>, <code>glassgrid tabs</code>, <code>glassgrid service &lt;id&gt;</code>, <code>glassgrid multiview &lt;enter|exit|layout|audio|solo|add|remove&gt;</code>, <code>glassgrid mini-player &lt;enter|exit|toggle|compact|standard|large&gt;</code>, <code>glassgrid appearance &lt;system|light|dark&gt;</code>.</p>
             </div>
           </details>
@@ -197,7 +209,7 @@
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.2.0</h2>
-              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 5</span>
+              <span class="release-status">Signed .dmg · Build 5</span>
             </div>
             <div class="release-meta-row">
               <time datetime="2026-11-24">Nov 24, 2026</time>

@@ -14,7 +14,7 @@ private struct ContinueWatchingCardView: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
             ZStack(alignment: .bottomLeading) {
                 CachedThumbnailImage(url: item.thumbnailURL, placeholderIconSize: 20)
                     .frame(width: 212, height: 119)
@@ -33,7 +33,7 @@ private struct ContinueWatchingCardView: View {
                     ZStack {
                         Color.black.opacity(0.18)
                         Image(systemName: "play.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(AppIconFont.lg(weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 40, height: 40)
                             .appleGlass(in: Circle(), tint: .black.opacity(0.35), interactive: true)
@@ -47,13 +47,13 @@ private struct ContinueWatchingCardView: View {
                 // Remaining time pill
                 if !item.remainingTimeText.isEmpty {
                     Text(item.remainingTimeText)
-                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .font(AppFont.micro(weight: .semibold, tabular: true))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2.5)
-                        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                        .padding(.leading, 7)
-                        .padding(.bottom, 9)
+                        .padding(.horizontal, AppSpacing.sm)
+                        .padding(.vertical, AppSpacing.xxs)
+                        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous))
+                        .padding(.leading, AppSpacing.md)
+                        .padding(.bottom, AppSpacing.md)
                         .allowsHitTesting(false)
                 }
 
@@ -63,7 +63,7 @@ private struct ContinueWatchingCardView: View {
                         Rectangle()
                             .fill(.white.opacity(0.28))
                         Rectangle()
-                            .fill(AppleTheme.accent)
+                            .fill(AppleTheme.accentFill)
                             .frame(width: proxy.size.width * item.progressFraction)
                     }
                 }
@@ -71,47 +71,48 @@ private struct ContinueWatchingCardView: View {
                 .allowsHitTesting(false)
             }
             .frame(width: 212, height: 119)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
                     .strokeBorder(Color.primary.opacity(isHovered ? 0.18 : 0.08), lineWidth: 0.75)
             )
             .overlay(alignment: .topTrailing) {
                 if isHovered {
                     Button(action: onDismiss) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9.5, weight: .bold))
+                            .font(AppIconFont.xs(weight: .bold))
                             .foregroundStyle(.white)
-                            .frame(width: 22, height: 22)
+                            .frame(width: 24, height: 24)
                             .appleGlass(in: Circle(), tint: .black.opacity(0.45), interactive: true)
+                            .contentShape(Circle())
                             .environment(\.colorScheme, .dark)
                     }
                     .buttonStyle(.plain)
-                    .padding(6)
+                    .padding(AppSpacing.sm)
                     .help("Remove from Continue Watching")
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                 Text(item.title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(AppFont.callout(weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 if !item.channel.isEmpty {
                     Text(item.channel)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
             .frame(width: 212, alignment: .leading)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, AppSpacing.xxs)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
         .onTapGesture(perform: onResume)
         .contextMenu {
             Button("Open in New Tab", action: onOpenNewTab)
@@ -139,7 +140,7 @@ private struct SuggestedVideoCardView: View {
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
             ZStack(alignment: .bottomTrailing) {
                 CachedThumbnailImage(url: video.thumbnailURL, placeholderIconSize: 24)
                     .aspectRatio(16 / 9, contentMode: .fill)
@@ -149,7 +150,7 @@ private struct SuggestedVideoCardView: View {
                     ZStack {
                         Color.black.opacity(0.16)
                         Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(AppIconFont.xl(weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
                             .appleGlass(in: Circle(), tint: .black.opacity(0.36), interactive: true)
@@ -160,48 +161,48 @@ private struct SuggestedVideoCardView: View {
                 }
 
                 Text(video.durationText)
-                    .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                    .font(AppFont.micro(weight: .semibold, tabular: true))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .padding(7)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .padding(.vertical, AppSpacing.xxs)
+                    .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: AppRadius.xs, style: .continuous))
+                    .padding(AppSpacing.md)
                     .allowsHitTesting(false)
             }
             .aspectRatio(16 / 9, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
                     .strokeBorder(Color.primary.opacity(isHovered ? 0.20 : 0.08), lineWidth: 0.75)
             )
             .shadow(color: .black.opacity(isHovered ? 0.16 : 0.05), radius: isHovered ? 12 : 4, y: isHovered ? 5 : 2)
             .scaleEffect(isHovered ? 1.015 : 1.0)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                 Text(video.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(AppFont.body(weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                HStack(spacing: 6) {
+                HStack(spacing: AppSpacing.sm) {
                     Text(video.channel)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
 
                     Text("•")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .font(AppFont.micro)
+                        .foregroundStyle(AppleTheme.textMuted)
 
                     Text(video.topic.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(weight: .medium))
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, AppSpacing.xxs)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
         .onTapGesture(perform: onPlay)
         .contextMenu {
             Button("Open in New Tab", action: onOpenNewTab)
@@ -228,30 +229,30 @@ private struct LiquidGlassFilterPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: AppSpacing.xs) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isSelected ? AppleTheme.accent : .secondary)
+                        .font(AppIconFont.sm(weight: .semibold))
+                        .foregroundStyle(isSelected ? AppleTheme.accentText : AppleTheme.textSecondary)
                 }
                 Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .font(AppFont.callout(weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.84))
                     .lineLimit(1)
                 if let badgeText {
                     Text(badgeText)
-                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
+                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.xs)
+                        .padding(.vertical, AppSpacing.xxs)
                         .background(Color.primary.opacity(0.08), in: Capsule())
                 }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 29)
+            .padding(.horizontal, AppSpacing.lg)
+            .frame(height: 28)
             .appleGlass(
                 in: Capsule(style: .continuous),
-                tint: isSelected ? AppleTheme.accent.opacity(0.18) : (isHovered ? Color.primary.opacity(0.06) : nil),
+                tint: isSelected ? AppleTheme.accentText.opacity(0.14) : (isHovered ? Color.primary.opacity(0.06) : nil),
                 interactive: true
             )
             .contentShape(Capsule(style: .continuous))
@@ -317,6 +318,18 @@ struct HomeShelfBarView: View {
                         .padding(.vertical, 2)
                     }
                 }
+                .clipped()
+                .mask(
+                    HStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: continueItems.isEmpty ? 0 : 14)
+                    }
+                )
 
                 if !continueItems.isEmpty {
                     LiquidGlassFilterPill(
@@ -453,20 +466,24 @@ struct PopulatedHomeDashboardView: View {
 
                 // Continue Watching Shelf
                 if !continueItems.isEmpty {
-                    VStack(alignment: .leading, spacing: 11) {
+                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
                         HStack {
                             Label("Continue Watching", systemImage: "play.circle.fill")
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                .font(AppFont.subhead(weight: .semibold))
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Button("Clear") {
+                            Button {
                                 withAnimation(.easeInOut(duration: 0.18)) {
                                     controller.clearContinueWatching()
                                 }
+                            } label: {
+                                Text("Clear")
+                                    .font(AppFont.callout(weight: .medium))
+                                    .foregroundStyle(AppleTheme.textSecondary)
+                                    .padding(.horizontal, AppSpacing.md)
+                                    .minHitTarget(24, shape: Capsule(style: .continuous))
                             }
                             .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
                         }
 
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -511,18 +528,22 @@ struct PopulatedHomeDashboardView: View {
                 }
 
                 // Most Watched & Subscriptions Section
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: AppSpacing.md) {
                     HStack {
                         Label("Most Watched & Subscriptions", systemImage: "rectangle.stack.badge.play.fill")
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(AppFont.subhead(weight: .semibold))
                             .foregroundStyle(.primary)
                         Spacer()
-                        Button("Open Subscriptions") {
+                        Button {
                             controller.navigateSelectedTab(to: .subscriptions)
+                        } label: {
+                            Text("Open Subscriptions")
+                                .font(AppFont.callout(weight: .medium))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .padding(.horizontal, AppSpacing.md)
+                                .minHitTarget(24, shape: Capsule(style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppleTheme.accent)
                     }
 
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -572,20 +593,20 @@ struct PopulatedHomeDashboardView: View {
                 }
 
                 // Suggested Content Video Grid
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     HStack {
                         Label(
                             controller.selectedHomeTopic == .all ? "Suggested Content" : controller.selectedHomeTopic.title,
                             systemImage: controller.selectedHomeTopic.systemImage
                         )
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(AppFont.subhead(weight: .semibold))
                         .foregroundStyle(.primary)
 
                         Spacer()
 
                         Text("Click any video to start watching")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
 
                     LazyVGrid(columns: gridColumns, spacing: 18) {
@@ -633,60 +654,19 @@ struct HiddenHomeFeedRecoveryView: View {
     @Bindable var controller: AppController
 
     var body: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(AppleTheme.accent.opacity(0.14))
-                    .frame(width: 52, height: 52)
-                Image(systemName: "eye.slash")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
-            }
-
-            VStack(spacing: 4) {
-                Text("Home Feed Hidden")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                Text("Distraction-Free mode is hiding the Home feed. Use Search, Subscriptions, or restore the feed below.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-            }
-
-            LiquidGlassGroup(spacing: 10) {
-                HStack(spacing: 10) {
-                    Button {
-                        controller.settings.hideHomeFeed = false
-                        controller.showHUD(icon: "eye", message: "Home Feed Restored")
-                    } label: {
-                        Label("Show Home Feed", systemImage: "eye")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(AppleTheme.accent, in: Capsule(style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        controller.navigateSelectedTab(to: .subscriptions)
-                    } label: {
-                        Label("Open Subscriptions", systemImage: "rectangle.stack.badge.play")
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .appleGlass(in: Capsule(style: .continuous), interactive: true)
-                    }
-                    .buttonStyle(.plain)
+        GlassRecoveryCard(
+            systemImage: "eye.slash",
+            title: "Home Feed Hidden",
+            message: "Distraction-Free mode is hiding the Home feed. Use Search, Subscriptions, or restore the feed below.",
+            primaryAction: GlassRecoveryAction("Show Home Feed", systemImage: "eye") {
+                controller.settings.hideHomeFeed = false
+                controller.showHUD(icon: "eye", message: "Home Feed Restored")
+            },
+            secondaryActions: [
+                GlassRecoveryAction("Open Subscriptions", systemImage: "rectangle.stack.badge.play") {
+                    controller.navigateSelectedTab(to: .subscriptions)
                 }
-            }
-            .padding(.top, 2)
-        }
-        .padding(28)
-        .appleGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 18, y: 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
+            ]
+        )
     }
 }

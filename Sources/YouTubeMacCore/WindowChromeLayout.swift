@@ -254,3 +254,58 @@ public enum WindowChromeLayout {
         )
     }
 }
+
+/// Pure geometry and responsive threshold helpers for Compact Single-Row Header (`52pt`) layout.
+public enum CompactHeaderLayout {
+    public static let headerHeight: CGFloat = WindowChromeLayout.topHeaderBarHeight
+    public static let minDragGutterWidth: CGFloat = 16
+    public static let narrowFoldThresholdWidth: CGFloat = 920
+    public static let compactTabCollapseThresholdWidth: CGFloat = 880
+    public static let compactTabHeight: CGFloat = 32
+    public static let minActiveOmniboxWidth: CGFloat = 140
+    public static let maxInactiveTabWidth: CGFloat = 124
+
+    /// Returns `true` when secondary header controls (PiP & AirPlay) should fold into the `⋯` menu.
+    public static func shouldFoldSecondaryControls(headerWidth: CGFloat) -> Bool {
+        headerWidth < narrowFoldThresholdWidth
+    }
+
+    /// Returns `true` when inactive compact tabs should collapse into a compact `N Tabs` menu pill.
+    public static func shouldCollapseInactiveTabs(headerWidth: CGFloat, tabCount: Int) -> Bool {
+        headerWidth < compactTabCollapseThresholdWidth && tabCount > 2
+    }
+
+    /// Computes the available horizontal budget for the center tab/omnibox rail after subtracting
+    /// sidebar width, traffic-light clearance, leading navigation capsule, trailing controls, and flanking drag gutters.
+    public static func availableCenterRailWidth(
+        windowWidth: CGFloat,
+        isSidebarVisible: Bool,
+        isNativeFullScreen: Bool,
+        isMultiviewActive: Bool,
+        hasLivePulseButton: Bool
+    ) -> CGFloat {
+        let headerWidth = max(0, windowWidth - (isSidebarVisible ? WindowChromeLayout.sidebarWidth : 0))
+        let leadingPadding = WindowChromeLayout.collapsedNavLeadingPadding(
+            isSidebarVisible: isSidebarVisible,
+            isNativeFullScreen: isNativeFullScreen
+        )
+        // Leading capsule: sidebar toggle (when collapsed) + back + forward + reload (28pt each + 2pt gaps + 8pt padding)
+        let leadingButtonCount: CGFloat = isSidebarVisible ? 3 : 4
+        let leadingCapsuleWidth = leadingButtonCount * 28 + max(0, leadingButtonCount - 1) * 2 + 8
+
+        let shouldFold = shouldFoldSecondaryControls(headerWidth: headerWidth)
+        // Trailing capsule: Multiview, MiniPlayer, CompactToggle, ControlsMenu (+ PiP & AirPlay when not folded, + LivePulse when enabled)
+        var trailingButtonCount: CGFloat = shouldFold ? 4 : 6
+        if hasLivePulseButton {
+            trailingButtonCount += 1
+        }
+        let trailingCapsuleWidth = trailingButtonCount * 28 + max(0, trailingButtonCount - 1) * 2 + 8
+        let focusPillWidth: CGFloat = 32
+        let multiviewPillWidth: CGFloat = isMultiviewActive ? 74 : 0
+        let trailingStackSpacing: CGFloat = 6 + (isMultiviewActive ? 6 : 0)
+        let trailingTotalWidth = focusPillWidth + multiviewPillWidth + trailingStackSpacing + trailingCapsuleWidth + 12
+
+        let guttersWidth = 2 * minDragGutterWidth
+        return max(0, headerWidth - leadingPadding - leadingCapsuleWidth - trailingTotalWidth - guttersWidth)
+    }
+}

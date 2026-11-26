@@ -229,6 +229,7 @@ private struct WindowSceneRootView: View {
                 }
             }
             .preferredColorScheme(coordinator.settings.preferredColorScheme)
+            .environment(\.font, AppFont.body)
             .tint(AppleTheme.accent)
     }
 }
@@ -239,6 +240,7 @@ struct YouTubeMacApp: App {
     @State private var coordinator: AppCoordinator
 
     init() {
+        InterFontLoader.registerIfNeeded()
         let coord = AppCoordinator()
         AppCoordinator.sharedActive = coord
         _coordinator = State(initialValue: coord)
@@ -272,6 +274,7 @@ struct YouTubeMacApp: App {
         ) {
             MenuBarView(coordinator: coordinator)
                 .preferredColorScheme(coordinator.settings.preferredColorScheme)
+                .environment(\.font, AppFont.body)
                 .tint(AppleTheme.accent)
         }
         .menuBarExtraStyle(.window)
@@ -279,6 +282,7 @@ struct YouTubeMacApp: App {
         Settings {
             SettingsView(coordinator: coordinator)
                 .preferredColorScheme(coordinator.settings.preferredColorScheme)
+                .environment(\.font, AppFont.body)
                 .tint(AppleTheme.accent)
         }
     }
@@ -709,7 +713,13 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("s", modifiers: [.command, .option])
             .disabled(targetSnapshot == nil)
 
-            Button((targetSnapshot?.isLivePulseTickerVisible ?? false) ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker") {
+            Button((targetSnapshot?.isCompactHeaderActive ?? false) ? "Expand Header Bars" : "Compact Single-Row Header") {
+                coordinator.commandTarget?.toggleCompactHeaderMode()
+            }
+            .keyboardShortcut("\\", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil || anyFullscreen)
+
+            Button((targetSnapshot?.isLivePulseTickerRendered ?? false) ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker") {
                 coordinator.commandTarget?.toggleLivePulseTicker()
             }
             .keyboardShortcut("b", modifiers: [.command, .option])
@@ -743,6 +753,62 @@ struct YouTubeMacApp: App {
                             Label(mode.title, systemImage: "checkmark")
                         } else {
                             Text(mode.title)
+                        }
+                    }
+                }
+            }
+
+            let calendarHolidayPalette = HolidayThemeCatalog.palette(for: coordinator.settings.calendarHolidayThemeID)
+            Menu("Holiday Theme") {
+                Button {
+                    if let active = coordinator.commandTarget {
+                        active.setHolidayThemeSelection(.auto)
+                    } else {
+                        coordinator.settings.holidayThemeSelection = .auto
+                    }
+                } label: {
+                    let autoTitle = "Auto (\(calendarHolidayPalette.shortName))"
+                    if coordinator.settings.holidayThemeSelection == .auto {
+                        Label(autoTitle, systemImage: "checkmark")
+                    } else {
+                        Text(autoTitle)
+                    }
+                }
+
+                Divider()
+
+                ForEach(HolidayThemeSelection.allCases.filter { $0 != .auto }) { selection in
+                    Button {
+                        if let active = coordinator.commandTarget {
+                            active.setHolidayThemeSelection(selection)
+                        } else {
+                            coordinator.settings.holidayThemeSelection = selection
+                        }
+                    } label: {
+                        if coordinator.settings.holidayThemeSelection == selection {
+                            Label(selection.title, systemImage: "checkmark")
+                        } else {
+                            Text(selection.title)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Menu("Ambient Effects") {
+                    ForEach(HolidayEffectsIntensity.allCases) { intensity in
+                        Button {
+                            if let active = coordinator.commandTarget {
+                                active.setHolidayEffectsIntensity(intensity)
+                            } else {
+                                coordinator.settings.holidayEffectsIntensity = intensity
+                            }
+                        } label: {
+                            if coordinator.settings.holidayEffectsIntensity == intensity {
+                                Label(intensity.title, systemImage: "checkmark")
+                            } else {
+                                Text(intensity.title)
+                            }
                         }
                     }
                 }

@@ -49,6 +49,9 @@ public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case openAirPlayPopover
     case toggleLivePulseTicker
     case toggleLivePulseDrawer
+    case toggleCompactHeaderMode
+    case toggleHolidayEffects
+    case cycleHolidayTheme
 }
 
 /// Action payload executed when a Command Palette row is selected.

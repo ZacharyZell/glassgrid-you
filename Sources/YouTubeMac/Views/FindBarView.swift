@@ -8,14 +8,14 @@ struct FindBarView: View {
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AppSpacing.sm) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(AppleTheme.accent)
+                .font(AppIconFont.md(weight: .medium))
+                .foregroundStyle(AppleTheme.accentText)
 
             TextField("Find on page…", text: $controller.findQuery)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12.5))
+                .font(AppFont.body)
                 .frame(width: 170)
                 .focused($isFieldFocused)
                 .onSubmit {
@@ -31,8 +31,8 @@ struct FindBarView: View {
 
             if !controller.findQuery.isEmpty, let matched = controller.findMatchFound {
                 Text(matched ? "Found" : "Not found")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(matched ? Color.secondary : AppleTheme.accent)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(matched ? AppleTheme.textSecondary : AppleTheme.accentText)
                     .fixedSize()
             }
 
@@ -44,9 +44,9 @@ struct FindBarView: View {
                 controller.findPreviousOnPage()
             } label: {
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 22, height: 22)
-                    .contentShape(Circle())
+                    .font(AppIconFont.sm(weight: .semibold))
+                    .foregroundStyle(controller.findQuery.isEmpty ? AppleTheme.textMuted.opacity(0.45) : .primary)
+                    .minHitTarget(24, shape: Circle())
             }
             .buttonStyle(.plain)
             .disabled(controller.findQuery.isEmpty)
@@ -56,9 +56,9 @@ struct FindBarView: View {
                 controller.findNextOnPage()
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 22, height: 22)
-                    .contentShape(Circle())
+                    .font(AppIconFont.sm(weight: .semibold))
+                    .foregroundStyle(controller.findQuery.isEmpty ? AppleTheme.textMuted.opacity(0.45) : .primary)
+                    .minHitTarget(24, shape: Circle())
             }
             .buttonStyle(.plain)
             .disabled(controller.findQuery.isEmpty)
@@ -68,16 +68,16 @@ struct FindBarView: View {
                 controller.dismissFindBar()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
+                    .font(AppIconFont.xs(weight: .bold))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .frame(width: 20, height: 20)
                     .background(Circle().fill(Color.primary.opacity(0.08)))
-                    .contentShape(Circle())
+                    .minHitTarget(24, shape: Circle())
             }
             .buttonStyle(.plain)
             .help("Close Find Bar (Esc)")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, AppSpacing.lg)
         .frame(height: 34)
         .appleGlass(in: Capsule(style: .continuous), interactive: true)
         .shadow(color: .black.opacity(0.16), radius: 14, y: 6)

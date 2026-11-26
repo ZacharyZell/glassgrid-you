@@ -59,6 +59,7 @@ final class DrawerDividerHostNSView: NSView {
     // monitor/observer under Swift 6 strict concurrency.
     nonisolated(unsafe) private var dragMonitor: Any?
     nonisolated(unsafe) private var resignKeyObserver: Any?
+    nonisolated(unsafe) private var themeChangeObserver: Any?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -82,6 +83,10 @@ final class DrawerDividerHostNSView: NSView {
         if let observer = resignKeyObserver {
             NotificationCenter.default.removeObserver(observer)
             resignKeyObserver = nil
+        }
+        if let observer = themeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            themeChangeObserver = nil
         }
     }
 
@@ -136,6 +141,10 @@ final class DrawerDividerHostNSView: NSView {
             NotificationCenter.default.removeObserver(observer)
             resignKeyObserver = nil
         }
+        if let observer = themeChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            themeChangeObserver = nil
+        }
         if newWindow == nil {
             cancelActiveDrag()
         } else if let newWindow {
@@ -148,8 +157,22 @@ final class DrawerDividerHostNSView: NSView {
                     self?.cancelActiveDrag()
                 }
             }
+            themeChangeObserver = NotificationCenter.default.addObserver(
+                forName: .glassGridThemeDidChange,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.updatePillAppearance()
+                }
+            }
         }
         super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updatePillAppearance()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -218,12 +241,14 @@ final class DrawerDividerHostNSView: NSView {
     }
 
     private func updatePillAppearance() {
-        if isDragging {
-            pillLayer.backgroundColor = AppleTheme.accentNSColor.cgColor
-        } else if isHovered {
-            pillLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.24).cgColor
-        } else {
-            pillLayer.backgroundColor = NSColor.clear.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            if isDragging {
+                pillLayer.backgroundColor = AppleTheme.accentTextNSColor.cgColor
+            } else if isHovered {
+                pillLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.24).cgColor
+            } else {
+                pillLayer.backgroundColor = NSColor.clear.cgColor
+            }
         }
     }
 }

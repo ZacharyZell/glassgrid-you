@@ -32,6 +32,9 @@ let package = Package(
             dependencies: [
                 "YouTubeMacCore",
                 .product(name: "Sparkle", package: "Sparkle")
+            ],
+            resources: [
+                .copy("Resources/Fonts")
             ]
         ),
         .executableTarget(

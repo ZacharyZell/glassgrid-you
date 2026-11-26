@@ -191,63 +191,65 @@ struct LiveCompanionDrawerView: View {
 
     @ViewBuilder
     private var drawerHeader: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: AppSpacing.xxs) {
             // Segmented Mode Picker
-            HStack(spacing: 1) {
+            HStack(spacing: 0) {
                 ForEach(LivePulseDrawerTab.allCases) { tab in
                     let isSelected = store.selectedDrawerTab == tab
                     Button {
                         store.selectedDrawerTab = tab
                     } label: {
                         Text(tab.title)
-                            .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+                            .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.85)
                             .fixedSize(horizontal: true, vertical: false)
-                            .foregroundStyle(isSelected ? AppleTheme.accent : Color.primary.opacity(0.78))
-                            .padding(.horizontal, 6)
-                            .frame(height: 22)
+                            .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.78))
+                            .padding(.horizontal, AppSpacing.xs)
+                            .frame(height: 24)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(isSelected ? AppleTheme.accent.opacity(0.16) : .clear)
+                                    .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : .clear)
                             )
                             .contentShape(Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 2)
-            .frame(height: 26)
+            .padding(.horizontal, AppSpacing.xxs)
+            .frame(height: 28)
             .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
 
-            Spacer(minLength: 2)
+            Spacer(minLength: AppSpacing.xxs)
 
-            LivePulseRefreshButton(
-                isRefreshing: store.isRefreshing,
-                lastUpdatedAt: snapshot.lastUpdatedAt,
-                lastManualRefreshCompletedAt: store.lastManualRefreshCompletedAt,
-                providerStatus: snapshot.providerStatus,
-                isEnabled: controller.settings.livePulseEnabled,
-                isFrozen: isFrozen,
-                iconSize: 10.5
-            ) {
-                store.refreshNow()
-            }
+            HStack(spacing: 0) {
+                LivePulseRefreshButton(
+                    isRefreshing: store.isRefreshing,
+                    lastUpdatedAt: snapshot.lastUpdatedAt,
+                    lastManualRefreshCompletedAt: store.lastManualRefreshCompletedAt,
+                    providerStatus: snapshot.providerStatus,
+                    isEnabled: controller.settings.livePulseEnabled,
+                    isFrozen: isFrozen,
+                    iconFont: AppIconFont.sm(weight: .semibold),
+                    checkmarkFont: AppIconFont.sm(weight: .bold)
+                ) {
+                    store.refreshNow()
+                }
 
-            Button {
-                controller.toggleLivePulseDrawer()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Circle())
+                Button {
+                    controller.toggleLivePulseDrawer()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(AppIconFont.xs(weight: .bold))
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isFrozen)
+                .help("Close Live Companion Drawer (⌘⌥I)")
             }
-            .buttonStyle(.plain)
-            .disabled(isFrozen)
-            .help("Close Live Companion Drawer (⌘⌥I)")
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, AppSpacing.sm)
         .frame(height: LivePulseLayout.drawerHeaderHeight)
     }
 
@@ -255,28 +257,30 @@ struct LiveCompanionDrawerView: View {
 
     @ViewBuilder
     private var contextAndFiltersBar: some View {
-        let isFocused = controller.settings.livePulseStreamFocusOnly
+        @Bindable var settings = controller.settings
+        let isFocused = settings.livePulseStreamFocusOnly
 
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
             streamContextBanner
 
-            HStack(spacing: 5) {
+            HStack(spacing: AppSpacing.xs) {
                 Button {
                     controller.toggleLivePulseStreamFocus()
                 } label: {
-                    HStack(spacing: 3.5) {
+                    HStack(spacing: AppSpacing.xs) {
                         Image(systemName: "scope")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(AppIconFont.xs(weight: .semibold))
                         Text("Focus")
-                            .font(.system(size: 10, weight: isFocused ? .semibold : .medium))
+                            .font(AppFont.micro(weight: isFocused ? .bold : .semibold))
                     }
-                    .foregroundStyle(isFocused ? AppleTheme.accent : Color.primary.opacity(0.78))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .foregroundStyle(isFocused ? AppleTheme.accentText : Color.primary.opacity(0.78))
+                    .padding(.horizontal, AppSpacing.sm)
+                    .frame(minWidth: 24, minHeight: 24)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(isFocused ? AppleTheme.accent.opacity(0.16) : Color.primary.opacity(0.06))
+                            .fill(isFocused ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.06))
                     )
+                    .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
@@ -288,36 +292,37 @@ struct LiveCompanionDrawerView: View {
                     .frame(width: 1, height: 14)
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: AppSpacing.xs) {
                         leagueFilterPill(title: "All", league: nil)
-                        ForEach(controller.settings.orderedEnabledLivePulseLeagues) { league in
+                        ForEach(settings.orderedEnabledLivePulseLeagues) { league in
                             leagueFilterPill(title: league.displayName, league: league)
                                 .contextMenu {
                                     Button("Move \(league.displayName) to #1 Priority") {
-                                        controller.settings.moveLivePulseLeagueToTop(league)
+                                        settings.moveLivePulseLeagueToTop(league)
                                     }
                                 }
                         }
                     }
                 }
+                .clipped()
 
-                let isDelayActive = controller.settings.livePulseSpoilerDelay != .off
+                let isDelayActive = settings.livePulseSpoilerDelay != .off
                 Button {
                     isSpoilerPopoverPresented.toggle()
                 } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(isDelayActive ? AppleTheme.accent : Color.secondary)
-                        Text(controller.settings.livePulseSpoilerDelay.shortLabel)
-                            .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(isDelayActive ? AppleTheme.accent : Color.primary.opacity(0.80))
+                    HStack(spacing: AppSpacing.xs) {
+                        Image(systemName: "clock.badge.checkmark")
+                            .font(AppIconFont.xs(weight: .semibold))
+                            .foregroundStyle(isDelayActive ? AppleTheme.accentText : AppleTheme.textSecondary)
+                        Text(settings.livePulseSpoilerDelay.shortLabel)
+                            .font(AppFont.caption(weight: .semibold, tabular: true))
+                            .foregroundStyle(isDelayActive ? AppleTheme.accentText : Color.primary.opacity(0.80))
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .frame(minWidth: 24, minHeight: 24)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(isDelayActive ? AppleTheme.accent.opacity(0.14) : Color.primary.opacity(0.06))
+                            .fill(isDelayActive ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
                     )
                     .contentShape(Capsule(style: .continuous))
                 }
@@ -326,66 +331,34 @@ struct LiveCompanionDrawerView: View {
                 .disabled(isFrozen)
                 .help("Spoiler Delay Buffer")
                 .popover(isPresented: $isSpoilerPopoverPresented, arrowEdge: .bottom) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Spoiler Delay Buffer")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-
-                        ForEach(SpoilerDelayOption.allCases) { option in
-                            let isSelected = controller.settings.livePulseSpoilerDelay == option
-                            Button {
-                                controller.settings.livePulseSpoilerDelay = option
-                                isSpoilerPopoverPresented = false
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: isSelected ? "checkmark" : "clock")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(isSelected ? AppleTheme.accent : .secondary)
-                                        .frame(width: 14)
-                                    Text(option.displayName)
-                                        .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
-                                        .foregroundStyle(.primary)
-                                    Spacer(minLength: 8)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(isSelected ? AppleTheme.accent.opacity(0.12) : .clear)
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(6)
-                    .frame(width: 170)
+                    SpoilerDelayPopover(
+                        selectedDelay: $settings.livePulseSpoilerDelay,
+                        isPresented: $isSpoilerPopoverPresented
+                    )
                 }
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, AppSpacing.md)
     }
 
     @ViewBuilder
     private var streamContextBanner: some View {
         let isFocused = controller.settings.livePulseStreamFocusOnly
-        let bannerFill = isFocused ? AppleTheme.accent.opacity(0.12) : Color.primary.opacity(0.05)
+        let bannerFill = isFocused ? AppleTheme.accentText.opacity(0.12) : Color.primary.opacity(0.05)
 
         switch snapshot.primaryContext {
         case .networkCandidates(let network, _, let gameIDs):
             let candidates = snapshot.games.filter { gameIDs.contains($0.id) }
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: AppSpacing.sm) {
                 HStack(spacing: 5) {
                     Image(systemName: "tv.and.mediabox")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(AppleTheme.accent)
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
                     Text("Multiple \(network) broadcasts — Pin your game:")
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(AppFont.caption(weight: .semibold))
                         .lineLimit(1)
-                    Spacer(minLength: 4)
+                    Spacer(minLength: AppSpacing.xs)
                     FreshnessLabelView(
                         lastUpdatedAt: snapshot.lastUpdatedAt,
                         hasLiveGames: hasLiveGames,
@@ -397,8 +370,8 @@ struct LiveCompanionDrawerView: View {
 
                 if candidates.isEmpty {
                     Text("Select a game in Scores to pin it to this stream.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 5) {
@@ -407,11 +380,12 @@ struct LiveCompanionDrawerView: View {
                                     pinGameToActiveTab(game)
                                 } label: {
                                     Text("\(game.away.abbreviation) @ \(game.home.abbreviation)")
-                                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(AppleTheme.accent)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 3)
-                                        .background(AppleTheme.accent.opacity(0.14), in: Capsule(style: .continuous))
+                                        .font(AppFont.caption(weight: .semibold))
+                                        .foregroundStyle(AppleTheme.accentText)
+                                        .padding(.horizontal, AppSpacing.md)
+                                        .frame(minWidth: 24, minHeight: 24)
+                                        .background(AppleTheme.accentText.opacity(0.14), in: Capsule(style: .continuous))
+                                        .contentShape(Capsule(style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(isFrozen)
@@ -420,32 +394,32 @@ struct LiveCompanionDrawerView: View {
                     }
                 }
             }
-            .padding(7)
+            .padding(AppSpacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                AppleTheme.accent.opacity(isFocused ? 0.14 : 0.09),
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                AppleTheme.accentText.opacity(isFocused ? 0.14 : 0.09),
+                in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
             )
 
         case .matchedGame(let gameID, _, let confidence, let sourceLabel):
             let game = snapshot.games.first(where: { $0.id == gameID })
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.sm) {
                 Image(systemName: confidence == .manual ? "pin.fill" : "dot.radiowaves.left.and.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(AppleTheme.accentText)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(game.map { "\($0.away.abbreviation) \($0.away.score) – \($0.home.score) \($0.home.abbreviation)" } ?? sourceLabel)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(AppFont.caption(weight: .semibold, tabular: true))
                         .lineLimit(1)
-                    HStack(spacing: 4) {
+                    HStack(spacing: AppSpacing.xs) {
                         Text(confidence == .manual ? "Pinned to active stream" : "Auto-matched: \(sourceLabel)")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                             .lineLimit(1)
                         Text("·")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.tertiary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textMuted)
                         FreshnessLabelView(
                             lastUpdatedAt: snapshot.lastUpdatedAt,
                             hasLiveGames: hasLiveGames,
@@ -456,38 +430,42 @@ struct LiveCompanionDrawerView: View {
                     }
                 }
 
-                Spacer(minLength: 4)
+                Spacer(minLength: AppSpacing.xs)
 
                 if confidence == .manual, let tabID = activeTargetTab?.id {
-                    Button("Unpin") {
+                    Button {
                         store.clearManualPin(tabID: tabID)
+                    } label: {
+                        Text("Unpin")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.accentText)
+                            .padding(.horizontal, AppSpacing.xs)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
                     .disabled(isFrozen)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(bannerFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(bannerFill, in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
 
         case .liveSlate(let league, let label):
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.sm) {
                 Image(systemName: league.symbolName)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(AppleTheme.accentText)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(AppFont.caption(weight: .semibold))
                         .lineLimit(1)
-                    HStack(spacing: 4) {
+                    HStack(spacing: AppSpacing.xs) {
                         Text("Whip-around slate")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                         Text("·")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.tertiary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textMuted)
                         FreshnessLabelView(
                             lastUpdatedAt: snapshot.lastUpdatedAt,
                             hasLiveGames: hasLiveGames,
@@ -499,29 +477,33 @@ struct LiveCompanionDrawerView: View {
                 }
                 Spacer()
                 if let tabID = activeTargetTab?.id, store.manualPinsByTab[tabID] != nil {
-                    Button("Auto") {
+                    Button {
                         store.clearManualPin(tabID: tabID)
+                    } label: {
+                        Text("Auto")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.accentText)
+                            .padding(.horizontal, AppSpacing.xs)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
                     .disabled(isFrozen)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(bannerFill, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(bannerFill, in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
 
         case .none:
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.sm) {
                 Image(systemName: "play.tv")
-                    .font(.system(size: 10))
-                    .foregroundStyle(isFocused ? AppleTheme.accent : .secondary)
+                    .font(AppIconFont.xs)
+                    .foregroundStyle(isFocused ? AppleTheme.accentText : AppleTheme.textSecondary)
                 Text("Pin a game in Scores or play a live broadcast")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
-                Spacer(minLength: 4)
+                Spacer(minLength: AppSpacing.xs)
                 FreshnessLabelView(
                     lastUpdatedAt: snapshot.lastUpdatedAt,
                     hasLiveGames: hasLiveGames,
@@ -530,11 +512,11 @@ struct LiveCompanionDrawerView: View {
                     style: .drawerInline
                 )
             }
-            .padding(.horizontal, isFocused ? 8 : 0)
-            .padding(.vertical, isFocused ? 5 : 0)
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                isFocused ? AppleTheme.accent.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                isFocused ? AppleTheme.accentText.opacity(0.12) : Color.primary.opacity(0.03),
+                in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
             )
         }
     }
@@ -546,14 +528,15 @@ struct LiveCompanionDrawerView: View {
             store.selectedLeagueFilter = league
         } label: {
             Text(title)
-                .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? AppleTheme.accent : Color.primary.opacity(0.76))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
+                .font(AppFont.micro(weight: isSelected ? .bold : .semibold))
+                .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.78))
+                .padding(.horizontal, AppSpacing.sm)
+                .frame(minWidth: 24, minHeight: 24)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(isSelected ? AppleTheme.accent.opacity(0.16) : Color.primary.opacity(0.06))
+                        .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.06))
                 )
+                .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -596,51 +579,51 @@ struct LiveCompanionDrawerView: View {
         }.count
         let benchTotal = matchup.bench.reduce(0.0) { $0 + $1.points }
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
             HStack {
                 Text("\(matchup.league.displayName) · \(matchup.leagueName)")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
                 Spacer()
                 Text(matchup.weekLabel)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppFont.caption(weight: .semibold, tabular: true))
+                    .foregroundStyle(AppleTheme.accentText)
             }
 
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .center, spacing: AppSpacing.md) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Text(matchup.userTeamName)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(AppFont.callout(weight: .semibold))
                         .lineLimit(1)
                     Text(String(format: "%.1f", matchup.userPoints))
-                        .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(matchup.userPoints >= matchup.opponentPoints ? .primary : .secondary)
+                        .font(AppFont.largeTitle(weight: .bold, tabular: true))
+                        .foregroundStyle(matchup.userPoints >= matchup.opponentPoints ? Color.primary : AppleTheme.textSecondary)
                         .liveNumericTransition(enabled: animationsEnabled, value: matchup.userPoints)
                     if let proj = matchup.userProjected {
                         Text(String(format: "Proj %.1f", proj))
-                            .font(.system(size: 9.5).monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption(tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text("VS")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(.tertiary)
+                    .font(AppFont.caption(weight: .bold))
+                    .foregroundStyle(AppleTheme.textMuted)
 
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .trailing, spacing: AppSpacing.xxs) {
                     Text(matchup.opponentTeamName)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(AppFont.callout(weight: .medium))
                         .lineLimit(1)
                     Text(String(format: "%.1f", matchup.opponentPoints))
-                        .font(.system(size: 20, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(matchup.opponentPoints > matchup.userPoints ? .primary : .secondary)
+                        .font(AppFont.largeTitle(weight: .bold, tabular: true))
+                        .foregroundStyle(matchup.opponentPoints > matchup.userPoints ? Color.primary : AppleTheme.textSecondary)
                         .liveNumericTransition(enabled: animationsEnabled, value: matchup.opponentPoints)
                     if let proj = matchup.opponentProjected {
                         Text(String(format: "Proj %.1f", proj))
-                            .font(.system(size: 9.5).monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption(tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -649,10 +632,10 @@ struct LiveCompanionDrawerView: View {
             Divider().opacity(0.3)
 
             Text("Your Starters")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption(weight: .semibold))
+                .foregroundStyle(AppleTheme.textSecondary)
 
-            VStack(spacing: 4) {
+            VStack(spacing: AppSpacing.xs) {
                 ForEach(sortedStarters) { player in
                     FantasyPlayerRowView(
                         player: player,
@@ -665,11 +648,11 @@ struct LiveCompanionDrawerView: View {
 
             if !matchup.bench.isEmpty {
                 DisclosureGroup(isExpanded: $showBenchPlayers) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
                         Text("Not counted in matchup total")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 2)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textMuted)
+                            .padding(.top, AppSpacing.xxs)
 
                         ForEach(matchup.bench) { player in
                             FantasyPlayerRowView(
@@ -682,21 +665,21 @@ struct LiveCompanionDrawerView: View {
                     }
                     .padding(.top, 3)
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: AppSpacing.sm) {
                         Text(liveBenchCount > 0 ? "Bench (\(matchup.bench.count) · \(liveBenchCount) live)" : "Bench (\(matchup.bench.count))")
                         Spacer()
                         Text(String(format: "%.1f BN", benchTotal))
-                            .font(.system(size: 9.5, weight: .medium, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.tertiary)
+                            .font(AppFont.caption(weight: .medium, tabular: true))
+                            .foregroundStyle(AppleTheme.textMuted)
                     }
                 }
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption(weight: .semibold))
+                .foregroundStyle(AppleTheme.textSecondary)
             }
 
             if !matchup.opponentStarters.isEmpty {
                 DisclosureGroup("Opponent Starters (\(matchup.opponentStarters.count))", isExpanded: $showOpponentStarters) {
-                    VStack(spacing: 4) {
+                    VStack(spacing: AppSpacing.xs) {
                         ForEach(matchup.opponentStarters) { player in
                             FantasyPlayerRowView(
                                 player: player,
@@ -706,14 +689,14 @@ struct LiveCompanionDrawerView: View {
                             )
                         }
                     }
-                    .padding(.top, 4)
+                    .padding(.top, AppSpacing.xs)
                 }
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption(weight: .semibold))
+                .foregroundStyle(AppleTheme.textSecondary)
             }
         }
         .padding(10)
-        .background(Color.primary.opacity(isResolvedDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color.primary.opacity(isResolvedDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
     }
 
     // MARK: - Tab 2: Players
@@ -768,12 +751,12 @@ struct LiveCompanionDrawerView: View {
             if hasAnyBench {
                 HStack {
                     Text("Roster Feed")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
                     Spacer()
                     benchFilterChip
                 }
-                .padding(.horizontal, 2)
+                .padding(.horizontal, AppSpacing.xxs)
             }
 
             if !inStream.isEmpty {
@@ -789,15 +772,15 @@ struct LiveCompanionDrawerView: View {
                     }
 
                     if !inStreamStarters.isEmpty && !inStreamBench.isEmpty {
-                        HStack(spacing: 6) {
+                        HStack(spacing: AppSpacing.sm) {
                             Text("Bench in stream")
-                                .font(.system(size: 9.5, weight: .medium))
-                                .foregroundStyle(.tertiary)
+                                .font(AppFont.caption(weight: .medium))
+                                .foregroundStyle(AppleTheme.textMuted)
                             Rectangle()
                                 .fill(Color.primary.opacity(0.08))
                                 .frame(height: 0.5)
                         }
-                        .padding(.top, 2)
+                        .padding(.top, AppSpacing.xxs)
                     }
 
                     ForEach(inStreamBench) { entry in
@@ -839,11 +822,11 @@ struct LiveCompanionDrawerView: View {
                                 )
                             }
                         }
-                        .padding(.top, 4)
+                        .padding(.top, AppSpacing.xs)
                     }
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 2)
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.xxs)
                 } else {
                     sectionHeader("Upcoming & Final")
                     VStack(spacing: 5) {
@@ -872,26 +855,27 @@ struct LiveCompanionDrawerView: View {
         Button {
             showBenchInPlayers.toggle()
         } label: {
-            HStack(spacing: 3.5) {
+            HStack(spacing: AppSpacing.xs) {
                 Text("BN")
-                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                    .font(AppFont.micro(weight: .bold))
                 Text("Bench")
-                    .font(.system(size: 10, weight: showBenchInPlayers ? .semibold : .medium))
+                    .font(AppFont.caption(weight: showBenchInPlayers ? .semibold : .medium))
             }
-            .foregroundStyle(showBenchInPlayers ? AppleTheme.accent : .secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2.5)
+            .foregroundStyle(showBenchInPlayers ? AppleTheme.accentText : AppleTheme.textSecondary)
+            .padding(.horizontal, AppSpacing.md)
+            .frame(minWidth: 24, minHeight: 24)
             .background(
                 Capsule(style: .continuous)
-                    .fill(showBenchInPlayers ? AppleTheme.accent.opacity(0.14) : Color.primary.opacity(0.05))
+                    .fill(showBenchInPlayers ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.05))
             )
             .overlay(
                 Capsule(style: .continuous)
                     .strokeBorder(
-                        showBenchInPlayers ? AppleTheme.accent.opacity(0.32) : Color.secondary.opacity(0.25),
+                        showBenchInPlayers ? AppleTheme.accentText.opacity(0.32) : AppleTheme.textSecondary.opacity(0.25),
                         lineWidth: 0.75
                     )
             )
+            .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .help(showBenchInPlayers ? "Hide bench players in Players feed" : "Show bench players in Players feed")
@@ -946,30 +930,30 @@ struct LiveCompanionDrawerView: View {
         let isPinnedToActive = isGamePinned(game)
         let isStreamMatch = snapshot.activeGameIDs.contains(game.id)
 
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: 5) {
                 Text(game.league.displayName)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(isStreamMatch ? AppleTheme.accent : .secondary)
+                    .font(AppFont.micro(weight: .bold))
+                    .foregroundStyle(isStreamMatch ? AppleTheme.accentText : AppleTheme.textSecondary)
                     .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
+                    .padding(.vertical, AppSpacing.xxs)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(isStreamMatch ? AppleTheme.accent.opacity(0.15) : Color.primary.opacity(0.06))
+                            .fill(isStreamMatch ? AppleTheme.accentText.opacity(0.15) : Color.primary.opacity(0.06))
                     )
 
                 Text(game.clock ?? game.statusDetail)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(game.status == .live ? AppleTheme.accent : .secondary)
+                    .font(AppFont.caption(weight: .semibold, tabular: true))
+                    .foregroundStyle(game.status == .live ? AppleTheme.accentText : AppleTheme.textSecondary)
                     .lineLimit(1)
 
                 if game.situation?.isRedZone == true {
                     Text("RED ZONE")
-                        .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                        .font(AppFont.micro(weight: .bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                        .padding(.vertical, AppSpacing.xxs)
+                        .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
                 }
 
                 Spacer()
@@ -983,16 +967,16 @@ struct LiveCompanionDrawerView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: isPinnedToActive ? "pin.fill" : "pin")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(AppIconFont.xs(weight: .semibold))
                         Text(isPinnedToActive ? "Pinned" : "Pin")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(AppFont.caption(weight: .semibold))
                     }
-                    .foregroundStyle(isPinnedToActive ? .white : Color.primary.opacity(0.8))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .foregroundStyle(isPinnedToActive ? Color.white : Color.primary.opacity(0.84))
+                    .padding(.horizontal, AppSpacing.md)
+                    .minHitTarget(24, shape: Capsule(style: .continuous))
                     .background(
                         Capsule(style: .continuous)
-                            .fill(isPinnedToActive ? AppleTheme.accent : Color.primary.opacity(0.08))
+                            .fill(isPinnedToActive ? AppleTheme.accentFill : Color.primary.opacity(0.08))
                     )
                 }
                 .buttonStyle(.plain)
@@ -1004,73 +988,73 @@ struct LiveCompanionDrawerView: View {
 
             if let sit = game.situation, let summary = situationSummary(sit), !summary.isEmpty {
                 Text(summary)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .medium, tabular: true))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: AppSpacing.md) {
                 if let spread = game.spreadSummary, !spread.isEmpty {
                     Text(spread)
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
                 if let ou = game.overUnder {
                     Text(String(format: "O/U %.1f", ou))
-                        .font(.system(size: 9.5).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
                 if let awayWin = game.espnAwayWinProb, let homeWin = game.espnHomeWinProb {
                     let awayPct = Int((awayWin * 100).rounded())
                     let homePct = Int((homeWin * 100).rounded())
                     Text("Win \(game.away.abbreviation) \(awayPct)% / \(game.home.abbreviation) \(homePct)%")
-                        .font(.system(size: 9.5).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
                 Spacer()
                 if let network = game.broadcasts.first {
                     Text(network)
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textMuted)
                 }
             }
         }
         .padding(9)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(isStreamMatch ? AppleTheme.accent.opacity(0.08) : Color.primary.opacity(isResolvedDark ? 0.06 : 0.04))
+            RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+                .fill(isStreamMatch ? AppleTheme.accentText.opacity(0.08) : Color.primary.opacity(isResolvedDark ? 0.06 : 0.04))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(isStreamMatch ? AppleTheme.accent.opacity(0.32) : Color.clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+                .strokeBorder(isStreamMatch ? AppleTheme.accentText.opacity(0.32) : Color.clear, lineWidth: 1)
         )
     }
 
     @ViewBuilder
     private func teamScoreRow(_ team: TeamScore) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AppSpacing.sm) {
             Circle()
-                .fill(team.isPossession ? AppleTheme.accent : Color.clear)
+                .fill(team.isPossession ? AppleTheme.accentFill : Color.clear)
                 .frame(width: 5, height: 5)
 
             Text(team.abbreviation)
-                .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                .frame(width: 38, alignment: .leading)
+                .font(AppFont.callout(weight: .bold))
+                .frame(width: 40, alignment: .leading)
 
             Text(team.shortName)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(AppFont.callout(weight: .medium))
                 .lineLimit(1)
 
             if let record = team.record, !record.isEmpty {
                 Text(record)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.tertiary)
+                    .font(AppFont.caption(tabular: true))
+                    .foregroundStyle(AppleTheme.textMuted)
             }
 
             Spacer()
 
             Text("\(team.score)")
-                .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
+                .font(AppFont.subhead(weight: .bold, tabular: true))
                 .liveNumericTransition(enabled: animationsEnabled, value: team.score)
         }
     }
@@ -1099,10 +1083,10 @@ struct LiveCompanionDrawerView: View {
             }
 
             Text("Read-only informational probabilities from Kalshi and Polymarket public market feeds. GlassGrid You does not execute trades, place wagers, or connect wallets.")
-                .font(.system(size: 9.5))
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-                .padding(.horizontal, 4)
+                .font(AppFont.caption)
+                .foregroundStyle(AppleTheme.textSecondary)
+                .padding(.top, AppSpacing.xs)
+                .padding(.horizontal, AppSpacing.xs)
         }
     }
 
@@ -1114,16 +1098,16 @@ struct LiveCompanionDrawerView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
                 Text(quote.provider.displayName)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppFont.micro(weight: .bold))
+                    .foregroundStyle(AppleTheme.accentText)
                     .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(AppleTheme.accent.opacity(0.14), in: Capsule(style: .continuous))
+                    .padding(.vertical, AppSpacing.xxs)
+                    .background(AppleTheme.accentText.opacity(0.14), in: Capsule(style: .continuous))
 
                 if let league = quote.league {
                     Text(league.displayName)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
 
                 Spacer()
@@ -1133,8 +1117,9 @@ struct LiveCompanionDrawerView: View {
                         controller.openCompanionTile(url: url)
                     } label: {
                         Image(systemName: "arrow.up.right.square")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
+                            .font(AppIconFont.sm)
+                            .foregroundStyle(AppleTheme.textSecondary)
+                            .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(isFrozen)
@@ -1143,13 +1128,13 @@ struct LiveCompanionDrawerView: View {
             }
 
             Text(quote.title)
-                .font(.system(size: 11, weight: .medium))
+                .font(AppFont.caption(weight: .medium))
                 .lineLimit(2)
 
-            HStack(spacing: 6) {
+            HStack(spacing: AppSpacing.sm) {
                 Text(quote.outcomeLabel)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
 
                 Spacer()
@@ -1162,15 +1147,15 @@ struct LiveCompanionDrawerView: View {
                 }
 
                 Text("\(pct)%")
-                    .font(.system(size: 13.5, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(isStreamMatch ? AppleTheme.accent : .primary)
+                    .font(AppFont.subhead(weight: .bold, tabular: true))
+                    .foregroundStyle(isStreamMatch ? AppleTheme.accentText : Color.primary)
                     .liveNumericTransition(enabled: animationsEnabled, value: pct)
             }
         }
         .padding(9)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(isStreamMatch ? AppleTheme.accent.opacity(0.08) : Color.primary.opacity(isResolvedDark ? 0.06 : 0.04))
+            RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+                .fill(isStreamMatch ? AppleTheme.accentText.opacity(0.08) : Color.primary.opacity(isResolvedDark ? 0.06 : 0.04))
         )
     }
 
@@ -1178,12 +1163,12 @@ struct LiveCompanionDrawerView: View {
     private func deltaPill(label: String, delta: Double) -> some View {
         let pct = Int((delta * 100.0).rounded())
         let sign = pct >= 0 ? "+" : ""
-        let color: Color = pct >= 0 ? .green : AppleTheme.accent
+        let color: Color = pct >= 0 ? AppleTheme.positive : AppleTheme.accentText
         Text("\(label) \(sign)\(pct)%")
-            .font(.system(size: 9.5, weight: .semibold, design: .rounded).monospacedDigit())
+            .font(AppFont.caption(weight: .semibold, tabular: true))
             .foregroundStyle(color)
             .padding(.horizontal, 5)
-            .padding(.vertical, 1.5)
+            .padding(.vertical, AppSpacing.xxs)
             .background(color.opacity(0.14), in: Capsule(style: .continuous))
     }
 
@@ -1194,13 +1179,15 @@ struct LiveCompanionDrawerView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text("Open in Tile")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
                 Spacer()
                 SettingsLink {
                     Text("Settings…")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(AppleTheme.accent)
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
+                        .padding(.horizontal, AppSpacing.xs)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(isFrozen)
@@ -1208,27 +1195,26 @@ struct LiveCompanionDrawerView: View {
 
             LazyVGrid(
                 columns: [
-                    GridItem(.flexible(minimum: 68), spacing: 4),
-                    GridItem(.flexible(minimum: 68), spacing: 4),
-                    GridItem(.flexible(minimum: 68), spacing: 4)
+                    GridItem(.flexible(minimum: 68), spacing: AppSpacing.xs),
+                    GridItem(.flexible(minimum: 68), spacing: AppSpacing.xs),
+                    GridItem(.flexible(minimum: 68), spacing: AppSpacing.xs)
                 ],
-                spacing: 4
+                spacing: AppSpacing.xs
             ) {
                 ForEach(CompanionQuickSite.livePulseSites) { site in
                     Button {
                         controller.openCompanionTile(url: site.url)
                     } label: {
-                        HStack(spacing: 4) {
+                        HStack(spacing: AppSpacing.xs) {
                             Image(systemName: site.systemImage)
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(AppleTheme.accent)
+                                .font(AppIconFont.xs(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
                             Text(shortLauncherTitle(for: site))
-                                .font(.system(size: 10, weight: .medium))
+                                .font(AppFont.caption(weight: .medium))
                                 .lineLimit(1)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .padding(.horizontal, AppSpacing.sm)
                         .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
                         .contentShape(Capsule(style: .continuous))
                     }
@@ -1239,7 +1225,7 @@ struct LiveCompanionDrawerView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, AppSpacing.md)
     }
 
     private func shortLauncherTitle(for site: CompanionQuickSite) -> String {
@@ -1257,53 +1243,57 @@ struct LiveCompanionDrawerView: View {
     private var noMatchedStreamCard: some View {
         VStack(spacing: 9) {
             Image(systemName: "scope")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(AppleTheme.accent.opacity(0.85))
+                .font(AppIconFont.xl(weight: .medium))
+                .foregroundStyle(AppleTheme.accentText)
             Text("No matched stream")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(AppFont.callout(weight: .semibold))
             Text("Play a live sports broadcast, pin a game to this tab, or switch back to all leagues.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption)
+                .foregroundStyle(AppleTheme.textSecondary)
                 .multilineTextAlignment(.center)
 
-            HStack(spacing: 8) {
-                Button("Pin game") {
+            HStack(spacing: AppSpacing.md) {
+                Button {
                     isPinEmptyStatePopoverPresented = true
+                } label: {
+                    Text("Pin game")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, AppSpacing.lg)
+                        .minHitTarget(26, shape: Capsule(style: .continuous))
+                        .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4.5)
-                .background(AppleTheme.accent, in: Capsule(style: .continuous))
                 .disabled(isFrozen || snapshot.games.isEmpty)
                 .popover(isPresented: $isPinEmptyStatePopoverPresented, arrowEdge: .leading) {
                     drawerPinPopover
                 }
 
-                Button("Show All") {
+                Button {
                     controller.toggleLivePulseStreamFocus()
+                } label: {
+                    Text("Show All")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
+                        .padding(.horizontal, AppSpacing.lg)
+                        .minHitTarget(26, shape: Capsule(style: .continuous))
+                        .background(AppleTheme.accentText.opacity(0.14), in: Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(AppleTheme.accent)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4.5)
-                .background(AppleTheme.accent.opacity(0.14), in: Capsule(style: .continuous))
                 .disabled(isFrozen)
             }
-            .padding(.top, 2)
+            .padding(.top, AppSpacing.xxs)
         }
         .frame(maxWidth: .infinity)
-        .padding(16)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(AppSpacing.xl)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
     }
 
     @ViewBuilder
     private var drawerPinPopover: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
             Text("Pin Game to Active Stream")
-                .font(.system(size: 12, weight: .semibold))
+                .font(AppFont.callout(weight: .semibold))
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 5) {
@@ -1312,21 +1302,22 @@ struct LiveCompanionDrawerView: View {
                             pinGameToActiveTab(game)
                             isPinEmptyStatePopoverPresented = false
                         } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: AppSpacing.sm) {
                                 Text(game.league.displayName)
-                                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 26, alignment: .leading)
+                                    .font(AppFont.micro(weight: .bold))
+                                    .foregroundStyle(AppleTheme.textSecondary)
+                                    .frame(width: 28, alignment: .leading)
                                 Text("\(game.away.abbreviation) \(game.away.score) – \(game.home.score) \(game.home.abbreviation)")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded).monospacedDigit())
+                                    .font(AppFont.caption(weight: .medium, tabular: true))
                                 Spacer()
                                 Text(game.clock ?? game.statusDetail)
-                                    .font(.system(size: 9.5))
-                                    .foregroundStyle(.secondary)
+                                    .font(AppFont.caption(tabular: true))
+                                    .foregroundStyle(AppleTheme.textSecondary)
                             }
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, AppSpacing.md)
                             .padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
@@ -1340,40 +1331,40 @@ struct LiveCompanionDrawerView: View {
 
     @ViewBuilder
     private func emptyStateCard(icon: String, title: String, subtitle: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: AppSpacing.md) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(AppleTheme.accent.opacity(0.85))
+                .font(AppIconFont.hero(weight: .medium))
+                .foregroundStyle(AppleTheme.accentText)
             Text(title)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(AppFont.callout(weight: .semibold))
                 .multilineTextAlignment(.center)
             Text(subtitle)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption)
+                .foregroundStyle(AppleTheme.textSecondary)
                 .multilineTextAlignment(.center)
             SettingsLink {
                 Text("Open Live Pulse Settings")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFont.caption(weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                    .padding(.horizontal, AppSpacing.lg)
+                    .minHitTarget(28, shape: Capsule(style: .continuous))
+                    .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(isFrozen)
-            .padding(.top, 2)
+            .padding(.top, AppSpacing.xxs)
         }
         .frame(maxWidth: .infinity)
-        .padding(16)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(AppSpacing.xl)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
     }
 
     @ViewBuilder
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 2)
+            .font(AppFont.caption(weight: .semibold))
+            .foregroundStyle(AppleTheme.textSecondary)
+            .padding(.horizontal, AppSpacing.xxs)
     }
 
     private func isGamePinned(_ game: LiveGame) -> Bool {
@@ -1427,34 +1418,35 @@ private struct FantasyPlayerRowView: View {
     let animationsEnabled: Bool
 
     @State private var highlightWashOpacity: Double = 0
-    @State private var washColor: Color = .green
+    @State private var washColor: Color = AppleTheme.positive
 
     private var isBench: Bool { !player.isStarter }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+            HStack(spacing: AppSpacing.sm) {
                 slotBadge
 
                 Text(player.name)
-                    .font(.system(
-                        size: isBench ? 11 : 11.5,
-                        weight: isBench ? .medium : (player.isActiveInStream ? .semibold : .medium)
-                    ))
-                    .foregroundStyle(isBench ? Color.primary.opacity(0.76) : .primary)
+                    .font(
+                        isBench
+                            ? AppFont.caption(weight: .medium)
+                            : AppFont.callout(weight: player.isActiveInStream ? .semibold : .medium)
+                    )
+                    .foregroundStyle(isBench ? Color.primary.opacity(0.76) : Color.primary)
                     .lineLimit(1)
 
                 Text(isBench ? "\(player.position) · \(player.nflOrProTeam)" : player.nflOrProTeam)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
 
                 if showOpponentBadge && !player.isUserRoster {
                     Text("OPP")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
+                        .font(AppFont.micro(weight: .bold))
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.xs)
+                        .padding(.vertical, AppSpacing.xxs)
                         .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
                 }
 
@@ -1462,49 +1454,45 @@ private struct FantasyPlayerRowView: View {
                     redZoneBadge
                 }
 
-                Spacer(minLength: 4)
+                Spacer(minLength: AppSpacing.xs)
 
                 if let delta = player.lastDeltaPoints, abs(delta) >= 0.05 {
                     let isPositive = delta >= 0
                     Text(String(format: "%@%.1f", isPositive ? "+" : "", delta))
-                        .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(
-                            isBench
-                                ? (isPositive ? Color.green.opacity(0.72) : AppleTheme.accent.opacity(0.78))
-                                : (isPositive ? .green : AppleTheme.accent)
-                        )
+                        .font(AppFont.caption(weight: .bold, tabular: true))
+                        .foregroundStyle(isPositive ? AppleTheme.positive : AppleTheme.accentText)
                 }
 
                 Text(String(format: "%.1f", player.points))
-                    .font(.system(
-                        size: isBench ? 11 : 11.5,
-                        weight: isBench ? .medium : .semibold,
-                        design: .rounded
-                    ).monospacedDigit())
-                    .foregroundStyle(isBench ? .secondary : .primary)
+                    .font(
+                        isBench
+                            ? AppFont.caption(weight: .medium, tabular: true)
+                            : AppFont.callout(weight: .semibold, tabular: true)
+                    )
+                    .foregroundStyle(isBench ? AppleTheme.textSecondary : Color.primary)
                     .liveNumericTransition(enabled: animationsEnabled, value: player.points)
             }
 
             if let statLine = player.liveStatLine, !statLine.isEmpty {
                 Text(statLine)
-                    .font(.system(size: 10, design: .rounded).monospacedDigit())
-                    .foregroundStyle(isBench ? Color.secondary.opacity(0.85) : .secondary)
+                    .font(AppFont.caption(tabular: true))
+                    .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
-                    .padding(.leading, 34)
+                    .padding(.leading, 36)
             }
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
                 .fill(surfaceFillColor)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
                         .fill(washColor.opacity(highlightWashOpacity))
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
                 .strokeBorder(surfaceStrokeColor, lineWidth: isBench ? 0.5 : 0)
         )
         .onChange(of: player.points) { oldPoints, newPoints in
@@ -1522,23 +1510,23 @@ private struct FantasyPlayerRowView: View {
     private var slotBadge: some View {
         if isBench {
             Text("BN")
-                .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 17)
+                .font(AppFont.micro(weight: .bold))
+                .foregroundStyle(AppleTheme.textSecondary)
+                .frame(width: 30, height: 18)
                 .overlay(
                     Capsule(style: .continuous)
-                        .strokeBorder(Color.secondary.opacity(0.35), lineWidth: 0.75)
+                        .strokeBorder(AppleTheme.textSecondary.opacity(0.35), lineWidth: 0.75)
                 )
         } else {
             Text(player.position)
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundStyle(player.isActiveInStream ? AppleTheme.accent : .secondary)
+                .font(AppFont.micro(weight: .bold))
+                .foregroundStyle(player.isActiveInStream ? AppleTheme.accentText : AppleTheme.textSecondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .frame(width: 28, height: 17)
+                .minimumScaleFactor(0.8)
+                .frame(width: 30, height: 18)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(player.isActiveInStream ? AppleTheme.accent.opacity(0.14) : Color.primary.opacity(0.07))
+                        .fill(player.isActiveInStream ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.07))
                 )
         }
     }
@@ -1547,42 +1535,42 @@ private struct FantasyPlayerRowView: View {
     private var redZoneBadge: some View {
         if isBench {
             Text("RZ")
-                .font(.system(size: 8.5, weight: .bold, design: .rounded))
-                .foregroundStyle(AppleTheme.accent)
-                .padding(.horizontal, 4.5)
-                .padding(.vertical, 1)
+                .font(AppFont.micro(weight: .bold))
+                .foregroundStyle(AppleTheme.accentText)
+                .padding(.horizontal, 5)
+                .padding(.vertical, AppSpacing.xxs)
                 .overlay(
                     Capsule(style: .continuous)
-                        .strokeBorder(AppleTheme.accent.opacity(0.45), lineWidth: 0.75)
+                        .strokeBorder(AppleTheme.accentText.opacity(0.45), lineWidth: 0.75)
                 )
         } else {
             Text("RZ")
-                .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                .font(AppFont.micro(weight: .bold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 4.5)
-                .padding(.vertical, 1)
-                .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                .padding(.horizontal, 5)
+                .padding(.vertical, AppSpacing.xxs)
+                .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
         }
     }
 
     private var surfaceFillColor: Color {
         if isBench {
-            return player.isActiveInStream ? AppleTheme.accent.opacity(0.05) : Color.primary.opacity(0.015)
+            return player.isActiveInStream ? AppleTheme.accentText.opacity(0.05) : Color.primary.opacity(0.015)
         }
         if player.isActiveInStream {
-            return AppleTheme.accent.opacity(isResolvedDark ? 0.13 : 0.09)
+            return AppleTheme.accentText.opacity(isResolvedDark ? 0.13 : 0.09)
         }
         return Color.primary.opacity(isResolvedDark ? 0.045 : 0.035)
     }
 
     private var surfaceStrokeColor: Color {
         guard isBench else { return .clear }
-        return player.isActiveInStream ? AppleTheme.accent.opacity(0.20) : Color.primary.opacity(0.09)
+        return player.isActiveInStream ? AppleTheme.accentText.opacity(0.20) : Color.primary.opacity(0.09)
     }
 
     private func triggerOneShotWash(isPositive: Bool) {
         guard animationsEnabled else { return }
-        washColor = isPositive ? .green : AppleTheme.accent
+        washColor = isPositive ? AppleTheme.positive : AppleTheme.accentText
         highlightWashOpacity = 0.16
         withAnimation(.easeOut(duration: 1.4)) {
             highlightWashOpacity = 0

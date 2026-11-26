@@ -46,7 +46,7 @@ enum LivePulseFreshnessHelpers {
     }
 }
 
-/// Low-power 15s-bucketed freshness indicator (zero animation timelines, static when `isFrozen`).
+/// Low-power 15s-bucketed freshness indicator (zero animation timelines, static when `isFrozen` or Reduce Motion is active).
 struct FreshnessLabelView: View {
     let lastUpdatedAt: Date?
     let hasLiveGames: Bool
@@ -54,8 +54,10 @@ struct FreshnessLabelView: View {
     let isFrozen: Bool
     let style: FreshnessLabelStyle
 
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+
     var body: some View {
-        if isFrozen {
+        if isFrozen || accessibilityReduceMotion {
             content(at: Date())
         } else {
             TimelineView(.periodic(from: .now, by: 15)) { context in
@@ -75,24 +77,23 @@ struct FreshnessLabelView: View {
 
         switch style {
         case .drawerInline:
-            HStack(spacing: 3.5) {
+            HStack(spacing: AppSpacing.xs) {
                 if state.isLiveDot {
                     Circle()
-                        .fill(Color.green)
+                        .fill(AppleTheme.positive)
                         .frame(width: 5, height: 5)
                 } else if state.isStale || state.isOffline {
                     Circle()
-                        .fill(Color.orange)
-                        .frame(width: 4.5, height: 4.5)
+                        .fill(AppleTheme.warning)
+                        .frame(width: 5, height: 5)
                 }
 
                 Text(state.label)
-                    .font(.system(
-                        size: 9.5,
+                    .font(AppFont.caption(
                         weight: (state.isStale || state.isOffline || state.isLiveDot) ? .semibold : .regular,
-                        design: .rounded
-                    ).monospacedDigit())
-                    .foregroundStyle(state.isStale || state.isOffline ? Color.orange : .secondary)
+                        tabular: true
+                    ))
+                    .foregroundStyle(state.isStale || state.isOffline ? AppleTheme.warning : AppleTheme.textSecondary)
                     .lineLimit(1)
             }
             .fixedSize()
@@ -100,34 +101,34 @@ struct FreshnessLabelView: View {
         case .tickerProgressive:
             let dotColor: Color = {
                 if state.isOffline || state.isTickerStale {
-                    return .orange
+                    return AppleTheme.warning
                 }
                 if state.isLiveDot || lastUpdatedAt != nil {
-                    return .green
+                    return AppleTheme.positive
                 }
-                return .secondary.opacity(0.55)
+                return AppleTheme.textMuted.opacity(0.65)
             }()
 
             HStack(spacing: 3) {
                 Circle()
                     .fill(dotColor)
-                    .frame(width: 4.5, height: 4.5)
+                    .frame(width: 5, height: 5)
 
                 if state.isTickerStale || state.isOffline {
                     Text(state.label)
-                        .font(.system(size: 9.5, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(Color.orange)
+                        .font(AppFont.caption(weight: .semibold, tabular: true))
+                        .foregroundStyle(AppleTheme.warning)
                         .lineLimit(1)
                 }
             }
             .fixedSize()
-            .padding(.horizontal, 2)
+            .padding(.horizontal, AppSpacing.xxs)
             .help("Feed status: \(state.label)")
         }
     }
 }
 
-/// Fixed 22x22pt manual refresh button with macOS 14/15 symbol animations and 1.2s checkmark completion feedback.
+/// Fixed 24x24pt manual refresh button with macOS 14/15 symbol animations and 1.2s checkmark completion feedback.
 struct LivePulseRefreshButton: View {
     let isRefreshing: Bool
     let lastUpdatedAt: Date?
@@ -135,7 +136,8 @@ struct LivePulseRefreshButton: View {
     let providerStatus: [String: String]
     let isEnabled: Bool
     let isFrozen: Bool
-    var iconSize: CGFloat = 10.5
+    var iconFont: Font = AppIconFont.xs(weight: .semibold)
+    var checkmarkFont: Font = AppIconFont.xs(weight: .bold)
     let action: () -> Void
 
     @State private var showCompletedCheckmark = false
@@ -147,14 +149,14 @@ struct LivePulseRefreshButton: View {
             Group {
                 if showCompletedCheckmark && !isRefreshing {
                     Image(systemName: "checkmark")
-                        .font(.system(size: iconSize, weight: .bold))
-                        .foregroundStyle(.green)
+                        .font(checkmarkFont)
+                        .foregroundStyle(AppleTheme.positive)
                 } else {
                     refreshBaseIcon
                 }
             }
             .contentTransition(.symbolEffect(.replace))
-            .frame(width: 22, height: 22)
+            .frame(width: 24, height: 24)
             .background(
                 Circle()
                     .fill(isHovered && !isDisabled ? Color.primary.opacity(0.08) : .clear)
@@ -198,11 +200,11 @@ struct LivePulseRefreshButton: View {
     @ViewBuilder
     private var refreshBaseIcon: some View {
         let icon = Image(systemName: "arrow.clockwise")
-            .font(.system(size: iconSize, weight: .semibold))
+            .font(iconFont)
             .foregroundStyle(
                 isRefreshing
-                    ? AppleTheme.accent
-                    : (isHovered && !isDisabled ? Color.primary : Color.secondary)
+                    ? AppleTheme.accentText
+                    : (isHovered && !isDisabled ? Color.primary : AppleTheme.textSecondary)
             )
 
         if #available(macOS 15.0, *) {

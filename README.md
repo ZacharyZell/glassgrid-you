@@ -76,7 +76,12 @@ Control playback, tabs, services, Multiview layouts, and appearance from your fa
 </p>
 
 ### Spotlight Command Palette (`⌘K`) & Day/Night Liquid Glass
-Jump straight to open tabs, enabled Streaming Services (including aliases like `hbo`, `max`, `apple`), Add-to-Multiview actions, Continue Watching history, pinned channels, saved Multiview presets, app actions, or live cookieless YouTube search suggestions — rendered in native macOS 26/27 **Liquid Glass** with clean `.regularMaterial` fallback on macOS 14–15.
+Jump straight to open tabs, enabled Streaming Services (including aliases like `hbo`, `max`, `apple`), Add-to-Multiview actions, Continue Watching history, pinned channels, saved Multiview presets, app actions, or live cookieless YouTube search suggestions — rendered with bundled **Inter v4.1** typography (`wght` / `opsz` / tabular numerals) and WCAG 2.1 AA adaptive Day/Night tokens in native macOS 26/27 **Liquid Glass** (with clean `.regularMaterial` fallback on macOS 14–15 and `Reduce Transparency` / `Increase Contrast` support).
+
+### Seasonal Holiday Color Themes & Ambient Effects
+GlassGrid You automatically adapts its Liquid Glass accent palette and subtle chrome atmosphere to major holidays using offline Gregorian & Computus calendar detection with zero-polling `00:00:05` midnight rollover:
+- **9 WCAG 2.1 AA Day & Night Palettes:** Auto-detects **Thanksgiving Harvest**, **Winter Holidays**, **New Year's**, **Valentine's Day**, **St. Patrick's Day**, **Spring & Easter** (Anonymous Gregorian Computus), **Independence Day**, **Halloween**, and **Classic Crimson** — with instant manual override via **View → Holiday Theme**, **Settings → General**, or `⌘K` (`Cycle Holiday Theme` / `Toggle Holiday Effects`).
+- **Chrome-Only WindowServer Core Animation Effects (`Off / Subtle / Festive`):** Lightweight `CAEmitterLayer` particles and header/sidebar ambient glow run strictly on WindowServer chrome surfaces (never over video or WebKit layers) and automatically pause in **Native Fullscreen**, **Focus Mode (`⌘⇧F`)**, and macOS **Reduce Motion**.
 
 <p align="center">
   <img src="docs/screenshots/command-palette-day.png" alt="GlassGrid You Command Palette (⌘K) in Day Mode Liquid Glass" width="100%" />
@@ -99,7 +104,10 @@ Follow live NFL, NBA, MLB, and NHL scoreboards, your fantasy matchups, and stric
 ## Complete Feature Set
 
 ### Native macOS Experience
-- **Liquid Glass Chrome**: Uses macOS 26/27 `.glassEffect` & `GlassEffectContainer` when compiled with Swift 6.2+ SDKs, and gracefully falls back to native `.regularMaterial` on macOS 14–15.
+- **Compact Single-Row Header (`⌘⌥\`)**: Collapse stacked multi-row chrome (`118–170pt`) into a single `52pt` Liquid Glass row in one click—featuring inline compact tabs (`32pt`), in-place Smart Omnibox morphing (`⌘L`), a compact `⊞ N` Multiview pill (`⌘⌥Z` Solo exit & layout popover), automatic secondary-control folding (`< 920pt`) and `N Tabs` collapsing (`< 880pt`) for Split Screen, preserved flanking drag gutters on the exact `26pt` traffic-light axis, and automatic `LivePulseStore` background-polling pause when the ticker is collapsed.
+- **Unified `+` Add-to-Grid & Tab Picker**: Both the header `[+]` button and Tab Strip `[+]` open the shared `Add to Grid / New Tab` catalog—browsing all **18 built-in streaming services**, the **8 deduplicated Sports/Fantasy/Markets companion sites** (`ESPN Scores`, `NFL.com`, `Sleeper`, `ESPN Fantasy`, `Yahoo Fantasy`, `NFL Fantasy`, `Kalshi`, `Polymarket`), **Saved Multiview Presets**, **Open Tabs**, **Pinned Channels & Playlists**, detected **Clipboard URLs**, and custom **HTTPS URLs** in one filterable popover.
+- **Liquid Glass Chrome & Inter Typography**: Uses macOS 26/27 `.glassEffect` & `GlassEffectContainer` when compiled with Swift 6.2+ SDKs (gracefully falling back to `.regularMaterial` on macOS 14–15), paired with bundled **Inter v4.1** variable typography (`>= 10pt` integer ramp, `wght` / `opsz` axes, `cv05` & tabular numerals), WCAG 2.1 AA adaptive Day/Night tokens (`>= 4.5:1` across all 18 service badges), `>= 24pt` interactive hit targets, concentric corner radii, and automatic **Reduce Transparency** / **Increase Contrast** adaptation.
+- **Seasonal Holiday Color Themes & Ambient Effects**: Offline Gregorian & Computus calendar detection across **9 WCAG 2.1 AA Day & Night palettes** (Thanksgiving Harvest, Winter Holidays, New Year's, Valentine's Day, St. Patrick's Day, Spring & Easter, Independence Day, Halloween, and Classic Crimson) with zero-polling `00:00:05` midnight rollover, manual pinning in **View → Holiday Theme** / **Settings → General** / `⌘K`, and zero-CPU WindowServer Core Animation `CAEmitterLayer` chrome-only effects (`Off / Subtle / Festive`) that pause automatically in Fullscreen, Focus Mode, and **Reduce Motion**.
 - **Multi-Window Support (`⌘N`)**: Open independent windows across multiple displays (`Open in New Window`, `Launch Preset in New Window`) with per-window Multiview, shared settings & Day/Night theme sync, dynamic window titles, and a single conflict-free Floating Mini-Player.
 - **Custom Sidebar Channel Folders**: Group pinned channels, playlists, and Companion sites into collapsible sidebar folders with 1-click **Open in Multiview**, non-destructive folder deletion, and `⌘K` Command Palette search.
 - **Sparkle 2 Silent Auto-Updates**: Signed releases include embedded Sparkle 2 EdDSA-verified auto-updates (with zero-dependency GitHub Releases fallback on source builds and forks).
@@ -185,6 +193,7 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 | Shortcut | Action |
 | :--- | :--- |
 | `⌘⌥S` | Toggle Sidebar |
+| `⌘⌥\` | Toggle Compact Single-Row Header |
 | `⌘⌥B` | Toggle Live Pulse Ticker Bar |
 | `⌘⌥I` | Toggle Live Pulse Companion Drawer |
 | `⌘⇧L` | Switch Day / Night Mode |
@@ -203,8 +212,8 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 
 GlassGrid You's source code is **100% open-source under the MIT License** — with zero telemetry, zero subscriptions, and zero paywalls.
 
-- **Latest Signed & Apple-Notarized `.dmg` (`v1.2.0`, $12 One-Time):** [Download GlassGrid You for macOS on Polar](https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb) — instant Gatekeeper-trusted macOS installer (macOS 14.0+, Sparkle Build 5) with no Xcode or build steps required, directly supporting ongoing macOS & WebKit maintenance.
-- **Preview · Source (`main` — `v1.3.0` Preview):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below) to run the latest source changes (Live Pulse Sports/Fantasy/Read-Only Markets, Universal Clean-Box, Floating Multiview Grid, local MCP/CLI/Siri control, and 18-service audit) while the `v1.3.0` notarized installer prepares. See the full diff history in the **[Release Log](https://glassgridyou.com/changelog.html)**.
+- **Latest Signed & Apple-Notarized `.dmg` (`v1.3.0`, Sparkle Build 6, $12 One-Time):** [Download GlassGrid You for macOS on Polar](https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb) — instant Gatekeeper-trusted macOS installer (macOS 14.0+, 8,564,552 bytes, Sparkle 2 EdDSA Build 6) including Compact Single-Row Header (`⌘⌥\`), Unified `+` Picker, Live Pulse, Universal Clean-Box, Floating Multiview Grid, local MCP/CLI/Siri control, Inter v4.1 WCAG AA design system, and Seasonal Holiday Color Themes & Ambient Effects. See the full diff history in the **[Release Log](https://glassgridyou.com/changelog.html)**.
+- **Build from Source (`main` — MIT):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below) to compile locally on macOS 14.0+ with Swift 6.
 - **Support Development:** You can also support ongoing development via [GitHub Sponsors](https://github.com/sponsors/ZacharyZell). Maintainers packaging signed & notarized releases can run `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
 
 ---
@@ -215,7 +224,7 @@ GlassGrid You's source code is **100% open-source under the MIT License** — wi
 git clone https://github.com/ZacharyZell/glassgrid-you.git
 cd glassgrid-you
 
-# Run unit tests (Swift 6 strict concurrency — 105 tests)
+# Run unit tests (Swift 6 strict concurrency — 125 tests)
 swift test
 
 # Build release binaries, generate Liquid Glass AppIcon.icns, sign, and install to /Applications
@@ -235,10 +244,10 @@ This installs **`/Applications/GlassGrid You.app`** (bundle identifier `com.glas
 
 GlassGrid You is organized into three Swift Package Manager targets plus a unit test suite:
 
-- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `StreamingServices`, `CleanBoxRules`, `WindowDisplayRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `WindowChromeLayout`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`, `LivePulse/*` including `LivePulseModels`, `SportsEntityMatcher`, `SpoilerDelayBuffer`, `ESPNScoreboardClient`, `SleeperClient`, `ESPNFantasyClient`, and `PredictionMarketsClient`, plus `Agent/*` including `MCPProtocol`, `AgentToolCatalog`, `AgentSecurity`, `AgentIPCProtocol`, `AgentHTTPProtocol`, `MCPClientConfigMerger`, and `AgentURLActionParser`).
-- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `OnboardingView`, `OnboardingSignInWebView`, `AirPlayPopoverView`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`, `AgentBridgeController`, `GlassGridAppIntents`, `LivePulseStore`, `LivePulseTickerBar`, `LivePulseFreshnessView`, `LiveCompanionDrawerView`, `CompanionDrawerDividerNSView`, and `LivePulseSettingsTabView`).
-- **`Sources/GlassGridCLI`**: Standalone CLI and stdio MCP server executable (`main`, `AgentUnixSocketClient`) with zero AppKit, WebKit, or Sparkle linkage.
-- **`Tests/YouTubeMacCoreTests`**: **105 unit tests** across `YouTubeMacCoreTests`, `AgentControlTests`, `LivePulseTests`, and offline `WKWebView` `CleanBoxDOMFixtureTests` covering routing, 18-service streaming isolation, SPA auth-exit & Clean-Box DOM geometry fixtures, Live Pulse entity matching (`StreamContextMetadata` across YouTube TV/Prime Video/Peacock/ESPN+ & 90s hysteresis) / spoiler buffering / compact 1-line boxscores & name+team fallback / freshness buckets & league priority / ESPN & Sleeper & Kalshi & Polymarket offline parsers / drawer layout invariants, AirPlay display routing, enhancement scripts, multiview layouts & Solo reducer, SponsorBlock prefix hashing, MCP discovery/security, command palette ranking, chapter parsing, window chrome geometry, and session persistence.
+- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `StreamingServices`, `CleanBoxRules`, `DesignSystemMetrics`, `HolidayTheme`, `WindowDisplayRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `WindowChromeLayout`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`, `LivePulse/*` including `LivePulseModels`, `SportsEntityMatcher`, `SpoilerDelayBuffer`, `ESPNScoreboardClient`, `SleeperClient`, `ESPNFantasyClient`, and `PredictionMarketsClient`, plus `Agent/*` including `MCPProtocol`, `AgentToolCatalog`, `AgentSecurity`, `AgentIPCProtocol`, `AgentHTTPProtocol`, `MCPClientConfigMerger`, and `AgentURLActionParser`).
+- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `OnboardingView`, `OnboardingSignInWebView`, `AirPlayPopoverView`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`, `DesignTokens`, `HolidayEffectsOverlay`, `AgentBridgeController`, `GlassGridAppIntents`, `LivePulseStore`, `LivePulseTickerBar`, `LivePulseFreshnessView`, `LiveCompanionDrawerView`, `CompanionDrawerDividerNSView`, and `LivePulseSettingsTabView`).
+- **`Sources/GlassGridCLI`**: Standalone CLI and stdio MCP server executable (`main`, `AgentUnixSocketClient`) with zero AppKit, WebKit, CoreText, or Sparkle linkage.
+- **`Tests/YouTubeMacCoreTests`**: **125 unit tests** across `YouTubeMacCoreTests`, `AgentControlTests`, `LivePulseTests`, `DesignSystemTests` (offline WCAG 2.1 AA Day/Night & 18-service badge contrast, typography/spacing/hit-target invariants, and live CoreText Inter v4.1 verification), `HolidayThemeTests` (21-year 7,671-day zero-overlap calendar audit, Computus Easter & Thanksgiving resolution, WCAG 2.1 AA contrast across all 9 holiday palettes, DST-safe midnight rollover, and Command Palette ranking), `CompactHeaderAndPickerTests` (`CompactHeaderLayout` `52pt`/`26pt` geometry & narrow Split Screen thresholds, deduplicated 8-site `pickerCompanionSites`, `GridPickerTargetMode`, and `CommandPaletteEngine` compact-header ranking), and offline `WKWebView` `CleanBoxDOMFixtureTests` covering routing, 18-service streaming isolation, SPA auth-exit & Clean-Box DOM geometry fixtures, Live Pulse entity matching (`StreamContextMetadata` across YouTube TV/Prime Video/Peacock/ESPN+ & 90s hysteresis) / spoiler buffering / compact 1-line boxscores & name+team fallback / freshness buckets & league priority / ESPN & Sleeper & Kalshi & Polymarket offline parsers / drawer layout invariants, AirPlay display routing, enhancement scripts, multiview layouts & Solo reducer, SponsorBlock prefix hashing, MCP discovery/security, command palette ranking, chapter parsing, window chrome geometry, and session persistence.
 
 Key engineering invariants enforced in code and CI (see [`AGENTS.md`](AGENTS.md)):
 1. **Zero CSS `:has(` selectors** and **zero `MutationObserver` loops** in injected page scripts to preserve smooth 4K 60fps HDR10 compositing.
@@ -262,4 +271,4 @@ Key engineering invariants enforced in code and CI (see [`AGENTS.md`](AGENTS.md)
 
 Pull requests and issue reports are welcome! Before opening a PR, please review [`AGENTS.md`](AGENTS.md) and ensure `swift test` and `swift build -c release` pass with zero warnings.
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE). Bundled **Inter v4.1** variable typography (`Sources/YouTubeMac/Resources/Fonts/InterVariable.ttf`) is licensed under the [SIL Open Font License 1.1](Sources/YouTubeMac/Resources/Fonts/OFL.txt).

@@ -45,14 +45,14 @@ private struct MenuBarTimelineView: View {
                             .frame(height: trackHeight)
 
                         Capsule(style: .continuous)
-                            .fill(AppleTheme.accent)
+                            .fill(AppleTheme.accentFill)
                             .frame(width: filledWidth, height: trackHeight)
 
                         if isHovered || dragFraction != nil {
                             Circle()
                                 .fill(Color.white)
                                 .shadow(color: .black.opacity(0.28), radius: 2, y: 1)
-                                .overlay(Circle().strokeBorder(AppleTheme.accent, lineWidth: 1.5))
+                                .overlay(Circle().strokeBorder(AppleTheme.accentFill, lineWidth: 1.5))
                                 .frame(width: 11, height: 11)
                                 .offset(x: min(max(0, filledWidth - 5.5), width - 11))
                         }
@@ -86,21 +86,21 @@ private struct MenuBarTimelineView: View {
                     Spacer()
                     Text(MediaState.formatTime(timeline.duration))
                 }
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .font(AppFont.caption(tabular: true))
+                .foregroundStyle(AppleTheme.textSecondary)
             }
-            .padding(.top, 2)
+            .padding(.top, AppSpacing.xxs)
         } else {
-            HStack(spacing: 5) {
+            HStack(spacing: AppSpacing.xs) {
                 Circle()
-                    .fill(AppleTheme.accent)
+                    .fill(AppleTheme.accentFill)
                     .frame(width: 6, height: 6)
                 Text("LIVE")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.micro(weight: .bold))
+                    .foregroundStyle(AppleTheme.textSecondary)
                 Spacer()
             }
-            .padding(.top, 2)
+            .padding(.top, AppSpacing.xxs)
         }
     }
 }
@@ -115,22 +115,23 @@ private struct MenuBarActionRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: AppSpacing.md) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(AppIconFont.md(weight: .medium))
                     .frame(width: 18)
-                    .foregroundStyle(isActive ? AppleTheme.accent : .secondary)
+                    .foregroundStyle(isActive ? AppleTheme.accentText : AppleTheme.textSecondary)
                 Text(title)
-                    .font(.system(size: 12.5, weight: isActive ? .medium : .regular))
+                    .font(AppFont.callout(weight: isActive ? .medium : .regular))
                 Spacer()
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .minHitTarget(28, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                     .fill(isHovered ? Color.primary.opacity(0.08) : .clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
@@ -161,22 +162,15 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private var emptyWindowsPopover: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(AppleTheme.accent.opacity(0.14))
-                    .frame(width: 44, height: 32)
-                    .overlay(
-                        Image(systemName: "play.rectangle.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(AppleTheme.accent)
-                    )
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: AppSpacing.lg) {
+            HStack(spacing: AppSpacing.md) {
+                BrandMarkBadge(size: 32, cornerRadius: AppRadius.md)
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Text("GlassGrid You")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppFont.body(weight: .semibold))
                     Text("No open windows")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
                 Spacer()
             }
@@ -184,7 +178,7 @@ struct MenuBarView: View {
             Divider()
                 .opacity(0.6)
 
-            VStack(spacing: 2) {
+            VStack(spacing: AppSpacing.xxs) {
                 MenuBarActionRow(title: "New GlassGrid You Window", systemImage: "macwindow.badge.plus") {
                     coordinator.openNewWindow()
                 }
@@ -199,16 +193,17 @@ struct MenuBarView: View {
             HStack {
                 SettingsLink {
                     Text("Settings…")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isSettingsHovered ? Color.primary : .secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .font(AppFont.callout(weight: .medium))
+                        .foregroundStyle(isSettingsHovered ? Color.primary : AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.md)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
                         .background(
                             Capsule(style: .continuous)
                                 .fill(isSettingsHovered ? Color.primary.opacity(0.08) : .clear)
                         )
                 }
                 .buttonStyle(.plain)
+                .contentShape(Capsule(style: .continuous))
                 .onHover { isSettingsHovered = $0 }
 
                 Spacer()
@@ -217,20 +212,21 @@ struct MenuBarView: View {
                     NSApp.terminate(nil)
                 } label: {
                     Text("Quit GlassGrid You")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isQuitHovered ? Color.primary : .secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .font(AppFont.callout(weight: .medium))
+                        .foregroundStyle(isQuitHovered ? Color.primary : AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.md)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
                         .background(
                             Capsule(style: .continuous)
                                 .fill(isQuitHovered ? Color.primary.opacity(0.08) : .clear)
                         )
                 }
                 .buttonStyle(.plain)
+                .contentShape(Capsule(style: .continuous))
                 .onHover { isQuitHovered = $0 }
             }
         }
-        .padding(14)
+        .padding(AppSpacing.lg)
         .frame(width: 318)
     }
 }
@@ -296,68 +292,55 @@ private struct MenuBarActiveControllerView: View {
 
     @ViewBuilder
     private var nowPlayingSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack(spacing: AppSpacing.md) {
                 if let thumbURL = nowPlayingThumbnailURL {
                     ZStack(alignment: .bottomTrailing) {
                         CachedThumbnailImage(url: thumbURL, placeholderIconSize: 16)
                             .frame(width: 64, height: 36)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                                     .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.6)
                             )
 
                         if nowPlaying.isPlaying {
                             Image(systemName: "waveform")
-                                .font(.system(size: 8.5, weight: .bold))
+                                .font(AppIconFont.xs(weight: .bold))
                                 .foregroundStyle(.white)
-                                .padding(3)
-                                .background(AppleTheme.accent, in: Circle())
-                                .padding(3)
+                                .padding(AppSpacing.xxs)
+                                .background(AppleTheme.accentFill, in: Circle())
+                                .padding(AppSpacing.xxs)
                         }
                     }
                     .frame(width: 64, height: 36)
+                } else if nowPlaying.hasVideo {
+                    BrandMarkBadge(size: 32, cornerRadius: AppRadius.md)
                 } else {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(
-                                nowPlaying.hasVideo
-                                    ? LinearGradient(
-                                        colors: [
-                                            Color(red: 1.0, green: 0.24, blue: 0.26),
-                                            Color(red: 0.82, green: 0.06, blue: 0.12)
-                                        ],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                    : LinearGradient(
-                                        colors: [Color.primary.opacity(0.12), Color.primary.opacity(0.08)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                            )
-                            .frame(width: 38, height: 38)
+                        RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+                            .fill(Color.primary.opacity(0.10))
+                            .frame(width: 32, height: 32)
 
-                        Image(systemName: nowPlaying.isPlaying ? "waveform" : "play.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(nowPlaying.hasVideo ? .white : .secondary)
+                        Image(systemName: "play.fill")
+                            .font(AppIconFont.nav(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Text(nowPlaying.title.isEmpty ? "YouTube" : nowPlaying.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppFont.body(weight: .semibold))
                         .lineLimit(2)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: AppSpacing.sm) {
                         Text(
                             nowPlaying.channel.isEmpty
                                 ? (nowPlaying.hasVideo ? "Ready to play" : "No video playing")
                                 : nowPlaying.channel
                         )
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .lineLimit(1)
 
                         if nowPlaying.isHDR {
@@ -385,29 +368,29 @@ private struct MenuBarActiveControllerView: View {
 
     @ViewBuilder
     private var multiviewAudioSwitcher: some View {
-        LiquidGlassGroup(spacing: 6) {
-            HStack(spacing: 5) {
+        LiquidGlassGroup(spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.xs) {
                 Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppIconFont.sm(weight: .semibold))
+                    .foregroundStyle(AppleTheme.accentText)
 
                 ForEach(Array(controller.multiviewTabs.enumerated()), id: \.element.id) { index, tab in
                     let isAudio = controller.multiviewAudioTab?.id == tab.id
                     Button {
                         controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
                     } label: {
-                        HStack(spacing: 3.5) {
+                        HStack(spacing: AppSpacing.xs) {
                             Text("\(index + 1)")
-                                .font(.system(size: 10.5, weight: .bold, design: .rounded).monospacedDigit())
+                                .font(AppFont.micro(weight: .bold, tabular: true))
                             Image(systemName: isAudio && !tab.mediaStatus.isMuted ? "waveform" : "speaker.slash.fill")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(AppIconFont.xs(weight: .semibold))
                         }
-                        .foregroundStyle(isAudio ? .white : Color.primary.opacity(0.8))
-                        .padding(.horizontal, 8)
+                        .foregroundStyle(isAudio ? .white : Color.primary.opacity(0.84))
+                        .padding(.horizontal, AppSpacing.md)
                         .frame(height: 24)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(isAudio ? AppleTheme.accent : Color.primary.opacity(0.08))
+                                .fill(isAudio ? AppleTheme.accentFill : Color.primary.opacity(0.08))
                         )
                         .contentShape(Capsule(style: .continuous))
                     }
@@ -415,17 +398,17 @@ private struct MenuBarActiveControllerView: View {
                     .help("Stream \(index + 1): \(tab.displayTitle)")
                 }
 
-                Spacer(minLength: 4)
+                Spacer(minLength: AppSpacing.xs)
 
                 if controller.isFloatingMultiviewGrid {
                     Text("Floating")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(AppleTheme.accent)
-                        .padding(.horizontal, 6)
-                        .frame(height: 20)
+                        .font(AppFont.micro(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
+                        .padding(.horizontal, AppSpacing.sm)
+                        .frame(height: 24)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(AppleTheme.accent.opacity(0.14))
+                                .fill(AppleTheme.accentText.opacity(0.14))
                         )
                 }
 
@@ -433,8 +416,8 @@ private struct MenuBarActiveControllerView: View {
                     controller.muteAllMultiviewTiles()
                 } label: {
                     Image(systemName: "speaker.slash.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .frame(width: 24, height: 24)
                         .background(Circle().fill(Color.primary.opacity(0.07)))
                         .contentShape(Circle())
@@ -442,29 +425,29 @@ private struct MenuBarActiveControllerView: View {
                 .buttonStyle(.plain)
                 .help("Mute All Multiview Streams")
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
             .appleGlass(in: Capsule(style: .continuous), interactive: true)
         }
     }
 
     @ViewBuilder
     private func sleepTimerCountdownPill(option: SleepTimerOption) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AppSpacing.sm) {
             Image(systemName: "moon.zzz.fill")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(AppleTheme.accent)
+                .font(AppIconFont.sm(weight: .semibold))
+                .foregroundStyle(AppleTheme.accentText)
 
             if let endDate = controller.sleepTimerEndDate {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let remaining = max(0, endDate.timeIntervalSince(context.date))
                     Text("Sleep in \(SleepTimerOption.formatRemaining(remaining))")
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .font(AppFont.caption(weight: .medium, tabular: true))
                         .foregroundStyle(.primary)
                 }
             } else {
                 Text("Sleep at \(option.shortTitle)")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(AppFont.caption(weight: .medium, tabular: true))
                     .foregroundStyle(.primary)
             }
 
@@ -474,14 +457,16 @@ private struct MenuBarActiveControllerView: View {
                 controller.setSleepTimer(nil)
             } label: {
                 Text("Cancel")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.accentText)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .minHitTarget(24, shape: Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accent.opacity(0.12))
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.xs)
+        .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accentText.opacity(0.12))
     }
 
     @ViewBuilder
@@ -491,63 +476,65 @@ private struct MenuBarActiveControllerView: View {
             VideoChapterParser.activeChapter(at: $0.currentTime, in: chapters)
         }
 
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
             Button {
                 withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
                     isChaptersExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: AppSpacing.sm) {
                     Image(systemName: "list.bullet.indent")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AppleTheme.accent)
+                        .font(AppIconFont.sm(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
                     Text("Chapters (\(chapters.count))")
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(AppFont.callout(weight: .semibold, tabular: true))
                         .foregroundStyle(.primary)
                     Spacer()
                     Image(systemName: isChaptersExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.xs)
+                .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                         .fill(Color.primary.opacity(0.05))
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
             if isChaptersExpanded {
                 ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         ForEach(chapters) { chapter in
                             let isCurrent = activeChapter?.id == chapter.id
                             Button {
                                 controller.seek(to: chapter.startSeconds)
                             } label: {
-                                HStack(spacing: 8) {
+                                HStack(spacing: AppSpacing.md) {
                                     Text(chapter.formattedStartTime)
-                                        .font(.system(size: 10.5, weight: .semibold, design: .rounded).monospacedDigit())
-                                        .foregroundStyle(isCurrent ? AppleTheme.accent : .secondary)
-                                        .frame(width: 42, alignment: .leading)
+                                        .font(AppFont.caption(weight: .semibold, tabular: true))
+                                        .foregroundStyle(isCurrent ? AppleTheme.accentText : AppleTheme.textSecondary)
+                                        .frame(width: 44, alignment: .leading)
 
                                     Text(chapter.title)
-                                        .font(.system(size: 11.5, weight: isCurrent ? .semibold : .regular))
+                                        .font(AppFont.callout(weight: isCurrent ? .semibold : .regular))
                                         .foregroundStyle(isCurrent ? Color.primary : Color.primary.opacity(0.84))
                                         .lineLimit(1)
                                         .truncationMode(.tail)
 
                                     Spacer()
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
+                                .padding(.horizontal, AppSpacing.md)
+                                .padding(.vertical, AppSpacing.xs)
+                                .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                                 .background(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(isCurrent ? AppleTheme.accent.opacity(0.12) : .clear)
+                                    RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+                                        .fill(isCurrent ? AppleTheme.accentText.opacity(0.12) : .clear)
                                 )
-                                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .contentShape(RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                             }
                             .buttonStyle(.plain)
                         }
@@ -560,9 +547,9 @@ private struct MenuBarActiveControllerView: View {
 
     @ViewBuilder
     private var transportControls: some View {
-        LiquidGlassGroup(spacing: 8) {
-            HStack(spacing: 6) {
-                HStack(spacing: 2) {
+        LiquidGlassGroup(spacing: AppSpacing.md) {
+            HStack(spacing: AppSpacing.sm) {
+                HStack(spacing: AppSpacing.xxs) {
                     AppleIconButton(
                         systemImage: "gobackward.10",
                         isDisabled: !nowPlaying.hasVideo,
@@ -575,13 +562,14 @@ private struct MenuBarActiveControllerView: View {
                         controller.togglePlayPause()
                     } label: {
                         Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(AppIconFont.toolbar(weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 42, height: 28)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(nowPlaying.hasVideo ? AppleTheme.accent : Color.primary.opacity(0.18))
+                                    .fill(nowPlaying.hasVideo ? AppleTheme.accentFill : Color.primary.opacity(0.18))
                             )
+                            .contentShape(Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(!nowPlaying.hasVideo)
@@ -595,13 +583,13 @@ private struct MenuBarActiveControllerView: View {
                         controller.seek(by: 10)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, AppSpacing.xs)
                 .frame(height: 34)
                 .appleGlass(in: Capsule(style: .continuous), interactive: true)
 
                 Spacer()
 
-                HStack(spacing: 2) {
+                HStack(spacing: AppSpacing.xxs) {
                     AppleIconButton(
                         systemImage: nowPlaying.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                         isActive: nowPlaying.isMuted,
@@ -621,7 +609,7 @@ private struct MenuBarActiveControllerView: View {
                     }
 
                     AppleIconButton(
-                        systemImage: controller.isMiniPlayer ? "arrow.up.left.and.arrow.down.right" : "rectangle.inset.bottomright.filled",
+                        systemImage: controller.isMiniPlayer ? "arrow.down.right.and.arrow.up.left" : "rectangle.inset.bottomright.filled",
                         isActive: controller.isMiniPlayer,
                         isDisabled: !controller.isMiniPlayer && !controller.canPopOutActiveContent,
                         helpText: controller.isMiniPlayer
@@ -636,7 +624,7 @@ private struct MenuBarActiveControllerView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, AppSpacing.xs)
                 .frame(height: 34)
                 .appleGlass(in: Capsule(style: .continuous), interactive: true)
             }
@@ -708,7 +696,7 @@ private struct MenuBarActiveControllerView: View {
 
             MenuBarActionRow(
                 title: isResolvedDark ? "Night Mode (Switch to Day)" : "Day Mode (Switch to Night)",
-                systemImage: isResolvedDark ? "moon.fill" : "sun.max.fill"
+                systemImage: isResolvedDark ? "moon" : "sun.max"
             ) {
                 controller.toggleDayNightMode(currentColorScheme: colorScheme)
             }
@@ -732,22 +720,23 @@ private struct MenuBarActiveControllerView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 9) {
+                HStack(spacing: AppSpacing.md) {
                     Image(systemName: controller.isSleepTimerActive ? "moon.zzz.fill" : "moon.zzz")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(AppIconFont.md(weight: .medium))
                         .frame(width: 18)
-                        .foregroundStyle(controller.isSleepTimerActive ? AppleTheme.accent : .secondary)
+                        .foregroundStyle(controller.isSleepTimerActive ? AppleTheme.accentText : AppleTheme.textSecondary)
                     Text(controller.sleepTimerOption.map { "Sleep Timer: \($0.shortTitle)" } ?? "Sleep Timer…")
-                        .font(.system(size: 12.5, weight: controller.isSleepTimerActive ? .medium : .regular))
+                        .font(AppFont.callout(weight: controller.isSleepTimerActive ? .medium : .regular, tabular: true))
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(.secondary.opacity(0.75))
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textMuted)
                 }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.sm)
+                .minHitTarget(28, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -761,16 +750,17 @@ private struct MenuBarActiveControllerView: View {
         HStack {
             SettingsLink {
                 Text("Settings…")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isSettingsHovered ? Color.primary : .secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .font(AppFont.callout(weight: .medium))
+                    .foregroundStyle(isSettingsHovered ? Color.primary : AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.md)
+                    .minHitTarget(24, shape: Capsule(style: .continuous))
                     .background(
                         Capsule(style: .continuous)
                             .fill(isSettingsHovered ? Color.primary.opacity(0.08) : .clear)
                     )
             }
             .buttonStyle(.plain)
+            .contentShape(Capsule(style: .continuous))
             .onHover { isSettingsHovered = $0 }
 
             Spacer()
@@ -779,16 +769,17 @@ private struct MenuBarActiveControllerView: View {
                 NSApp.terminate(nil)
             } label: {
                 Text("Quit GlassGrid You")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isQuitHovered ? Color.primary : .secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .font(AppFont.callout(weight: .medium))
+                    .foregroundStyle(isQuitHovered ? Color.primary : AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.md)
+                    .minHitTarget(24, shape: Capsule(style: .continuous))
                     .background(
                         Capsule(style: .continuous)
                             .fill(isQuitHovered ? Color.primary.opacity(0.08) : .clear)
                     )
             }
             .buttonStyle(.plain)
+            .contentShape(Capsule(style: .continuous))
             .onHover { isQuitHovered = $0 }
         }
     }

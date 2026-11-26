@@ -6,6 +6,28 @@
     <description>Most recent releases of GlassGrid You for macOS.</description>
     <language>en</language>
     <item>
+      <title>Version 1.3.0</title>
+      <pubDate>Thu, 26 Nov 2026 20:35:13 +0000</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.3.0</h2>
+        <ul>
+          <li><strong>Compact Single-Row Header (&#8984;&#8997;\) &amp; Unified &ldquo;+&rdquo; Picker:</strong> Collapse stacked header chrome into one 52pt Liquid Glass bar with inline tabs, Smart Omnibox morphing, a compact &#8862; N Multiview pill, Split Screen folding, and an Add to Grid / New Tab catalog covering all 18 services and 8 Sports/Fantasy/Markets sites.</li>
+          <li><strong>Live Pulse (Opt-In · &#8984;&#8997;B / &#8984;&#8997;I):</strong> Live NFL/NBA/MLB/NHL scoreboards ranked by #1&ndash;#4 Sport Priority or Watched Stream Focus, Sleeper &amp; ESPN Public Fantasy tracking with Starter vs. Bench cues, strictly read-only Kalshi &amp; Polymarket odds, 15s freshness + manual refresh, and 0s/20s/35s Spoiler Delay buffering.</li>
+          <li><strong>18-Service Hub, Universal Clean-Box (&#8984;&#8679;B) &amp; Floating Multiview Grid:</strong> Added Crunchyroll, hardened Prime Video/Disney+/HBO Max auth isolation, automatic player Clean-Box across all 18 services, and full 2&ndash;4 stream Floating Multiview Grids.</li>
+          <li><strong>Seasonal Holiday Color Themes &amp; Ambient Effects:</strong> Offline calendar detection across 9 WCAG 2.1 AA Day &amp; Night palettes (Thanksgiving Harvest, Winter Holidays, New Year&rsquo;s, Valentine&rsquo;s, St. Patrick&rsquo;s, Spring &amp; Easter, July 4th, Halloween, and Classic Crimson) with chrome-only WindowServer Core Animation effects.</li>
+          <li><strong>Inter v4.1 Design System &amp; Local AI Control:</strong> Bundled offline Inter v4.1 typography with WCAG 2.1 AA Day/Night contrast and Reduce Transparency adaptation, plus opt-in local MCP server (28 tools), <code>glassgrid</code> CLI, and 12 Siri App Intents.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://glassgridyou.com/updates/GlassGrid-You-1.3.0.dmg"
+        sparkle:edSignature="02K/x5fVQteLaH2/ylf2jGh5h8lsKZ1ck3DZTIp+jZ0Y2yXI2kOVBON8+VFrMe0nPGbHVBWCTDzjViV2VpZnDg=="
+        length="8564552"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.2.0</title>
       <pubDate>Tue, 24 Nov 2026 07:58:09 +0000</pubDate>
       <sparkle:version>5</sparkle:version>

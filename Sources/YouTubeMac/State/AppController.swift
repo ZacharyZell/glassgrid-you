@@ -26,6 +26,7 @@ public final class AppController {
     public var focusModeActive: Bool = false
     public var alwaysOnTop: Bool = false
     public var isSidebarVisible: Bool
+    public var isCompactHeaderActive: Bool
     public var poppedOutTabIDs: [UUID] = []
 
     public var multiviewTabIDs: [UUID] = []
@@ -69,6 +70,9 @@ public final class AppController {
 
     // Live Pulse layout flags ONLY (live telemetry lives exclusively on `LivePulseStore`)
     public var isLivePulseTickerVisible: Bool = false
+    public var isLivePulseTickerRendered: Bool {
+        isLivePulseTickerVisible && !isCompactHeaderActive
+    }
     public var isLivePulseDrawerVisible: Bool = false
     public var livePulseDrawerWidth: CGFloat = LivePulseLayout.drawerDefaultWidth
     public var windowContentWidth: CGFloat = 1280
@@ -180,6 +184,7 @@ public final class AppController {
         self.coordinator = coordinator
         self.settings = resolvedSettings
         self.isSidebarVisible = resolvedSettings.isSidebarVisible
+        self.isCompactHeaderActive = resolvedSettings.compactHeaderMode
         self.isLivePulseTickerVisible = resolvedSettings.livePulseEnabled && resolvedSettings.livePulseShowTicker
         self.isLivePulseDrawerVisible = resolvedSettings.livePulseEnabled && resolvedSettings.livePulseShowDrawer
         self.livePulseDrawerWidth = LivePulseLayout.clampDrawerWidth(CGFloat(resolvedSettings.livePulseDrawerWidth))
@@ -1810,6 +1815,83 @@ public final class AppController {
         addTileToMultiview(url: service.homeURL, routingMode: service.routingMode)
     }
 
+    // MARK: - Unified `+` Picker Routing Helpers
+
+    public func openServiceFromPicker(_ service: StreamingService, addToGrid: Bool) {
+        if hasLiveFullscreenTab {
+            createTab(url: service.homeURL, select: false, routingMode: service.routingMode)
+            showHUD(icon: "plus.square", message: "Opened \(service.name) Tab")
+            return
+        }
+        if addToGrid {
+            if isMultiviewActive && !canAddMultiviewTile {
+                createTab(url: service.homeURL, select: true, routingMode: service.routingMode)
+                return
+            }
+            if isMultiviewSoloActive {
+                soloMultiviewTabID = nil
+            }
+            addStreamingServiceToMultiview(service)
+        } else if isMultiviewActive {
+            createTab(url: service.homeURL, select: false, routingMode: service.routingMode)
+            showHUD(icon: "plus.square", message: "Opened \(service.name) Tab")
+        } else {
+            openStreamingService(service, inNewTab: true)
+        }
+    }
+
+    public func openURLFromPicker(_ url: URL, routingMode: TabRoutingMode? = nil, addToGrid: Bool) {
+        let targetURL = settings.redirectShortsToWatch
+            ? (YouTubeURLRouter.rewriteShortsURL(url) ?? url)
+            : url
+        let resolvedMode = routingMode ?? YouTubeURLRouter.preferredRoutingMode(for: targetURL)
+
+        if hasLiveFullscreenTab {
+            createTab(url: targetURL, select: false, routingMode: resolvedMode)
+            showHUD(icon: "plus.square", message: "Opened in New Tab")
+            return
+        }
+        if addToGrid {
+            if isMultiviewActive && !canAddMultiviewTile {
+                createTab(url: targetURL, select: true, routingMode: resolvedMode)
+                return
+            }
+            if isMultiviewSoloActive {
+                soloMultiviewTabID = nil
+            }
+            addTileToMultiview(url: targetURL, routingMode: resolvedMode)
+        } else if isMultiviewActive {
+            createTab(url: targetURL, select: false, routingMode: resolvedMode)
+            showHUD(icon: "plus.square", message: "Opened in New Tab")
+        } else {
+            createTab(url: targetURL, select: true, routingMode: resolvedMode)
+        }
+    }
+
+    @discardableResult
+    public func openRawInputFromPicker(_ rawInput: String, addToGrid: Bool) -> Bool {
+        if let ytURL = YouTubeURLRouter.extractYouTubeURLFromString(rawInput) {
+            openURLFromPicker(ytURL, routingMode: .youtube, addToGrid: addToGrid)
+            return true
+        }
+        guard let webURL = YouTubeURLRouter.resolveCompanionURL(rawInput) else {
+            showHUD(icon: "exclamationmark.triangle", message: "Enter a Valid Website or HTTPS URL")
+            return false
+        }
+        openURLFromPicker(webURL, routingMode: .companion, addToGrid: addToGrid)
+        return true
+    }
+
+    public func openNewYouTubeTabFromPicker(addToGrid: Bool) {
+        openURLFromPicker(settings.startupDestination.url, routingMode: .youtube, addToGrid: addToGrid)
+    }
+
+    public func openPinnedItemFromPicker(_ item: PinnedItem, addToGrid: Bool) {
+        guard let url = item.url else { return }
+        let mode = YouTubeURLRouter.preferredRoutingMode(for: url)
+        openURLFromPicker(url, routingMode: mode, addToGrid: addToGrid)
+    }
+
     public func openURLInSafari(_ url: URL?) {
         guard let url else { return }
         let safariURL = URL(fileURLWithPath: "/Applications/Safari.app")
@@ -2157,6 +2239,8 @@ public final class AppController {
             if isCommandPalettePresented {
                 dismissCommandPalette(refocusWebView: false)
             }
+        } else if !hasLiveFullscreenTab {
+            syncCompactHeaderModeFromSettings()
         }
         guard isInFullscreen,
               isMultiviewActive,
@@ -2299,6 +2383,56 @@ public final class AppController {
             }
         }
         setAppearance(isCurrentlyDark ? .light : .dark, showFeedback: true)
+    }
+
+    public func setHolidayThemeSelection(_ selection: HolidayThemeSelection, showFeedback: Bool = true) {
+        settings.holidayThemeSelection = selection
+        ThemeRuntime.shared.apply(palette: settings.activeHolidayPalette)
+        if showFeedback {
+            let palette = settings.activeHolidayPalette
+            switch selection {
+            case .auto:
+                let suffix = palette.id == .classic ? "Classic" : palette.shortName
+                showHUD(icon: palette.symbolName, message: "Holiday Theme: Auto (\(suffix))")
+            case .classic:
+                showHUD(icon: "paintpalette", message: "Holiday Theme: Classic Crimson")
+            default:
+                showHUD(icon: palette.symbolName, message: "Holiday Theme: \(palette.displayName)")
+            }
+        }
+    }
+
+    public func setHolidayEffectsIntensity(_ intensity: HolidayEffectsIntensity, showFeedback: Bool = true) {
+        settings.holidayEffectsIntensity = intensity
+        if showFeedback {
+            let palette = settings.activeHolidayPalette
+            let icon = intensity == .off ? "sparkles.slash" : (palette.id == .classic ? "sparkles" : palette.symbolName)
+            let message: String
+            switch intensity {
+            case .off:
+                message = "Ambient Effects: Off"
+            case .subtle:
+                message = "Ambient Effects: Subtle"
+            case .festive:
+                message = "Ambient Effects: Festive"
+            }
+            showHUD(icon: icon, message: message)
+        }
+    }
+
+    public func toggleHolidayEffects() {
+        let next: HolidayEffectsIntensity = settings.holidayEffectsIntensity == .off ? .subtle : .off
+        setHolidayEffectsIntensity(next, showFeedback: true)
+    }
+
+    public func cycleHolidayTheme() {
+        let all = HolidayThemeSelection.allCases
+        guard let idx = all.firstIndex(of: settings.holidayThemeSelection) else {
+            setHolidayThemeSelection(.auto, showFeedback: true)
+            return
+        }
+        let next = all[(idx + 1) % all.count]
+        setHolidayThemeSelection(next, showFeedback: true)
     }
 
     public func toggleAlwaysOnTop() {
@@ -2772,10 +2906,57 @@ public final class AppController {
         settings.isSidebarVisible = isSidebarVisible
     }
 
+    public func toggleCompactHeaderMode() {
+        setCompactHeaderMode(!isCompactHeaderActive)
+    }
+
+    public func setCompactHeaderMode(_ enabled: Bool) {
+        guard !hasLiveFullscreenTab else { return }
+        let changed = (isCompactHeaderActive != enabled) || (settings.compactHeaderMode != enabled)
+        guard changed else { return }
+        if isCompactHeaderActive != enabled {
+            withAnimation(.snappy(duration: 0.20, extraBounce: 0)) {
+                isCompactHeaderActive = enabled
+            }
+        }
+        settings.compactHeaderMode = enabled
+        coordinator?.livePulseStore.reconcileLifecycle()
+        showHUD(
+            icon: enabled ? "rectangle.compress.vertical" : "rectangle.expand.vertical",
+            message: enabled ? "Compact Single-Row Header" : "Expanded Header Bars"
+        )
+    }
+
+    public func syncCompactHeaderModeFromSettings() {
+        guard !hasLiveFullscreenTab else { return }
+        let wantCompact = settings.compactHeaderMode
+        if isCompactHeaderActive != wantCompact {
+            withAnimation(.snappy(duration: 0.20, extraBounce: 0)) {
+                isCompactHeaderActive = wantCompact
+            }
+        }
+        coordinator?.livePulseStore.reconcileLifecycle()
+    }
+
     // MARK: - Live Pulse Layout & Stream Signals
 
     public func toggleLivePulseTicker() {
         guard !hasLiveFullscreenTab else { return }
+        if isCompactHeaderActive {
+            withAnimation(.snappy(duration: 0.20, extraBounce: 0)) {
+                isCompactHeaderActive = false
+                isLivePulseTickerVisible = true
+            }
+            settings.compactHeaderMode = false
+            if !settings.livePulseEnabled {
+                settings.livePulseEnabled = true
+                showHUD(icon: "sportscourt.fill", message: "Live Pulse Enabled")
+            }
+            settings.livePulseShowTicker = true
+            syncLivePulseStreamSignals()
+            coordinator?.livePulseStore.reconcileLifecycle()
+            return
+        }
         let nextVisible = !isLivePulseTickerVisible
         if nextVisible && !settings.livePulseEnabled {
             settings.livePulseEnabled = true
@@ -3451,7 +3632,7 @@ public final class AppController {
         actions.append(
             CommandPaletteActionDescriptor(
                 action: .toggleLivePulseTicker,
-                title: isLivePulseTickerVisible ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker",
+                title: isLivePulseTickerRendered ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker",
                 keywords: "live pulse ticker scores sports nfl nba mlb nhl",
                 systemImage: "sportscourt",
                 shortcutHint: "⌘⌥B",
@@ -3465,6 +3646,36 @@ public final class AppController {
                 keywords: "live pulse drawer fantasy sleeper espn kalshi polymarket markets",
                 systemImage: "sidebar.trailing",
                 shortcutHint: "⌘⌥I",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleCompactHeaderMode,
+                title: isCompactHeaderActive ? "Expand Header Bars" : "Compact Single-Row Header",
+                keywords: "compact minimize single row header chrome tabs",
+                systemImage: isCompactHeaderActive ? "rectangle.expand.vertical" : "rectangle.compress.vertical",
+                shortcutHint: "⌘⌥\\",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        let activeHoliday = settings.activeHolidayPalette
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .cycleHolidayTheme,
+                title: "Cycle Holiday Theme (\(activeHoliday.shortName))",
+                keywords: "holiday theme seasonal thanksgiving winter halloween valentine patrick easter july4 new year color accent",
+                systemImage: activeHoliday.symbolName,
+                isFeaturedWhenEmpty: false
+            )
+        )
+        let effectsEnabled = settings.holidayEffectsIntensity != .off
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleHolidayEffects,
+                title: effectsEnabled ? "Turn Off Holiday Ambient Effects" : "Enable Holiday Ambient Effects",
+                keywords: "holiday effects snow leaves hearts particles ambient festive subtle",
+                systemImage: effectsEnabled ? "sparkles.slash" : "sparkles",
                 isFeaturedWhenEmpty: false
             )
         )
@@ -3597,6 +3808,12 @@ public final class AppController {
                 toggleLivePulseTicker()
             case .toggleLivePulseDrawer:
                 toggleLivePulseDrawer()
+            case .toggleCompactHeaderMode:
+                toggleCompactHeaderMode()
+            case .toggleHolidayEffects:
+                toggleHolidayEffects()
+            case .cycleHolidayTheme:
+                cycleHolidayTheme()
             }
             focusActiveWebView()
         }

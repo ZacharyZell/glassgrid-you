@@ -7,6 +7,8 @@ struct SidebarView: View {
     @Bindable var controller: AppController
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.controlActiveState) private var controlActiveState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHolidayPopoverPresented = false
     @State private var hoveredDestination: SidebarDestination?
     @State private var hoveredPinID: UUID?
     @State private var hoveredFolderID: UUID?
@@ -92,86 +94,120 @@ struct SidebarView: View {
                 .frame(height: WindowChromeLayout.sidebarHeaderHeight)
 
                 // Original Liquid Glass brand mark
-                HStack(spacing: 8) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.24, green: 0.08, blue: 0.13),
-                                        Color(red: 0.84, green: 0.10, blue: 0.18)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 22, height: 22)
-                            .overlay(
-                                Circle()
-                                    .strokeBorder(.white.opacity(0.35), lineWidth: 0.85)
-                                    .padding(3.5)
-                            )
-
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 8, weight: .black))
-                            .foregroundStyle(.white)
-                            .offset(x: 0.5)
-                    }
+                HStack(spacing: AppSpacing.md) {
+                    BrandMarkBadge(size: 22, cornerRadius: AppRadius.sm, showRing: true)
 
                     Text("GlassGrid You")
-                        .font(.system(size: 14.5, weight: .semibold, design: .rounded))
-                        .tracking(-0.2)
+                        .font(AppFont.subhead(weight: .semibold))
+                        .tracking(AppFont.tracking(for: 15))
 
                     Spacer()
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 2)
-                .padding(.bottom, 10)
+                .padding(.horizontal, AppSpacing.xl)
+                .padding(.top, AppSpacing.xxs)
+                .padding(.bottom, AppSpacing.md)
+
+                if controller.settings.resolvedHolidayThemeID != .classic {
+                    let palette = controller.settings.activeHolidayPalette
+                    Button {
+                        isHolidayPopoverPresented.toggle()
+                    } label: {
+                        HStack(spacing: AppSpacing.sm) {
+                            Image(systemName: palette.symbolName)
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+
+                            Text(palette.shortName)
+                                .font(AppFont.callout(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .lineLimit(1)
+
+                            Spacer(minLength: AppSpacing.xs)
+
+                            if controller.settings.holidayThemeSelection == .auto {
+                                Text("Auto")
+                                    .font(AppFont.micro(weight: .semibold))
+                                    .foregroundStyle(AppleTheme.accentText)
+                                    .padding(.horizontal, AppSpacing.xs)
+                                    .padding(.vertical, AppSpacing.xxs)
+                                    .background(
+                                        Capsule(style: .continuous)
+                                            .fill(AppleTheme.accentText.opacity(0.14))
+                                    )
+                            }
+
+                            Image(systemName: "chevron.down")
+                                .font(AppIconFont.xs(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                        }
+                        .padding(.horizontal, AppSpacing.md)
+                        .frame(height: 28)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(AppleTheme.accentText.opacity(0.12))
+                        )
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(AppleTheme.accentText.opacity(0.22), lineWidth: 0.75)
+                        )
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, AppSpacing.xl)
+                    .padding(.bottom, AppSpacing.md)
+                    .help("Seasonal Theme: \(palette.displayName) — Click to Customize")
+                    .popover(isPresented: $isHolidayPopoverPresented, arrowEdge: .trailing) {
+                        HolidayThemePopoverView(
+                            controller: controller,
+                            onDismiss: { isHolidayPopoverPresented = false }
+                        )
+                        .environment(\.font, AppFont.body)
+                    }
+                }
 
                 // Scrollable navigation sections
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xl) {
+                        VStack(spacing: AppSpacing.xxs) {
                             ForEach(browseDestinations) { destination in
                                 sidebarRow(for: destination)
                             }
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                             sectionHeader("Library")
                             ForEach(libraryDestinations) { destination in
                                 sidebarRow(for: destination)
                             }
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Button {
                                     withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
                                         isServicesExpanded.toggle()
                                     }
                                 } label: {
-                                    HStack(spacing: 4) {
+                                    HStack(spacing: AppSpacing.xs) {
                                         sectionHeader("Services")
+                                        Spacer()
                                         Image(systemName: isServicesExpanded ? "chevron.down" : "chevron.right")
-                                            .font(.system(size: 8.5, weight: .semibold))
-                                            .foregroundStyle(.secondary.opacity(0.75))
-                                            .padding(.bottom, 2)
+                                            .font(AppIconFont.xs(weight: .semibold))
+                                            .foregroundStyle(AppleTheme.textMuted)
                                     }
-                                    .contentShape(Rectangle())
+                                    .minHitTarget(24, shape: Rectangle())
                                 }
                                 .buttonStyle(.plain)
-
-                                Spacer()
 
                                 Button("Manage") {
                                     controller.openStreamingServicesSetup(step: 1)
                                 }
                                 .buttonStyle(.plain)
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(AppleTheme.accent)
-                                .padding(.trailing, 8)
-                                .padding(.bottom, 2)
+                                .font(AppFont.caption(weight: .medium))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .padding(.horizontal, AppSpacing.xs)
+                                .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+                                .padding(.trailing, AppSpacing.xs)
                                 .help("Choose Streaming Services & Sign In")
                             }
 
@@ -183,21 +219,21 @@ struct SidebarView: View {
                         }
 
                         if !controller.settings.savedMultiviewPresets.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                                 Button {
                                     withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
                                         isPresetsExpanded.toggle()
                                     }
                                 } label: {
-                                    HStack(spacing: 4) {
+                                    HStack(spacing: AppSpacing.xs) {
                                         sectionHeader("Multiview Presets")
                                         Spacer()
                                         Image(systemName: isPresetsExpanded ? "chevron.down" : "chevron.right")
-                                            .font(.system(size: 9, weight: .semibold))
-                                            .foregroundStyle(.secondary.opacity(0.75))
-                                            .padding(.trailing, 8)
+                                            .font(AppIconFont.xs(weight: .semibold))
+                                            .foregroundStyle(AppleTheme.textMuted)
+                                            .padding(.trailing, AppSpacing.md)
                                     }
-                                    .contentShape(Rectangle())
+                                    .minHitTarget(24, shape: Rectangle())
                                 }
                                 .buttonStyle(.plain)
 
@@ -209,8 +245,8 @@ struct SidebarView: View {
                             }
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                            HStack(spacing: AppSpacing.xs) {
                                 sectionHeader("Pinned")
                                 Spacer()
                                 Button {
@@ -219,18 +255,17 @@ struct SidebarView: View {
                                     isNewFolderPopoverPresented = true
                                 } label: {
                                     Image(systemName: "folder.badge.plus")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(isNewFolderButtonHovered ? Color.primary : .secondary.opacity(0.82))
-                                        .frame(width: 20, height: 20)
+                                        .font(AppIconFont.sm(weight: .medium))
+                                        .foregroundStyle(isNewFolderButtonHovered ? Color.primary : AppleTheme.textSecondary)
+                                        .frame(width: 24, height: 24)
                                         .background(
                                             Circle()
                                                 .fill(isNewFolderButtonHovered ? Color.primary.opacity(0.09) : .clear)
                                         )
-                                        .contentShape(Circle())
+                                        .minHitTarget(24, shape: Circle())
                                 }
                                 .buttonStyle(.plain)
-                                .padding(.trailing, 6)
-                                .padding(.bottom, 2)
+                                .padding(.trailing, AppSpacing.xs)
                                 .onHover { isNewFolderButtonHovered = $0 }
                                 .help("New Folder")
                                 .popover(isPresented: $isNewFolderPopoverPresented, arrowEdge: .trailing) {
@@ -241,10 +276,10 @@ struct SidebarView: View {
                             let ungroupedPins = controller.pins(inFolder: nil)
                             if controller.settings.pinnedFolders.isEmpty && controller.settings.pinnedItems.isEmpty {
                                 Text("Press ⌘D to pin channels or playlists")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
+                                    .font(AppFont.caption)
+                                    .foregroundStyle(AppleTheme.textSecondary)
+                                    .padding(.horizontal, AppSpacing.lg)
+                                    .padding(.vertical, AppSpacing.sm)
                             } else {
                                 ForEach(controller.settings.pinnedFolders) { folder in
                                     pinnedFolderSection(for: folder)
@@ -260,59 +295,59 @@ struct SidebarView: View {
                                 Button {
                                     controller.togglePinCurrentPage()
                                 } label: {
-                                    HStack(spacing: 9) {
+                                    HStack(spacing: AppSpacing.md) {
                                         Image(systemName: "plus.circle")
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 18)
+                                            .font(AppIconFont.toolbar)
+                                            .foregroundStyle(AppleTheme.textSecondary)
+                                            .frame(width: 18, alignment: .center)
                                         Text("Pin Current Page")
-                                            .font(.system(size: 12.5))
-                                            .foregroundStyle(.secondary)
+                                            .font(AppFont.body)
+                                            .foregroundStyle(AppleTheme.textSecondary)
                                         Spacer()
                                     }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, AppSpacing.lg)
+                                    .padding(.vertical, AppSpacing.sm)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                                             .fill(isPinActionHovered ? Color.primary.opacity(0.07) : .clear)
                                     )
-                                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                                 .onHover { isPinActionHovered = $0 }
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.bottom, AppSpacing.lg)
                 }
 
                 Rectangle()
                     .fill(Color.primary.opacity(0.08))
                     .frame(height: 1)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, AppSpacing.lg)
 
                 // Airy Apple-style bottom utility row
-                HStack(spacing: 4) {
+                HStack(spacing: AppSpacing.xs) {
                     Button {
                         controller.openSignIn()
                     } label: {
-                        HStack(spacing: 7) {
+                        HStack(spacing: AppSpacing.md) {
                             Image(systemName: "person.crop.circle.fill")
-                                .font(.system(size: 16))
-                                .foregroundStyle(.secondary)
+                                .font(AppIconFont.lg)
+                                .foregroundStyle(AppleTheme.textSecondary)
                             Text("Account")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(.primary.opacity(0.85))
+                                .font(AppFont.body(weight: .medium))
+                                .foregroundStyle(Color.primary.opacity(0.88))
                             Spacer()
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, AppSpacing.md)
+                        .padding(.vertical, AppSpacing.sm)
                         .background(
-                            Capsule(style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                                 .fill(isAccountHovered ? Color.primary.opacity(0.08) : .clear)
                         )
-                        .contentShape(Capsule(style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .onHover { isAccountHovered = $0 }
@@ -326,8 +361,8 @@ struct SidebarView: View {
                         }
                     } label: {
                         Image(systemName: isResolvedDark ? "moon.fill" : "sun.max.fill")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(isThemeHovered ? Color.primary : .secondary)
+                            .font(AppIconFont.toolbar)
+                            .foregroundStyle(isThemeHovered ? Color.primary : AppleTheme.textSecondary)
                             .frame(width: 28, height: 28)
                             .background(
                                 Circle()
@@ -354,8 +389,8 @@ struct SidebarView: View {
 
                     SettingsLink {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 13.5, weight: .medium))
-                            .foregroundStyle(isSettingsHovered ? Color.primary : .secondary)
+                            .font(AppIconFont.toolbar)
+                            .foregroundStyle(isSettingsHovered ? Color.primary : AppleTheme.textSecondary)
                             .frame(width: 28, height: 28)
                             .background(
                                 Circle()
@@ -367,8 +402,23 @@ struct SidebarView: View {
                     .onHover { isSettingsHovered = $0 }
                     .help("Settings (⌘,)")
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.sm)
+            }
+            .background {
+                ZStack {
+                    HolidayAmbientGlowView(
+                        surface: .sidebar,
+                        isPaused: controller.hasLiveFullscreenTab || controller.focusModeActive
+                    )
+                    HolidayParticlesView(
+                        palette: controller.settings.activeHolidayPalette,
+                        intensity: controller.settings.holidayEffectsIntensity,
+                        surface: .sidebar,
+                        isHardStopped: controller.hasLiveFullscreenTab || controller.focusModeActive || reduceMotion
+                    )
+                }
+                .clipShape(RoundedRectangle(cornerRadius: WindowChromeLayout.sidebarCardCornerRadius, style: .continuous))
             }
             .appleGlass(in: RoundedRectangle(cornerRadius: WindowChromeLayout.sidebarCardCornerRadius, style: .continuous))
             .shadow(color: .black.opacity(isResolvedDark ? 0.28 : 0.08), radius: 10, y: 2)
@@ -414,34 +464,34 @@ struct SidebarView: View {
         Button {
             controller.openStreamingService(service, inNewTab: false)
         } label: {
-            HStack(spacing: 9) {
-                StreamingServiceBadge(service: service, size: 19)
+            HStack(spacing: AppSpacing.md) {
+                StreamingServiceBadge(service: service, size: 18)
 
                 Text(service.name)
-                    .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
+                    .font(AppFont.body(weight: isActive ? .semibold : .regular))
                     .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.86))
                     .lineLimit(1)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: AppSpacing.xs)
 
                 if isSignedIn {
                     Circle()
-                        .fill(Color.green.opacity(0.85))
-                        .frame(width: 5.5, height: 5.5)
+                        .fill(AppleTheme.positive)
+                        .frame(width: 6, height: 6)
                         .help("Signed In")
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5.5)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                     .fill(
                         isActive
                             ? Color.primary.opacity(isResolvedDark ? 0.14 : 0.09)
                             : (isHovered ? Color.primary.opacity(isResolvedDark ? 0.08 : 0.05) : .clear)
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -479,11 +529,12 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary.opacity(0.85))
-            .padding(.horizontal, 10)
-            .padding(.bottom, 3)
+        Text(title.uppercased())
+            .font(AppFont.caption(weight: .semibold))
+            .tracking(AppFont.tracking(for: 11) + 0.35)
+            .foregroundStyle(AppleTheme.textSecondary)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.xxs)
     }
 
     @ViewBuilder
@@ -494,30 +545,30 @@ struct SidebarView: View {
         Button {
             controller.navigateSelectedTab(to: destination)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: AppSpacing.md) {
                 Image(systemName: iconName(for: destination, selected: isSelected))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AppleTheme.accent)
+                    .font(AppIconFont.nav)
+                    .foregroundStyle(AppleTheme.accentText)
                     .frame(width: 18, alignment: .center)
 
                 Text(destination.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .font(AppFont.body(weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.86))
                     .lineLimit(1)
 
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                     .fill(
                         isSelected
                             ? Color.primary.opacity(controlActiveState == .inactive ? 0.055 : 0.11)
                             : (isHovered ? Color.primary.opacity(0.06) : Color.clear)
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -535,11 +586,12 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var newFolderPopover: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
             Text(movePinAfterFolderCreateID == nil ? "New Channel Folder" : "Move Pin to New Folder")
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(AppFont.body(weight: .semibold))
             TextField("e.g. Sports, Tech, News", text: $newFolderNameDraft)
                 .textFieldStyle(.roundedBorder)
+                .font(AppFont.body)
                 .frame(width: 210)
                 .onSubmit {
                     commitCreateFolder()
@@ -550,14 +602,17 @@ struct SidebarView: View {
                     movePinAfterFolderCreateID = nil
                     isNewFolderPopoverPresented = false
                 }
+                .font(AppFont.callout(weight: .medium))
                 Button("Create") {
                     commitCreateFolder()
                 }
+                .font(AppFont.callout(weight: .semibold))
                 .keyboardShortcut(.defaultAction)
                 .disabled(newFolderNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding(12)
+        .padding(AppSpacing.lg)
+        .environment(\.font, AppFont.body)
     }
 
     private func commitCreateFolder() {
@@ -581,25 +636,20 @@ struct SidebarView: View {
             set: { if !$0 && renamingFolderID == folder.id { renamingFolderID = nil } }
         )
 
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
             Button {
                 withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
                     controller.togglePinnedFolderExpanded(id: folder.id)
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: folder.isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(.secondary.opacity(0.75))
-                        .frame(width: 10, alignment: .center)
-
+                HStack(spacing: AppSpacing.md) {
                     Image(systemName: folder.isExpanded ? "folder.fill" : "folder")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(AppleTheme.accent.opacity(controlActiveState == .inactive ? 0.58 : 0.88))
-                        .frame(width: 16, alignment: .center)
+                        .font(AppIconFont.md)
+                        .foregroundStyle(AppleTheme.accentText.opacity(controlActiveState == .inactive ? 0.65 : 0.90))
+                        .frame(width: 18, alignment: .center)
 
                     Text(folder.name)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(AppFont.body(weight: .medium))
                         .foregroundStyle(Color.primary.opacity(0.9))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -608,20 +658,24 @@ struct SidebarView: View {
 
                     if !folder.isExpanded && !childPins.isEmpty {
                         Text("\(childPins.count)")
-                            .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
+                            .font(AppFont.micro(weight: .semibold, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                            .padding(.horizontal, AppSpacing.xs)
+                            .padding(.vertical, AppSpacing.xxs)
                             .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
                     }
+
+                    Image(systemName: folder.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textMuted)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.vertical, AppSpacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                         .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .onHover { hovering in
@@ -651,11 +705,12 @@ struct SidebarView: View {
                 }
             }
             .popover(isPresented: isRenaming, arrowEdge: .trailing) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: AppSpacing.md) {
                     Text("Rename Folder")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(AppFont.body(weight: .semibold))
                     TextField("Folder Name", text: $renameFolderDraft)
                         .textFieldStyle(.roundedBorder)
+                        .font(AppFont.body)
                         .frame(width: 200)
                         .onSubmit {
                             controller.renamePinnedFolder(id: folder.id, newName: renameFolderDraft)
@@ -666,27 +721,30 @@ struct SidebarView: View {
                         Button("Cancel") {
                             renamingFolderID = nil
                         }
+                        .font(AppFont.callout(weight: .medium))
                         Button("Save") {
                             controller.renamePinnedFolder(id: folder.id, newName: renameFolderDraft)
                             renamingFolderID = nil
                         }
+                        .font(AppFont.callout(weight: .semibold))
                         .keyboardShortcut(.defaultAction)
                     }
                 }
-                .padding(12)
+                .padding(AppSpacing.lg)
+                .environment(\.font, AppFont.body)
             }
 
             if folder.isExpanded {
                 if childPins.isEmpty {
                     Text("Right-click a pin to move here")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary.opacity(0.75))
-                        .padding(.leading, 26)
-                        .padding(.vertical, 3)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textMuted)
+                        .padding(.leading, 38)
+                        .padding(.vertical, AppSpacing.xs)
                 } else {
                     ForEach(childPins) { pin in
                         pinnedRow(for: pin)
-                            .padding(.leading, 14)
+                            .padding(.leading, AppSpacing.lg)
                     }
                 }
             }
@@ -708,31 +766,31 @@ struct SidebarView: View {
         Button {
             controller.openPinnedItem(item)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: AppSpacing.md) {
                 Image(systemName: YouTubeURLRouter.pinnedItemIcon(for: item.urlString))
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(AppleTheme.accent.opacity(controlActiveState == .inactive ? 0.58 : 0.85))
+                    .font(AppIconFont.md)
+                    .foregroundStyle(AppleTheme.accentText.opacity(controlActiveState == .inactive ? 0.65 : 0.90))
                     .frame(width: 18, alignment: .center)
 
                 Text(item.title)
-                    .font(.system(size: 12.5, weight: isSelected ? .semibold : .regular))
+                    .font(AppFont.body(weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.86))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                     .fill(
                         isSelected
                             ? Color.primary.opacity(controlActiveState == .inactive ? 0.055 : 0.11)
                             : (isHovered ? Color.primary.opacity(0.06) : Color.clear)
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -809,11 +867,12 @@ struct SidebarView: View {
             }
         }
         .popover(isPresented: isRenaming, arrowEdge: .trailing) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: AppSpacing.md) {
                 Text("Rename Pinned Item")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(AppFont.body(weight: .semibold))
                 TextField("Title", text: $renamePinDraft)
                     .textFieldStyle(.roundedBorder)
+                    .font(AppFont.body)
                     .frame(width: 200)
                     .onSubmit {
                         controller.renamePin(id: item.id, newTitle: renamePinDraft)
@@ -824,14 +883,17 @@ struct SidebarView: View {
                     Button("Cancel") {
                         renamingPinID = nil
                     }
+                    .font(AppFont.callout(weight: .medium))
                     Button("Save") {
                         controller.renamePin(id: item.id, newTitle: renamePinDraft)
                         renamingPinID = nil
                     }
+                    .font(AppFont.callout(weight: .semibold))
                     .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(12)
+            .padding(AppSpacing.lg)
+            .environment(\.font, AppFont.body)
         }
     }
 
@@ -846,14 +908,14 @@ struct SidebarView: View {
         Button {
             controller.launchMultiviewPreset(preset)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: AppSpacing.md) {
                 Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(AppleTheme.accent.opacity(0.88))
+                    .font(AppIconFont.md)
+                    .foregroundStyle(AppleTheme.accentText)
                     .frame(width: 18, alignment: .center)
 
                 Text(preset.name)
-                    .font(.system(size: 12.5, weight: .regular))
+                    .font(AppFont.body)
                     .foregroundStyle(Color.primary.opacity(0.88))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -861,19 +923,19 @@ struct SidebarView: View {
                 Spacer()
 
                 Text("\(preset.urlStrings.count)×")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
+                    .font(AppFont.micro(weight: .semibold, tabular: true))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.xs)
+                    .padding(.vertical, AppSpacing.xxs)
                     .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
                     .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -896,11 +958,12 @@ struct SidebarView: View {
             }
         }
         .popover(isPresented: isRenaming, arrowEdge: .trailing) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: AppSpacing.md) {
                 Text("Rename Multiview Preset")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(AppFont.body(weight: .semibold))
                 TextField("Preset Name", text: $renamePresetDraft)
                     .textFieldStyle(.roundedBorder)
+                    .font(AppFont.body)
                     .frame(width: 200)
                     .onSubmit {
                         controller.renameMultiviewPreset(id: preset.id, newName: renamePresetDraft)
@@ -911,14 +974,17 @@ struct SidebarView: View {
                     Button("Cancel") {
                         renamingPresetID = nil
                     }
+                    .font(AppFont.callout(weight: .medium))
                     Button("Save") {
                         controller.renameMultiviewPreset(id: preset.id, newName: renamePresetDraft)
                         renamingPresetID = nil
                     }
+                    .font(AppFont.callout(weight: .semibold))
                     .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(12)
+            .padding(AppSpacing.lg)
+            .environment(\.font, AppFont.body)
         }
     }
 
@@ -930,7 +996,7 @@ struct SidebarView: View {
         case .watchLater: return selected ? "clock.fill" : "clock"
         case .likedVideos: return selected ? "hand.thumbsup.fill" : "hand.thumbsup"
         case .playlists: return selected ? "list.bullet.rectangle.fill" : "list.bullet.rectangle"
-        case .shorts: return "bolt.fill"
+        case .shorts: return selected ? "bolt.fill" : "bolt"
         }
     }
 }

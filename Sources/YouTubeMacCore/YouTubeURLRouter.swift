@@ -1,5 +1,13 @@
 import Foundation
 
+/// Controls whether the unified `+` header picker adds the selected destination to Multiview or opens a New Tab.
+public enum GridPickerTargetMode: String, CaseIterable, Identifiable, Sendable {
+    case addToGrid
+    case newTab
+
+    public var id: String { rawValue }
+}
+
 /// Controls whether a tab applies strict YouTube routing or allows general HTTPS Companion sites in-app.
 public enum TabRoutingMode: String, Codable, Equatable, Hashable, Sendable {
     case youtube
@@ -51,6 +59,12 @@ public struct CompanionQuickSite: Identifiable, Equatable, Hashable, Sendable {
         CompanionQuickSite(id: "paramount", name: "Paramount+", subtitle: "CBS & Sports", urlString: "https://www.paramountplus.com", systemImage: "sparkles.tv"),
         CompanionQuickSite(id: "primevideo", name: "Prime Video", subtitle: "Live & TNF", urlString: "https://www.amazon.com/gp/video/storefront", systemImage: "film"),
         CompanionQuickSite(id: "crunchyroll", name: "Crunchyroll", subtitle: "Anime & Simulcasts", urlString: "https://www.crunchyroll.com", systemImage: "play.tv")
+    ] + livePulseSites
+
+    /// Deduplicated non-service companion sites (live scoreboards, fantasy, prediction markets) for the unified `+` picker.
+    public static let pickerCompanionSites: [CompanionQuickSite] = [
+        CompanionQuickSite(id: "espn-scores", name: "ESPN Scores", subtitle: "Live Scoreboard", urlString: "https://www.espn.com/scoreboard", systemImage: "sportscourt"),
+        CompanionQuickSite(id: "nfl-scores", name: "NFL.com", subtitle: "Live Scores", urlString: "https://www.nfl.com/scores/", systemImage: "football")
     ] + livePulseSites
 }
 

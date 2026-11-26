@@ -54,20 +54,21 @@ struct TabStripView: View {
     @State private var hoveredTabID: UUID?
     @State private var hoveredCloseTabID: UUID?
     @State private var dropTargetedTabID: UUID?
+    @State private var isAddPickerPresented: Bool = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: AppSpacing.sm) {
             ScrollViewReader { scrollProxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LiquidGlassGroup(spacing: 6) {
-                        HStack(spacing: 6) {
+                    LiquidGlassGroup(spacing: AppSpacing.sm) {
+                        HStack(spacing: AppSpacing.sm) {
                             ForEach(controller.tabs) { tab in
                                 tabPill(for: tab)
                                     .id(tab.id)
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.vertical, AppSpacing.xs)
                     }
                 }
                 .onChange(of: controller.selectedTabID) { _, newID in
@@ -77,10 +78,18 @@ struct TabStripView: View {
                 }
             }
 
-            AppleIconButton(systemImage: "plus", helpText: "New Tab (⌘T) — Right-Click for Streaming Services") {
-                controller.createTab()
+            AppleIconButton(systemImage: "plus", helpText: "Add to Grid, Open Service, or New Tab (⌘T)") {
+                isAddPickerPresented.toggle()
             }
             .appleGlass(in: Circle(), interactive: true)
+            .popover(isPresented: $isAddPickerPresented, arrowEdge: .bottom) {
+                AddScreenServicePickerPopover(
+                    controller: controller,
+                    initialMode: .addToGrid,
+                    onDismiss: { isAddPickerPresented = false }
+                )
+                .environment(\.font, AppFont.body)
+            }
             .contextMenu {
                 ForEach(controller.settings.enabledStreamingServices) { service in
                     Button {
@@ -94,7 +103,7 @@ struct TabStripView: View {
                     controller.openStreamingServicesSetup(step: 1)
                 }
             }
-            .padding(.trailing, 10)
+            .padding(.trailing, AppSpacing.lg)
         }
         .frame(height: 36)
         .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
@@ -109,26 +118,30 @@ struct TabStripView: View {
         let multiviewSlot = controller.multiviewSlotNumber(for: tab.id)
         let isMultiviewAudio = controller.isMultiviewActive && controller.multiviewAudioTab?.id == tab.id
 
-        let pillContent = HStack(spacing: 6) {
+        let isInteractiveMuteLeading = !controller.isTabPoppedOut(tab.id)
+            && tab.mediaStatus.hasVideo
+            && (tab.mediaStatus.isPlaying || tab.mediaStatus.isMuted)
+
+        let pillContent = HStack(spacing: AppSpacing.sm) {
             if let multiviewSlot {
                 Text("\(multiviewSlot)")
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(isMultiviewAudio ? .white : Color.primary.opacity(0.8))
-                    .frame(width: 15, height: 15)
+                    .font(AppFont.micro(weight: .bold, tabular: true))
+                    .foregroundStyle(isMultiviewAudio ? .white : .primary)
+                    .frame(width: 16, height: 16)
                     .background(
                         Circle()
-                            .fill(isMultiviewAudio ? AppleTheme.accent : Color.primary.opacity(0.12))
+                            .fill(isMultiviewAudio ? AppleTheme.accentFill : Color.primary.opacity(0.12))
                     )
             }
 
             tabLeadingIcon(for: tab)
 
             Text(tab.displayTitle)
-                .font(.system(size: 11.5, weight: isSelected ? .semibold : .regular))
+                .font(AppFont.callout(weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(
                     isSelected
                         ? Color.primary
-                        : Color.primary.opacity(tab.isSleeping ? 0.50 : 0.75)
+                        : (tab.isSleeping ? AppleTheme.textMuted : Color.primary.opacity(0.80))
                 )
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -140,10 +153,11 @@ struct TabStripView: View {
                     controller.closeTab(id: tab.id)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundStyle(isCloseHovered ? Color.primary : .secondary)
-                        .frame(width: 15, height: 15)
+                        .font(AppIconFont.xs(weight: .bold))
+                        .foregroundStyle(isCloseHovered ? Color.primary : AppleTheme.textSecondary)
+                        .frame(width: 16, height: 16)
                         .background(Circle().fill(Color.primary.opacity(isCloseHovered ? 0.18 : 0.09)))
+                        .minHitTarget(24, shape: Circle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -152,8 +166,9 @@ struct TabStripView: View {
                 .help("Close Tab (⌘W)")
             }
         }
-        .padding(.horizontal, 11)
-        .frame(height: 26)
+        .padding(.leading, isInteractiveMuteLeading ? AppSpacing.xs : AppSpacing.lg)
+        .padding(.trailing, showClose ? AppSpacing.xs : AppSpacing.lg)
+        .frame(height: 28)
         .contentShape(Capsule(style: .continuous))
 
         Group {
@@ -164,7 +179,7 @@ struct TabStripView: View {
                 pillContent
                     .background(
                         Capsule(style: .continuous)
-                            .fill(isHovered ? AppleTheme.accent.opacity(0.12) : Color.primary.opacity(0.06))
+                            .fill(isHovered ? AppleTheme.accentText.opacity(0.12) : Color.primary.opacity(0.06))
                     )
             } else {
                 pillContent
@@ -176,7 +191,7 @@ struct TabStripView: View {
         }
         .overlay(
             Capsule(style: .continuous)
-                .strokeBorder(AppleTheme.accent.opacity(dropTargetedTabID == tab.id ? 0.85 : 0), lineWidth: 1.5)
+                .strokeBorder(AppleTheme.accentText.opacity(dropTargetedTabID == tab.id ? 0.85 : 0), lineWidth: 1.5)
                 .allowsHitTesting(false)
         )
         .overlay(
@@ -271,32 +286,31 @@ struct TabStripView: View {
     private func tabLeadingIcon(for tab: BrowserTab) -> some View {
         if controller.isTabPoppedOut(tab.id) {
             Image(systemName: "pip.fill")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppleTheme.accent)
+                .font(AppIconFont.xs(weight: .semibold))
+                .foregroundStyle(AppleTheme.accentText)
         } else if tab.mediaStatus.hasVideo && (tab.mediaStatus.isPlaying || tab.mediaStatus.isMuted) {
             Button {
                 controller.toggleMute(tabID: tab.id)
             } label: {
                 Image(systemName: tab.mediaStatus.isMuted ? "speaker.slash.fill" : "waveform")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(tab.mediaStatus.isMuted ? .secondary : AppleTheme.accent)
-                    .frame(width: 14, height: 14)
-                    .contentShape(Rectangle())
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(tab.mediaStatus.isMuted ? AppleTheme.textSecondary : AppleTheme.accentText)
+                    .minHitTarget(24, shape: Circle())
             }
             .buttonStyle(.plain)
             .help(tab.mediaStatus.isMuted ? "Unmute Tab" : "Mute Tab")
         } else if tab.isSleeping {
             Image(systemName: "moon.zzz")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary.opacity(0.75))
+                .font(AppIconFont.xs(weight: .medium))
+                .foregroundStyle(AppleTheme.textMuted)
         } else if tab.isLoading {
             ProgressView()
                 .controlSize(.mini)
                 .scaleEffect(0.65)
         } else {
             Image(systemName: tab.isCompanionTab ? "globe" : "play.rectangle")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(AppIconFont.xs(weight: .medium))
+                .foregroundStyle(AppleTheme.textSecondary)
         }
     }
 

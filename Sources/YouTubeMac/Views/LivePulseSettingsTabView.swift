@@ -30,8 +30,8 @@ struct LivePulseSettingsTabView: View {
                         }
                     }
                 Text("Off by default. When disabled, zero background requests, caches, or WebSockets run.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
 
                 Toggle("Show Live Pulse Ticker Bar (⌘⌥B)", isOn: $settings.livePulseShowTicker)
                     .disabled(!settings.livePulseEnabled)
@@ -51,34 +51,34 @@ struct LivePulseSettingsTabView: View {
                 let orderedLeagues = settings.livePulseLeaguePriority
                 ForEach(Array(orderedLeagues.enumerated()), id: \.element) { index, league in
                     let isLeagueEnabled = settings.livePulseEnabledLeagues.contains(league)
-                    HStack(spacing: 10) {
+                    HStack(spacing: AppSpacing.md) {
                         Text("#\(index + 1)")
-                            .font(.system(size: 10.5, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(index == 0 ? AppleTheme.accent : .secondary)
+                            .font(AppFont.micro(weight: .bold, tabular: true))
+                            .foregroundStyle(index == 0 ? AppleTheme.accentText : AppleTheme.textSecondary)
                             .frame(width: 24, height: 20)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(index == 0 ? AppleTheme.accent.opacity(0.14) : Color.primary.opacity(0.06))
+                                    .fill(index == 0 ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
                             )
 
                         Image(systemName: league.symbolName)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(isLeagueEnabled ? AppleTheme.accent : .secondary)
+                            .font(AppIconFont.md(weight: .semibold))
+                            .foregroundStyle(isLeagueEnabled ? AppleTheme.accentText : AppleTheme.textSecondary)
                             .frame(width: 16)
 
                         Text(league.displayName)
-                            .font(.body.weight(index == 0 ? .semibold : .regular))
-                            .foregroundStyle(isLeagueEnabled ? .primary : .secondary)
+                            .font(AppFont.body(weight: index == 0 ? .semibold : .regular))
+                            .foregroundStyle(isLeagueEnabled ? Color.primary : AppleTheme.textSecondary)
 
                         Spacer()
 
-                        HStack(spacing: 2) {
+                        HStack(spacing: AppSpacing.xxs) {
                             Button {
                                 settings.moveLivePulseLeague(league, direction: -1)
                             } label: {
                                 Image(systemName: "chevron.up")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .frame(width: 22, height: 22)
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                    .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                             }
                             .buttonStyle(.borderless)
                             .disabled(index == 0)
@@ -89,8 +89,8 @@ struct LivePulseSettingsTabView: View {
                                 settings.moveLivePulseLeague(league, direction: 1)
                             } label: {
                                 Image(systemName: "chevron.down")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .frame(width: 22, height: 22)
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                    .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                             }
                             .buttonStyle(.borderless)
                             .disabled(index == orderedLeagues.count - 1)
@@ -120,21 +120,21 @@ struct LivePulseSettingsTabView: View {
                 }
 
                 Text("Smart Priority ranks your watched stream first, then orders live scores, fantasy players, and markets by #1–#4 Sport Priority.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
 
                 Toggle("Watched Stream Focus Only", isOn: $settings.livePulseStreamFocusOnly)
                     .disabled(!settings.livePulseEnabled)
 
                 Text("When enabled, hides scores, players, and markets outside your active or pinned stream(s).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
 
                 Toggle("Show Kalshi & Polymarket Probabilities (Read-Only)", isOn: $settings.livePulseShowMarkets)
             }
 
             Section("Sleeper Fantasy Lookup") {
-                HStack(spacing: 8) {
+                HStack(spacing: AppSpacing.md) {
                     TextField("Sleeper @username", text: $sleeperUsernameDraft)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit {
@@ -149,8 +149,8 @@ struct LivePulseSettingsTabView: View {
 
                 if let status = store.sleeperLookupStatus {
                     Text(status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
                 }
 
                 if !store.discoveredSleeperLeagues.isEmpty {
@@ -159,10 +159,10 @@ struct LivePulseSettingsTabView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(league.leagueName)
-                                    .font(.body)
+                                    .font(AppFont.body)
                                 Text("\(league.league.displayName) · Season \(String(league.season))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(AppFont.caption(tabular: true))
+                                    .foregroundStyle(AppleTheme.textSecondary)
                             }
                             Spacer()
                             Toggle(
@@ -184,11 +184,12 @@ struct LivePulseSettingsTabView: View {
                 }
 
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("24h Sleeper Player Directory Cache")
+                            .font(AppFont.body)
                         Text(sleeperCacheCaption)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
                     }
                     Spacer()
                     Button("Clear Sleeper Cache") {
@@ -206,7 +207,7 @@ struct LivePulseSettingsTabView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: AppSpacing.md) {
                     TextField("League ID (e.g. 123456)", text: $espnLeagueIDDraft)
                         .textFieldStyle(.roundedBorder)
 
@@ -215,7 +216,7 @@ struct LivePulseSettingsTabView: View {
                         .frame(width: 82)
                 }
 
-                HStack(spacing: 8) {
+                HStack(spacing: AppSpacing.md) {
                     TextField("Optional Team / Owner Hint", text: $espnOwnerHintDraft)
                         .textFieldStyle(.roundedBorder)
 
@@ -235,14 +236,14 @@ struct LivePulseSettingsTabView: View {
                 }
 
                 Text("Public ESPN leagues sync directly; private leagues can be opened 1-click inside a Multiview Companion Tile.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
 
             if !settings.livePulseFantasyLeagues.isEmpty {
                 Section("Configured Fantasy Leagues") {
                     ForEach(settings.livePulseFantasyLeagues) { config in
-                        HStack(spacing: 8) {
+                        HStack(spacing: AppSpacing.md) {
                             Toggle(
                                 "",
                                 isOn: Binding(
@@ -266,10 +267,10 @@ struct LivePulseSettingsTabView: View {
 
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(config.leagueName)
-                                    .font(.body)
+                                    .font(AppFont.body)
                                 Text("\(config.provider.displayName) · \(config.league.displayName) · \(String(config.season))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(AppFont.caption(tabular: true))
+                                    .foregroundStyle(AppleTheme.textSecondary)
                             }
 
                             Spacer()
@@ -278,6 +279,8 @@ struct LivePulseSettingsTabView: View {
                                 store.removeFantasyLeague(id: config.id)
                             } label: {
                                 Image(systemName: "trash")
+                                    .font(AppIconFont.md)
+                                    .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                             }
                             .buttonStyle(.borderless)
                             .help("Remove \(config.leagueName)")
@@ -288,12 +291,12 @@ struct LivePulseSettingsTabView: View {
 
             Section("Privacy & Compliance") {
                 Text("All Live Pulse requests use ephemeral, cookieless URLSession sessions and never access WebKit or browser cookies. Prediction market feeds from Kalshi and Polymarket are strictly read-only and informational — GlassGrid You provides zero wagering, order routing, trading, or wallet signing.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
         }
         .formStyle(.grouped)
-        .padding(.vertical, 4)
+        .padding(.vertical, AppSpacing.xs)
         .onAppear {
             if sleeperUsernameDraft.isEmpty {
                 sleeperUsernameDraft = coordinator.settings.livePulseSleeperUsername

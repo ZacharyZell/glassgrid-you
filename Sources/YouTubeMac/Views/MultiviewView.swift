@@ -18,60 +18,60 @@ struct MultiviewControlBar: View {
     }
 
     var body: some View {
-        LiquidGlassGroup(spacing: 8) {
-            HStack(spacing: 10) {
+        LiquidGlassGroup(spacing: AppSpacing.md) {
+            HStack(spacing: AppSpacing.md) {
                 // Active Multiview indicator + count (or Back to Grid pill when Soloed)
                 if controller.isMultiviewSoloActive {
                     Button {
                         controller.exitMultiviewSolo()
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: AppSpacing.sm) {
                             Image(systemName: "square.grid.2x2.fill")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(AppIconFont.sm(weight: .semibold))
                             Text("Back to Grid")
-                                .font(.system(size: 11.5, weight: .semibold))
+                                .font(AppFont.callout(weight: .semibold))
                         }
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 11)
-                        .frame(height: 26)
-                        .background(AppleTheme.accent, in: Capsule(style: .continuous))
+                        .padding(.horizontal, AppSpacing.lg)
+                        .frame(height: 28)
+                        .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
                         .contentShape(Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .help("Return to Multiview Grid (Esc / ⌘⌥Z)")
                 } else {
-                    HStack(spacing: 6) {
+                    HStack(spacing: AppSpacing.sm) {
                         Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(AppleTheme.accent)
+                            .font(AppIconFont.sm(weight: .semibold))
+                            .foregroundStyle(AppleTheme.accentText)
                         Text(streamCountLabel)
-                            .font(.system(size: 11.5, weight: .semibold))
+                            .font(AppFont.callout(weight: .semibold, tabular: true))
                             .foregroundStyle(.primary)
                     }
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accent.opacity(0.14))
+                    .padding(.horizontal, AppSpacing.lg)
+                    .frame(height: 28)
+                    .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accentText.opacity(0.14))
                 }
 
                 // Layout mode segmented capsule (Grid / Spotlight / Stacked)
-                HStack(spacing: 2) {
+                HStack(spacing: AppSpacing.xxs) {
                     ForEach(MultiviewLayoutMode.allCases) { mode in
                         let isSelected = controller.multiviewLayoutMode == mode
                         Button {
                             controller.setMultiviewLayoutMode(mode)
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Image(systemName: mode.systemImage)
-                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .font(AppIconFont.sm(weight: .semibold))
                                 Text(mode.title)
-                                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                                    .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
                             }
-                            .foregroundStyle(isSelected ? AppleTheme.accent : Color.primary.opacity(0.76))
-                            .padding(.horizontal, 9)
-                            .frame(height: 22)
+                            .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.80))
+                            .padding(.horizontal, AppSpacing.md)
+                            .frame(height: 24)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(isSelected ? AppleTheme.accent.opacity(0.16) : .clear)
+                                    .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : .clear)
                             )
                             .contentShape(Capsule(style: .continuous))
                         }
@@ -79,22 +79,22 @@ struct MultiviewControlBar: View {
                         .help("Multiview \(mode.title) Layout (⌘⌥G)")
                     }
                 }
-                .padding(.horizontal, 3)
-                .frame(height: 26)
+                .padding(.horizontal, AppSpacing.xxs)
+                .frame(height: 28)
                 .appleGlass(in: Capsule(style: .continuous), interactive: true)
 
-                Spacer(minLength: 8)
+                Spacer(minLength: AppSpacing.md)
 
                 // Responsive audio hint (degrades gracefully at narrow Split Screen widths with zero mid-word truncation)
                 ViewThatFits(in: .horizontal) {
                     Text("Click any stream or press ⌘⌥1–\(controller.multiviewTabs.count) for audio")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(weight: .medium, tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .fixedSize()
 
                     Text("⌘⌥1–\(controller.multiviewTabs.count) audio")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .font(AppFont.caption(weight: .medium, tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
                         .fixedSize()
 
                     EmptyView()
@@ -102,7 +102,7 @@ struct MultiviewControlBar: View {
                 .layoutPriority(-1)
 
                 // Trailing action capsule: Save Layout, Add Stream, Mute All, Exit Single View
-                HStack(spacing: 6) {
+                HStack(spacing: AppSpacing.sm) {
                     savePresetButton
 
                     addStreamMenu
@@ -111,22 +111,22 @@ struct MultiviewControlBar: View {
                         controller.muteAllMultiviewTiles()
                     } label: {
                         ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Image(systemName: "speaker.slash.fill")
-                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .font(AppIconFont.sm(weight: .semibold))
                                 Text("Mute All")
-                                    .font(.system(size: 11, weight: .medium))
+                                    .font(AppFont.caption(weight: .medium))
                             }
                             .fixedSize()
-                            .padding(.horizontal, 9)
+                            .padding(.horizontal, AppSpacing.md)
 
                             Image(systemName: "speaker.slash.fill")
-                                .font(.system(size: 10.5, weight: .semibold))
+                                .font(AppIconFont.sm(weight: .semibold))
                                 .fixedSize()
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, AppSpacing.md)
                         }
-                        .foregroundStyle(Color.primary.opacity(0.84))
-                        .frame(height: 26)
+                        .foregroundStyle(Color.primary.opacity(0.86))
+                        .frame(height: 28)
                         .appleGlass(in: Capsule(style: .continuous), interactive: true)
                         .contentShape(Capsule(style: .continuous))
                     }
@@ -137,26 +137,26 @@ struct MultiviewControlBar: View {
                         controller.exitMultiview()
                     } label: {
                         ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 4) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Image(systemName: "rectangle.fill")
-                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .font(AppIconFont.sm(weight: .semibold))
                                 Text("Single View")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(AppFont.caption(weight: .semibold))
                             }
                             .fixedSize()
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, AppSpacing.lg)
 
-                            HStack(spacing: 4) {
+                            HStack(spacing: AppSpacing.xs) {
                                 Image(systemName: "rectangle.fill")
-                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .font(AppIconFont.sm(weight: .semibold))
                                 Text("Exit")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(AppFont.caption(weight: .semibold))
                             }
                             .fixedSize()
-                            .padding(.horizontal, 9)
+                            .padding(.horizontal, AppSpacing.md)
                         }
                         .foregroundStyle(.primary)
-                        .frame(height: 26)
+                        .frame(height: 28)
                         .appleGlass(in: Capsule(style: .continuous), interactive: true)
                         .contentShape(Capsule(style: .continuous))
                     }
@@ -164,7 +164,7 @@ struct MultiviewControlBar: View {
                     .help("Exit Multiview (⌘⇧G)")
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, AppSpacing.lg)
         }
         .frame(height: 36)
         .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
@@ -178,34 +178,35 @@ struct MultiviewControlBar: View {
             isSavePresetPopoverPresented = true
         } label: {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
+                HStack(spacing: AppSpacing.xs) {
                     Image(systemName: "bookmark.badge.plus")
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .font(AppIconFont.sm(weight: .semibold))
                     Text("Save")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(AppFont.caption(weight: .medium))
                 }
                 .fixedSize()
-                .padding(.horizontal, 9)
+                .padding(.horizontal, AppSpacing.md)
 
                 Image(systemName: "bookmark.badge.plus")
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(AppIconFont.sm(weight: .semibold))
                     .fixedSize()
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, AppSpacing.md)
             }
             .foregroundStyle(Color.primary.opacity(0.86))
-            .frame(height: 26)
+            .frame(height: 28)
             .appleGlass(in: Capsule(style: .continuous), interactive: true)
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .help("Save Current Multiview Grid as Preset")
         .popover(isPresented: $isSavePresetPopoverPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: AppSpacing.lg) {
                 Text("Save Multiview Preset")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(AppFont.body(weight: .semibold))
 
                 TextField("e.g. NFL Sunday Quad", text: $newPresetName)
                     .textFieldStyle(.roundedBorder)
+                    .font(AppFont.body)
                     .frame(width: 220)
                     .onSubmit {
                         commitSavePreset()
@@ -216,13 +217,16 @@ struct MultiviewControlBar: View {
                     Button("Cancel") {
                         isSavePresetPopoverPresented = false
                     }
+                    .font(AppFont.callout(weight: .medium))
                     Button("Save Preset") {
                         commitSavePreset()
                     }
+                    .font(AppFont.callout(weight: .semibold))
                     .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(14)
+            .padding(AppSpacing.lg)
+            .environment(\.font, AppFont.body)
         }
     }
 
@@ -239,30 +243,38 @@ struct MultiviewControlBar: View {
     @ViewBuilder
     private var addStreamMenu: some View {
         let canAdd = controller.canAddMultiviewTile
+        let isDisabled = controller.hasLiveFullscreenTab
         Button {
             isAddScreenPopoverPresented.toggle()
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: AppSpacing.xs) {
                 Image(systemName: "plus")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(AppIconFont.sm(weight: .bold))
                 Text(canAdd ? "Add Screen" : "4 / 4")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFont.caption(weight: .semibold, tabular: true))
             }
-            .foregroundStyle(canAdd ? Color.primary : Color.secondary)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .appleGlass(in: Capsule(style: .continuous), interactive: canAdd)
+            .foregroundStyle(isDisabled ? AppleTheme.textMuted : (canAdd ? Color.primary : AppleTheme.textSecondary))
+            .padding(.horizontal, AppSpacing.lg)
+            .frame(height: 28)
+            .appleGlass(in: Capsule(style: .continuous), interactive: !isDisabled)
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(!canAdd)
-        .help(canAdd ? "Add a Streaming Service, Open Tab, or Custom URL (up to 4)" : "Maximum 4 streams active")
+        .disabled(isDisabled)
+        .help(
+            isDisabled
+                ? "Exit Fullscreen to Edit Grid"
+                : (canAdd
+                    ? "Add a Streaming Service, Open Tab, or Custom URL (up to 4)"
+                    : "Grid Full (4/4) — Open Services or New Tab")
+        )
         .popover(isPresented: $isAddScreenPopoverPresented, arrowEdge: .bottom) {
             AddScreenServicePickerPopover(
                 controller: controller,
-                targetIsMultiview: true,
+                initialMode: .addToGrid,
                 onDismiss: { isAddScreenPopoverPresented = false }
             )
+            .environment(\.font, AppFont.body)
         }
     }
 }
@@ -320,12 +332,12 @@ struct MultiviewOverlayView: View {
                                     onRetry: { tab.reloadOrStop() }
                                 )
                                 .frame(width: rect.width, height: rect.height)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
                                 .position(x: rect.midX, y: rect.midY)
                             }
 
                             // 1. Non-interactive rounded border (100% pass-through to WKWebView)
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
                                 .strokeBorder(
                                     borderColor(isAudio: isAudio, isFocused: isFocused),
                                     lineWidth: isAudio ? 2.0 : 1.0
@@ -371,16 +383,16 @@ struct MultiviewOverlayView: View {
 
         ZStack {
             Capsule(style: .continuous)
-                .fill(isDragging ? AppleTheme.accent : Color.primary.opacity(0.36))
+                .fill(isDragging ? AppleTheme.accentText : Color.primary.opacity(0.36))
                 .frame(width: pillWidth, height: pillHeight)
                 .shadow(color: Color.black.opacity(isDragging ? 0.38 : 0.18), radius: 3, y: 1)
 
             if isDragging {
                 Text("\(divider.leadingPercent)% / \(divider.trailingPercent)%")
-                    .font(.system(size: 9.5, weight: .semibold, design: .rounded).monospacedDigit())
+                    .font(AppFont.micro(weight: .semibold, tabular: true))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .padding(.vertical, AppSpacing.xxs)
                     .appleGlass(
                         in: Capsule(style: .continuous),
                         tint: Color.black.opacity(0.68)
@@ -398,7 +410,7 @@ struct MultiviewOverlayView: View {
 
     private func borderColor(isAudio: Bool, isFocused: Bool) -> Color {
         if isAudio {
-            return AppleTheme.accent.opacity(0.92)
+            return AppleTheme.accentText.opacity(0.92)
         }
         if isFocused {
             return Color.white.opacity(0.32)
@@ -417,8 +429,8 @@ struct MultiviewOverlayView: View {
     ) -> some View {
         // Only the two compact pills inside this top 36pt bar accept pointer hits;
         // the empty space between them passes clicks straight through to the WKWebView.
-        LiquidGlassGroup(spacing: 6) {
-            HStack(alignment: .center, spacing: 6) {
+        LiquidGlassGroup(spacing: AppSpacing.sm) {
+            HStack(alignment: .center, spacing: AppSpacing.sm) {
                 tileAudioBadge(
                     tab: tab,
                     slotNumber: index + 1,
@@ -426,7 +438,7 @@ struct MultiviewOverlayView: View {
                     maxWidth: max(90, tileWidth - 200)
                 )
 
-                Spacer(minLength: 6)
+                Spacer(minLength: AppSpacing.sm)
 
                 if showActions {
                     tileActionPill(tab: tab, index: index, totalCount: totalCount)
@@ -434,8 +446,8 @@ struct MultiviewOverlayView: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.top, AppSpacing.md)
         .animation(.easeOut(duration: 0.14), value: showActions)
     }
 
@@ -457,49 +469,41 @@ struct MultiviewOverlayView: View {
                 controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: AppSpacing.xs) {
                 Text("\(slotNumber)")
-                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(AppFont.micro(weight: .bold, tabular: true))
                     .foregroundStyle(.white)
                     .frame(width: 16, height: 16)
                     .background(
                         Circle()
-                            .fill(isAudio ? AppleTheme.accent : Color.white.opacity(0.22))
+                            .fill(isAudio ? AppleTheme.accentFill : Color.white.opacity(0.22))
                     )
 
                 if isSilentCompanionWeb {
                     Image(systemName: "globe")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.84))
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.86))
                 } else {
                     Image(systemName: isMuted ? "speaker.slash.fill" : "waveform")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(isMuted ? Color.white.opacity(0.78) : AppleTheme.accent)
+                        .font(AppIconFont.xs(weight: .semibold))
+                        .foregroundStyle(isMuted ? Color.white.opacity(0.82) : AppleTheme.accentText)
                 }
 
                 if tileTitleVisible(maxWidth: maxWidth) {
                     Text(tab.displayTitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(AppFont.caption(weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
 
                 if tab.mediaStatus.isHDR {
-                    Text("HDR")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.82))
-                        .padding(.horizontal, 3.5)
-                        .padding(.vertical, 1)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.7)
-                        )
+                    AppleHDRBadge(onDarkMedia: true)
                 }
             }
-            .padding(.leading, 4)
-            .padding(.trailing, 8)
-            .frame(height: 24)
+            .padding(.leading, AppSpacing.xs)
+            .padding(.trailing, AppSpacing.md)
+            .frame(height: 26)
             .appleGlass(
                 in: Capsule(style: .continuous),
                 tint: isAudio ? Color.black.opacity(0.58) : Color.black.opacity(0.46),
@@ -525,7 +529,7 @@ struct MultiviewOverlayView: View {
         let companionServiceName = isCompanion ? StreamingServiceCatalog.service(matchingURL: tab.url)?.name : nil
 
         // Strictly <= 5 compact icons in top-36pt pill (never encroaches on bottom 64pt video scrubber).
-        HStack(spacing: 2) {
+        HStack(spacing: AppSpacing.xxs) {
             // 1. Zero-Latency Solo / Back to Grid
             tileIconButton(
                 systemImage: isSoloed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -540,22 +544,25 @@ struct MultiviewOverlayView: View {
                     Button("Nudge Back −5s") {
                         controller.nudgeMultiviewTile(id: tab.id, seconds: -5)
                     }
+                    .font(AppFont.body(tabular: true))
                     Button("Nudge Back −1s") {
                         controller.nudgeMultiviewTile(id: tab.id, seconds: -1)
                     }
+                    .font(AppFont.body(tabular: true))
                     Button("Nudge Forward +1s") {
                         controller.nudgeMultiviewTile(id: tab.id, seconds: 1)
                     }
+                    .font(AppFont.body(tabular: true))
                     Divider()
                     Button("Jump to Live Edge") {
                         controller.jumpMultiviewTileToLive(id: tab.id)
                     }
+                    .font(AppFont.body)
                 } label: {
                     Image(systemName: "clock.arrow.2.circlepath")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(AppIconFont.xs(weight: .semibold))
                         .foregroundStyle(.white.opacity(0.92))
-                        .frame(width: 20, height: 20)
-                        .contentShape(Circle())
+                        .minHitTarget(24, shape: Circle())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -625,10 +632,9 @@ struct MultiviewOverlayView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(AppIconFont.xs(weight: .semibold))
                     .foregroundStyle(.white.opacity(0.92))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Circle())
+                    .minHitTarget(24, shape: Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -643,8 +649,8 @@ struct MultiviewOverlayView: View {
                 controller.removeTileFromMultiview(id: tab.id)
             }
         }
-        .padding(.horizontal, 4)
-        .frame(height: 24)
+        .padding(.horizontal, AppSpacing.xs)
+        .frame(height: 26)
         .appleGlass(
             in: Capsule(style: .continuous),
             tint: Color.black.opacity(0.54),
@@ -664,10 +670,9 @@ struct MultiviewOverlayView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
+                .font(AppIconFont.xs(weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
-                .frame(width: 20, height: 20)
-                .contentShape(Circle())
+                .minHitTarget(24, shape: Circle())
         }
         .buttonStyle(.plain)
         .help(helpText)

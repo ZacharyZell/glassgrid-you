@@ -7,8 +7,8 @@ cd "$ROOT_DIR"
 APP_NAME="GlassGrid You"
 EXECUTABLE_NAME="GlassGridYou"
 BUNDLE_ID="com.glassgridyou.mac"
-APP_VERSION="${APP_VERSION:-1.2.0}"
-APP_BUILD="${APP_BUILD:-5}"
+APP_VERSION="${APP_VERSION:-1.3.0}"
+APP_BUILD="${APP_BUILD:-6}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 ENABLE_HARDENED_RUNTIME="${ENABLE_HARDENED_RUNTIME:-0}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
@@ -47,9 +47,18 @@ if [[ -z "$SPARKLE_FRAMEWORK" || ! -d "$SPARKLE_FRAMEWORK" ]]; then
     exit 1
 fi
 
+FONT_DIR="$ROOT_DIR/Sources/YouTubeMac/Resources/Fonts"
+if [[ ! -f "$FONT_DIR/InterVariable.ttf" || ! -f "$FONT_DIR/OFL.txt" ]]; then
+    echo "Error: Missing bundled Inter font files under $FONT_DIR (expected InterVariable.ttf and OFL.txt)" >&2
+    exit 1
+fi
+
 echo "==> Preparing .app bundle structure (v$APP_VERSION, build $APP_BUILD)..."
 rm -rf "$APP_BUNDLE" "$ICONSET_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" "$APP_BUNDLE/Contents/Frameworks"
+
+rm -rf "$APP_BUNDLE/Contents/Resources/Fonts"
+cp -R "$FONT_DIR" "$APP_BUNDLE/Contents/Resources/Fonts"
 
 echo "==> Generating macOS Liquid Glass app icon..."
 swift "$ROOT_DIR/scripts/generate_icon.swift" "$ICONSET_DIR"
@@ -114,6 +123,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>
     <string>$APP_BUILD</string>
+    <key>ATSApplicationFontsPath</key>
+    <string>Fonts</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
     <key>LSMinimumSystemVersion</key>
