@@ -37,8 +37,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("AI & Automation", systemImage: "sparkles")
                 }
+
+            LivePulseSettingsTabView(coordinator: coordinator)
+                .tabItem {
+                    Label("Live Pulse", systemImage: "sportscourt")
+                }
         }
-        .frame(width: 600, height: 540)
+        .frame(width: 660, height: 560)
         .alert("Sign Out & Clear All Site Data?", isPresented: $showClearDataConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Clear All Data", role: .destructive) {

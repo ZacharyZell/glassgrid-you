@@ -629,6 +629,39 @@ public enum YouTubeTitleFormatter {
     }
 }
 
+/// Passive page & MediaSession metadata extracted from the active tab for sports/stream context matching.
+public struct StreamContextMetadata: Equatable, Hashable, Codable, Sendable {
+    public var mediaSessionTitle: String
+    public var mediaSessionArtist: String
+    public var mediaSessionAlbum: String
+    public var ogTitle: String
+    public var headingHint: String
+
+    public static let empty = StreamContextMetadata()
+
+    public init(
+        mediaSessionTitle: String = "",
+        mediaSessionArtist: String = "",
+        mediaSessionAlbum: String = "",
+        ogTitle: String = "",
+        headingHint: String = ""
+    ) {
+        self.mediaSessionTitle = mediaSessionTitle
+        self.mediaSessionArtist = mediaSessionArtist
+        self.mediaSessionAlbum = mediaSessionAlbum
+        self.ogTitle = ogTitle
+        self.headingHint = headingHint
+    }
+
+    public var isEmpty: Bool {
+        mediaSessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && mediaSessionArtist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && mediaSessionAlbum.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && ogTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && headingHint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 /// Low-frequency playback status reported to UI controls without triggering per-second timeline churn.
 public struct MediaStatus: Equatable, Sendable {
     public var hasVideo: Bool
@@ -647,6 +680,7 @@ public struct MediaStatus: Equatable, Sendable {
     public var isAirPlayActive: Bool
     public var isCleanBoxActive: Bool
     public var isCleanBoxEligible: Bool
+    public var streamContext: StreamContextMetadata
 
     public static let empty = MediaStatus(
         hasVideo: false,
@@ -664,7 +698,8 @@ public struct MediaStatus: Equatable, Sendable {
         airPlayAvailable: false,
         isAirPlayActive: false,
         isCleanBoxActive: false,
-        isCleanBoxEligible: false
+        isCleanBoxEligible: false,
+        streamContext: .empty
     )
 
     public init(
@@ -683,7 +718,8 @@ public struct MediaStatus: Equatable, Sendable {
         airPlayAvailable: Bool = false,
         isAirPlayActive: Bool = false,
         isCleanBoxActive: Bool = false,
-        isCleanBoxEligible: Bool = false
+        isCleanBoxEligible: Bool = false,
+        streamContext: StreamContextMetadata = .empty
     ) {
         self.hasVideo = hasVideo
         self.isPlaying = isPlaying
@@ -701,6 +737,7 @@ public struct MediaStatus: Equatable, Sendable {
         self.isAirPlayActive = isAirPlayActive
         self.isCleanBoxActive = isCleanBoxActive
         self.isCleanBoxEligible = isCleanBoxEligible
+        self.streamContext = streamContext
     }
 
     /// Compact speed badge string (e.g. `"1.5×"`), or `nil` when playing at normal `1×` speed.

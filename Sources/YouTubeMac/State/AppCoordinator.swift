@@ -24,6 +24,12 @@ public final class AppCoordinator {
     @ObservationIgnored
     public private(set) lazy var agentBridge: AgentBridgeController = AgentBridgeController(coordinator: self)
 
+    @ObservationIgnored
+    public private(set) lazy var livePulseStore: LivePulseStore = LivePulseStore(
+        settings: settings,
+        coordinator: self
+    )
+
     public private(set) var windowOrder: [UUID] = []
     public var activeWindowID: UUID?
     public var floatingMiniPlayerOwnerWindowID: UUID?
@@ -250,6 +256,9 @@ public final class AppCoordinator {
         if activeWindowID == windowID {
             activeWindowID = windowOrder.last
         }
+
+        livePulseStore.removeWindowSignals(windowID: windowID)
+        livePulseStore.reconcileLifecycle()
     }
 
     /// Enforces single shared `FloatingMiniPlayerController` ownership across all windows,
@@ -351,6 +360,7 @@ public final class AppCoordinator {
         initialThemeCookieSyncTask?.cancel()
         initialThemeCookieSyncTask = nil
         systemPlaybackGuard.stop()
+        livePulseStore.shutdown()
         agentBridge.shutdown()
     }
 
@@ -622,6 +632,13 @@ public final class AppCoordinator {
         }
         settings.onShortcutsParametersDidChange = {
             GlassGridShortcutsProvider.updateAppShortcutParameters()
+        }
+        settings.onLivePulseSettingsDidChange = { [weak self] in
+            guard let self else { return }
+            for controller in self.openWindows {
+                controller.syncLivePulseVisibilityFromSettings()
+            }
+            self.livePulseStore.reconcileLifecycle()
         }
     }
 

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 18 Streaming Services</title>
-  <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, Twitch, Crunchyroll, live sports, and 18 streaming services—plus Floating Multiview Grid, Clean-Box players, local MCP/CLI AI control, Siri App Intents, and zero Electron.">
+  <meta name="description" content="A native Swift 6 &amp; macOS Liquid Glass client for YouTube, YouTube TV, Twitch, Crunchyroll, live sports, and 18 streaming services—plus Floating Multiview Grid, Clean-Box players, opt-in Live Pulse sports &amp; fantasy tracking, local MCP/CLI AI control, Siri App Intents, and zero Electron.">
   <meta name="theme-color" content="#0A0A0B">
   <link rel="canonical" href="https://glassgridyou.com/">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -14,14 +14,14 @@
   <meta property="og:site_name" content="GlassGrid You">
   <meta property="og:url" content="https://glassgridyou.com/">
   <meta property="og:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; 18 Streaming Services">
-  <meta property="og:description" content="Zero Electron. Built with Swift 6, SwiftUI, AppKit, and WebKit. Watch up to 4 simultaneous streams with Floating Multiview Grid, Clean-Box playback, native AirPlay, and opt-in MCP/CLI/Siri control.">
+  <meta property="og:description" content="Zero Electron. Built with Swift 6, SwiftUI, AppKit, and WebKit. Watch up to 4 simultaneous streams with Floating Multiview Grid, Clean-Box playback, opt-in Live Pulse sports/fantasy/markets, native AirPlay, and opt-in MCP/CLI/Siri control.">
   <meta property="og:image" content="https://glassgridyou.com/screenshots/hero-4k-hdr-night.png">
   <meta property="og:image:width" content="2560">
   <meta property="og:image:height" content="1640">
 
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="GlassGrid You — Native macOS Multiview for YouTube, YouTube TV &amp; Live Sports">
-  <meta name="twitter:description" content="Native Swift 6 &amp; macOS Liquid Glass client with 4-stream Quad-Box Multiview, 18-service Hub, Universal Clean-Box, Floating Multiview Grid, and local AI/MCP/Siri control.">
+  <meta name="twitter:description" content="Native Swift 6 &amp; macOS Liquid Glass client with 4-stream Quad-Box Multiview, 18-service Hub, Universal Clean-Box, Floating Multiview Grid, opt-in Live Pulse sports/fantasy/odds, and local AI/MCP/Siri control.">
   <meta name="twitter:image" content="https://glassgridyou.com/screenshots/hero-4k-hdr-night.png">
 
   <link rel="stylesheet" href="styles.css">
@@ -36,6 +36,7 @@
 
       <div class="nav-links">
         <a href="#multiview">Multiview</a>
+        <a href="#live-pulse">Live Pulse</a>
         <a href="#automation">AI &amp; MCP</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
@@ -64,7 +65,7 @@
         <h1>Native macOS Multiview for YouTube, YouTube TV &amp; Live Streams</h1>
 
         <p class="hero-sub">
-          Zero Electron. Built from the ground up with Swift 6, SwiftUI, AppKit, and WebKit for 4K 60fps HDR10 playback, 18 streaming services, Universal Clean-Box viewing, Floating Multiview Grids, and opt-in MCP, CLI &amp; Siri control.
+          Zero Electron. Built from the ground up with Swift 6, SwiftUI, AppKit, and WebKit for 4K 60fps HDR10 playback, 18 streaming services, Universal Clean-Box viewing, Floating Multiview Grids, opt-in Live Pulse sports &amp; fantasy tracking, and MCP, CLI &amp; Siri control.
         </p>
 
         <div class="hero-actions">
@@ -109,6 +110,7 @@
               <ul class="feature-bullets">
                 <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>):</strong> Expand any tile full-window while keeping the other 3 streams live in the background; press <kbd>Esc</kbd> to snap back instantaneously with your split ratios intact.</li>
                 <li><strong>Live Stream Sync Micro-Nudge:</strong> Fine-tune broadcast delay per tile with <strong>−5s</strong>, <strong>−1s</strong>, <strong>+1s</strong>, <strong>+5s</strong>, or <strong>Jump to Live</strong> so games and watchalongs stay aligned.</li>
+                <li><strong>Reactive Live Pulse Companion (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>):</strong> Pair Multiview with opt-in live NFL/NBA/MLB/NHL scores, fantasy tracking, and read-only odds in <a href="#live-pulse" style="text-decoration:underline;text-underline-offset:3px;">Live Pulse</a> below.</li>
                 <li><strong>120Hz Draggable Dividers &amp; Audio Focus:</strong> Drag any split line smoothly (double-click to reset), press <kbd>⌘⌥1–4</kbd> for exclusive audio, or enable 15% background ducking.</li>
                 <li><strong>Saved Multiview Presets:</strong> Relaunch your favorite Sunday Quad or news wall with custom split ratios in one click.</li>
               </ul>
@@ -126,7 +128,39 @@
             </div>
           </article>
 
-          <article class="showcase showcase--reverse" id="services">
+          <article class="showcase showcase--reverse" id="live-pulse">
+            <div class="showcase-copy">
+              <span class="section-label">Live Pulse · <a href="changelog.html#v1-3-0">v1.3 Preview on main</a></span>
+              <h3>Live Scoreboards, Fantasy Tracking &amp; Read-Only Markets.</h3>
+              <p>Strictly <strong>OFF by default</strong>—opt in to pair active sports streams with live NFL, NBA, MLB, and NHL scoreboards, Sleeper &amp; ESPN Public fantasy matchups, and strictly read-only Kalshi &amp; Polymarket odds.</p>
+              <ul class="feature-bullets">
+                <li><strong>Reactive Ticker (<kbd>⌘⌥B</kbd>) &amp; Companion Drawer (<kbd>⌘⌥I</kbd>):</strong> <code>30pt</code> floating pill rail and resizable <code>280–440pt</code> drawer with passive local stream detection (<code>mediaSession</code> / <code>og:title</code> / <code>h1</code> across YouTube TV, Prime Video, Peacock, Paramount+, ESPN+, NFL+, MLB.tv, NBA, Apple TV+, and whip-around slates) plus 90s ad-break hysteresis and 1-click regional disambiguation.</li>
+                <li><strong>Starter vs. Bench (<code>BN</code>) &amp; 1-Line Boxscores:</strong> Tracks Sleeper and public ESPN Fantasy matchups (Starters counted in totals, live Bench flagged with hollow <code>BN</code> cues), sport-aware 1-line boxscores for NFL/NBA/MLB/NHL, and name+team fallback matching for rookies.</li>
+                <li><strong>Custom <code>#1–#4</code> Sport Priority &amp; Watched Stream Focus:</strong> Rank leagues by priority or toggle 1-click <strong>Focus</strong> to isolate only your active stream, backed by 15s freshness indicators and manual refresh.</li>
+                <li><strong><code>0s</code> / <code>20s</code> / <code>35s</code> Spoiler Delay &amp; Cookieless Privacy:</strong> Prevent broadcast spoilers with buffered updates, 6 1-click Fantasy/Markets Companion Tiles, cookieless ephemeral requests, and zero trade execution or wagering.</li>
+              </ul>
+            </div>
+            <div class="showcase-media">
+              <div class="settings-pedestal">
+                <div class="settings-frame">
+                  <img
+                    src="screenshots/live-pulse-settings-night.png"
+                    alt="GlassGrid You Settings Live Pulse panel showing Live Pulse Surfaces, #1–#4 Sport Priority and Leagues, Spoiler Delay Buffer, and Watched Stream Focus"
+                    width="1320"
+                    height="1280"
+                    loading="lazy"
+                    decoding="async">
+                </div>
+                <div class="pedestal-caption" aria-hidden="true">
+                  <span class="pedestal-pill">NFL · NBA · MLB · NHL</span>
+                  <span class="pedestal-pill">0s / 20s / 35s Spoiler Delay</span>
+                  <span class="pedestal-pill">Off by Default</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="showcase" id="services">
             <div class="showcase-copy">
               <span class="section-label">18 Services · Clean-Box &amp; AirPlay (<a href="changelog.html#v1-3-0">v1.3 Preview on main</a>)</span>
               <h3>18 Streaming Services, Clean-Box Playback &amp; Native AirPlay.</h3>
@@ -150,7 +184,7 @@
             </div>
           </article>
 
-          <article class="showcase" id="automation">
+          <article class="showcase showcase--reverse" id="automation">
             <div class="showcase-copy">
               <span class="section-label">AI &amp; Siri Control · <a href="changelog.html#v1-3-0">v1.3 Preview on main</a></span>
               <h3>Operate GlassGrid You with Claude, Gemini, Grok, Siri &amp; CLI.</h3>
@@ -181,7 +215,7 @@
             </div>
           </article>
 
-          <article class="showcase showcase--reverse" id="features">
+          <article class="showcase" id="features">
             <div class="showcase-copy">
               <span class="section-label">Liquid Glass &amp; Productivity</span>
               <h3>Spotlight Command Palette, Services Sidebar &amp; Multi-Window.</h3>
@@ -206,7 +240,7 @@
             </div>
           </article>
 
-          <article class="showcase" id="mini-player">
+          <article class="showcase showcase--reverse" id="mini-player">
             <div class="showcase-copy">
               <span class="section-label">Floating Mini-Player &amp; Grid · <a href="changelog.html#v1-3-0">v1.3 Preview on main</a></span>
               <h3>Always-on-top Single or Quad-Box Floating Multiview Grid.</h3>
@@ -276,7 +310,7 @@
           <div class="glass-card">
             <span class="bento-badge">Keyboard-First</span>
             <h3>Native Mac Shortcuts</h3>
-            <p>First-class shortcuts throughout: <kbd>⌘K</kbd> Command Palette, <kbd>⌘⇧G</kbd> Multiview, <kbd>⌘⌥Z</kbd> Solo Tile, <kbd>⌘⇧M</kbd> Floating Grid, <kbd>⌘⇧B</kbd> Full Page, <kbd>⌘⇧F</kbd> Focus, and <kbd>⌘N</kbd> New Window.</p>
+            <p>First-class shortcuts throughout: <kbd>⌘K</kbd> Command Palette, <kbd>⌘⇧G</kbd> Multiview, <kbd>⌘⌥Z</kbd> Solo Tile, <kbd>⌘⇧M</kbd> Floating Grid, <kbd>⌘⇧B</kbd> Clean-Box, <kbd>⌘⌥B</kbd> Ticker, <kbd>⌘⌥I</kbd> Companion Drawer, and <kbd>⌘N</kbd> New Window.</p>
           </div>
 
           <div class="glass-card">
@@ -309,7 +343,7 @@
               <li>Signed &amp; Apple-Notarized macOS <code>.dmg</code></li>
               <li>Zero Xcode or command-line setup required</li>
               <li>Sparkle 2 EdDSA-verified automatic updates</li>
-              <li>Free upgrade to v1.3.0 (MCP, Clean-Box, Grid Mini-Player) once notarized</li>
+              <li>Free upgrade to v1.3.0 (Live Pulse, MCP, Clean-Box, Grid Mini-Player) once notarized</li>
               <li>Directly supports independent macOS development</li>
             </ul>
             <a class="btn btn-primary" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download for macOS — $12</a>
@@ -358,6 +392,13 @@
             <summary>Which streaming services &amp; DRM platforms work natively—and how does Clean-Box work?</summary>
             <div class="faq-answer">
               <p>Because GlassGrid You uses Apple's native WebKit engine rather than Electron/Chromium, it supports Safari desktop compatibility, 4K 60fps HDR10, YouTube Premium, YouTube TV FairPlay DRM, Twitch, ESPN, NFL+, MLB.tv, NBA, Peacock, Paramount+, Fubo, and Sling natively. Seven subscription services that enforce strict Safari-only CDM checks on macOS (Prime Video, Disney+, Hulu, HBO Max, Apple TV+, Netflix, and Crunchyroll) are clearly labeled <strong>Safari DRM</strong> with 1-click <strong>Open in Safari</strong> fallback. In <strong>v1.3 Preview</strong>, Universal Clean-Box (<kbd>⌘⇧B</kbd>) isolates just the video player across all 18 services when a stream starts while leaving home and login pages untouched.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>How does Live Pulse work for live scores, fantasy leagues, and prediction markets?</summary>
+            <div class="faq-answer">
+              <p><strong>Live Pulse</strong> (in <strong>v1.3 Preview</strong>) ships strictly <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; Live Pulse</strong> or toggled via <kbd>⌘⌥B</kbd> (Ticker Bar) / <kbd>⌘⌥I</kbd> (Companion Drawer), it passively matches active sports streams (YouTube, YouTube TV, Prime Video, Peacock, Paramount+, ESPN+, NFL+, MLB.tv, NBA, Apple TV+, and whip-around slates like RedZone) locally in memory using <code>mediaSession</code>, <code>og:title</code>, watch headings, and URLs with strict auth-page bailout. It shows live NFL/NBA/MLB/NHL scoreboards ranked by custom <code>#1–#4</code> Sport Priority (or 1-click <strong>Watched Stream Focus</strong>), tracks <strong>Sleeper</strong> and public <strong>ESPN Fantasy</strong> matchups with clear Starter vs. hollow <code>BN</code> Bench cues and compact 1-line boxscores, displays 15s-bucketed freshness + manual refresh, and surfaces strictly read-only implied odds from <strong>Kalshi</strong> and <strong>Polymarket</strong>. All requests use cookieless ephemeral sessions, and a configurable <code>0s</code>/<code>20s</code>/<code>35s</code> <strong>Spoiler Delay</strong> prevents broadcast spoilers—with zero wagering or trade execution anywhere in the app. See our <a href="terms.html">Terms &amp; Disclaimers</a>.</p>
             </div>
           </details>
 

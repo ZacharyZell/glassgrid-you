@@ -833,7 +833,8 @@ public final class BrowserTab: NSObject, Identifiable {
                 airPlayAvailable: sub.airPlayAvailable,
                 isAirPlayActive: sub.isAirPlayActive,
                 isCleanBoxActive: mainFrameMediaStatus.isCleanBoxActive,
-                isCleanBoxEligible: mainFrameMediaStatus.isCleanBoxEligible || sub.hasVideo
+                isCleanBoxEligible: mainFrameMediaStatus.isCleanBoxEligible || sub.hasVideo,
+                streamContext: mainFrameMediaStatus.streamContext
             )
         } else {
             resolved = mainFrameMediaStatus
@@ -858,6 +859,12 @@ public final class BrowserTab: NSObject, Identifiable {
                 let oldPathKey = (url.host ?? "").lowercased() + "|" + url.path.lowercased() + "|" + (oldVideoID ?? "")
                 let newPathKey = (webURL.host ?? "").lowercased() + "|" + webURL.path.lowercased() + "|" + (newVideoID ?? "")
                 var didResetCleanBoxBypass = false
+                if mainFrameMediaStatus.streamContext != .empty {
+                    mainFrameMediaStatus.streamContext = .empty
+                    if oldPathKey == newPathKey {
+                        recomputeMergedMediaStatus()
+                    }
+                }
                 if oldPathKey != newPathKey {
                     clearSubframeMediaState()
                     if isCleanBoxBypassed {
@@ -1307,6 +1314,14 @@ extension BrowserTab: WKScriptMessageHandler {
             return
         }
 
+        let streamContext = StreamContextMetadata(
+            mediaSessionTitle: AgentSecurity.sanitizeWebText(body["mediaSessionTitle"] as? String ?? "", maxLength: 180).text,
+            mediaSessionArtist: AgentSecurity.sanitizeWebText(body["mediaSessionArtist"] as? String ?? "", maxLength: 180).text,
+            mediaSessionAlbum: AgentSecurity.sanitizeWebText(body["mediaSessionAlbum"] as? String ?? "", maxLength: 180).text,
+            ogTitle: AgentSecurity.sanitizeWebText(body["ogTitle"] as? String ?? "", maxLength: 180).text,
+            headingHint: AgentSecurity.sanitizeWebText(body["headingHint"] as? String ?? "", maxLength: 180).text
+        )
+
         let newMainStatus = MediaStatus(
             hasVideo: body["hasVideo"] as? Bool ?? false,
             isPlaying: body["isPlaying"] as? Bool ?? false,
@@ -1323,7 +1338,8 @@ extension BrowserTab: WKScriptMessageHandler {
             airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
             isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false,
             isCleanBoxActive: body["isCleanBoxActive"] as? Bool ?? false,
-            isCleanBoxEligible: body["isCleanBoxEligible"] as? Bool ?? false
+            isCleanBoxEligible: body["isCleanBoxEligible"] as? Bool ?? false,
+            streamContext: streamContext
         )
         let wasPlaying = mediaStatus.isPlaying
         mainFrameMediaStatus = newMainStatus

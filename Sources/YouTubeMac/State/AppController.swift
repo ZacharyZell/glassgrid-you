@@ -67,6 +67,19 @@ public final class AppController {
     public var isAirPlayPopoverPresented: Bool = false
     public var airPlayVideoHint: String?
 
+    // Live Pulse layout flags ONLY (live telemetry lives exclusively on `LivePulseStore`)
+    public var isLivePulseTickerVisible: Bool = false
+    public var isLivePulseDrawerVisible: Bool = false
+    public var livePulseDrawerWidth: CGFloat = LivePulseLayout.drawerDefaultWidth
+    public var windowContentWidth: CGFloat = 1280
+
+    @ObservationIgnored
+    private var sidebarVisibleBeforeLiveDrawer: Bool?
+
+    public var livePulseStore: LivePulseStore? {
+        coordinator?.livePulseStore
+    }
+
     @ObservationIgnored
     public weak var coordinator: AppCoordinator?
 
@@ -167,6 +180,9 @@ public final class AppController {
         self.coordinator = coordinator
         self.settings = resolvedSettings
         self.isSidebarVisible = resolvedSettings.isSidebarVisible
+        self.isLivePulseTickerVisible = resolvedSettings.livePulseEnabled && resolvedSettings.livePulseShowTicker
+        self.isLivePulseDrawerVisible = resolvedSettings.livePulseEnabled && resolvedSettings.livePulseShowDrawer
+        self.livePulseDrawerWidth = LivePulseLayout.clampDrawerWidth(CGFloat(resolvedSettings.livePulseDrawerWidth))
         self.fallbackFloatingMiniPlayer = coordinator == nil
             ? FloatingMiniPlayerController(
                 initialSavedFrame: resolvedSettings.savedMiniPlayerFrame,
@@ -511,6 +527,7 @@ public final class AppController {
         }
         refreshSponsorSegmentsIfNeeded(for: tab, url: targetURL)
         scheduleSessionSave()
+        syncLivePulseStreamSignals()
         return tab
     }
 
@@ -694,6 +711,7 @@ public final class AppController {
             syncOmniboxToSelectedTab()
         }
         scheduleSessionSave()
+        syncLivePulseStreamSignals()
     }
 
     public func closeOtherTabs(keepingID id: UUID) {
@@ -796,6 +814,7 @@ public final class AppController {
             }
         }
         scheduleSessionSave()
+        syncLivePulseStreamSignals()
     }
 
     public func selectNextTab() {
@@ -1356,6 +1375,7 @@ public final class AppController {
         }
 
         showHUD(icon: "square.grid.2x2.fill", message: "Multiview · \(multiviewTabIDs.count) Streams")
+        syncLivePulseStreamSignals()
     }
 
     public func exitMultiview(focusTabID: UUID? = nil, showFeedback: Bool = true) {
@@ -1405,6 +1425,7 @@ public final class AppController {
         if showFeedback {
             showHUD(icon: "rectangle.fill", message: "Single View")
         }
+        syncLivePulseStreamSignals()
     }
 
     public func setMultiviewLayoutMode(_ mode: MultiviewLayoutMode, showFeedback: Bool = true) {
@@ -1492,6 +1513,7 @@ public final class AppController {
             icon: resolvedMode == .companion ? "globe" : "plus.square.on.square",
             message: "\(label) (\(multiviewTabIDs.count)/\(MultiviewGridLayout.maxTiles))"
         )
+        syncLivePulseStreamSignals()
     }
 
     public func openCompanionTile(url: URL) {
@@ -1649,6 +1671,7 @@ public final class AppController {
         }
         applyConfigToAllTabs()
         applyMultiviewAudioFocus(unmuteAudioTab: true)
+        syncLivePulseStreamSignals()
     }
 
     // MARK: - Zero-Latency Multiview Solo & Live Stream Sync
@@ -1690,6 +1713,7 @@ public final class AppController {
         } else {
             showHUD(icon: "square.grid.2x2", message: "Back to Multiview Grid")
         }
+        syncLivePulseStreamSignals()
     }
 
     public func exitMultiviewSolo(showFeedback: Bool = true) {
@@ -1706,6 +1730,7 @@ public final class AppController {
         if showFeedback {
             showHUD(icon: "square.grid.2x2", message: "Back to Multiview Grid")
         }
+        syncLivePulseStreamSignals()
     }
 
     public func nudgeMultiviewTile(id: UUID, seconds: Double) {
@@ -1868,6 +1893,7 @@ public final class AppController {
 
     private func handleTabDidFinishNavigation(tabID: UUID, url: URL) {
         scheduleSignInCompletionCheck(for: tabID, url: url, requireAuthFlowForNonPrime: false)
+        syncLivePulseStreamSignals()
     }
 
     private func scheduleSignInCompletionCheck(for tabID: UUID, url: URL, requireAuthFlowForNonPrime: Bool) {
@@ -2020,6 +2046,7 @@ public final class AppController {
             let title = tabs.first(where: { $0.id == tabID })?.displayTitle ?? "Stream \(slot)"
             showHUD(icon: "speaker.wave.2.fill", message: "Audio \(slot) · \(title)")
         }
+        syncLivePulseStreamSignals()
     }
 
     public func focusMultiviewAudio(slot oneBasedSlot: Int) {
@@ -2723,12 +2750,264 @@ public final class AppController {
     }
 
     public func toggleSidebar() {
-        // Respect manual sidebar changes made during Multiview so exiting Multiview won't revert them.
+        // Respect manual sidebar changes made during Multiview or Live Drawer so exiting won't revert them.
         sidebarVisibleBeforeMultiview = nil
+        sidebarVisibleBeforeLiveDrawer = nil
+
+        let openingSidebar = !isSidebarVisible
+        if openingSidebar,
+           isLivePulseDrawerVisible,
+           LivePulseLayout.shouldAutoCollapseSidebar(windowWidth: windowContentWidth) {
+            guard !hasLiveFullscreenTab else { return }
+            withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                isLivePulseDrawerVisible = false
+            }
+            settings.livePulseShowDrawer = false
+            coordinator?.livePulseStore.reconcileLifecycle()
+        }
+
         withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
             isSidebarVisible.toggle()
         }
         settings.isSidebarVisible = isSidebarVisible
+    }
+
+    // MARK: - Live Pulse Layout & Stream Signals
+
+    public func toggleLivePulseTicker() {
+        guard !hasLiveFullscreenTab else { return }
+        let nextVisible = !isLivePulseTickerVisible
+        if nextVisible && !settings.livePulseEnabled {
+            settings.livePulseEnabled = true
+            showHUD(icon: "sportscourt.fill", message: "Live Pulse Enabled")
+        }
+        withAnimation(.snappy(duration: 0.20, extraBounce: 0)) {
+            isLivePulseTickerVisible = nextVisible
+        }
+        settings.livePulseShowTicker = nextVisible
+        syncLivePulseStreamSignals()
+        coordinator?.livePulseStore.reconcileLifecycle()
+    }
+
+    public func toggleLivePulseDrawer() {
+        guard !hasLiveFullscreenTab else { return }
+        if !isLivePulseDrawerVisible {
+            openLivePulseDrawer(tab: coordinator?.livePulseStore.selectedDrawerTab ?? .scores)
+            return
+        }
+
+        withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+            isLivePulseDrawerVisible = false
+        }
+        settings.livePulseShowDrawer = false
+
+        let shouldRestoreSidebar = sidebarVisibleBeforeLiveDrawer == true
+        sidebarVisibleBeforeLiveDrawer = nil
+        if shouldRestoreSidebar && !isSidebarVisible {
+            withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                isSidebarVisible = true
+            }
+            settings.isSidebarVisible = true
+        }
+        coordinator?.livePulseStore.reconcileLifecycle()
+    }
+
+    public func openLivePulseDrawer(tab: LivePulseDrawerTab) {
+        guard !hasLiveFullscreenTab else { return }
+        if !settings.livePulseEnabled {
+            settings.livePulseEnabled = true
+            showHUD(icon: "sportscourt.fill", message: "Live Pulse Enabled")
+        }
+        coordinator?.livePulseStore.selectedDrawerTab = tab
+
+        if LivePulseLayout.shouldAutoCollapseSidebar(windowWidth: windowContentWidth) && isSidebarVisible {
+            if sidebarVisibleBeforeLiveDrawer == nil {
+                sidebarVisibleBeforeLiveDrawer = true
+            }
+            withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                isSidebarVisible = false
+            }
+            settings.isSidebarVisible = false
+        }
+
+        withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+            isLivePulseDrawerVisible = true
+        }
+        settings.livePulseShowDrawer = true
+        syncLivePulseStreamSignals()
+        coordinator?.livePulseStore.reconcileLifecycle()
+    }
+
+    public func updateLivePulseDrawerWidth(_ width: CGFloat) {
+        guard !hasLiveFullscreenTab else { return }
+        let clamped = LivePulseLayout.clampDrawerWidth(width)
+        guard abs(livePulseDrawerWidth - clamped) >= 0.5 else { return }
+        livePulseDrawerWidth = clamped
+        settings.livePulseDrawerWidth = Double(clamped)
+    }
+
+    public func resetLivePulseDrawerWidth() {
+        guard !hasLiveFullscreenTab else { return }
+        livePulseDrawerWidth = LivePulseLayout.drawerDefaultWidth
+        settings.livePulseDrawerWidth = Double(LivePulseLayout.drawerDefaultWidth)
+        showHUD(icon: "arrow.counterclockwise", message: "Drawer Width Reset")
+    }
+
+    func collapseLivePulseSurfacesOnMasterDisable() {
+        guard !hasLiveFullscreenTab else { return }
+        if isLivePulseTickerVisible {
+            isLivePulseTickerVisible = false
+        }
+        if isLivePulseDrawerVisible {
+            isLivePulseDrawerVisible = false
+            let shouldRestore = sidebarVisibleBeforeLiveDrawer == true
+            sidebarVisibleBeforeLiveDrawer = nil
+            if shouldRestore && !isSidebarVisible {
+                isSidebarVisible = true
+                settings.isSidebarVisible = true
+            }
+        }
+    }
+
+    /// Synchronizes this window's ticker and drawer visibility from `AppSettings` (e.g. when toggled
+    /// inside Preferences or after exiting native fullscreen) without writing back into `AppSettings`.
+    public func syncLivePulseVisibilityFromSettings() {
+        guard !hasLiveFullscreenTab else { return }
+        guard settings.livePulseEnabled else {
+            collapseLivePulseSurfacesOnMasterDisable()
+            return
+        }
+
+        let wantTicker = settings.livePulseShowTicker
+        let wantDrawer = settings.livePulseShowDrawer
+
+        if isLivePulseTickerVisible != wantTicker {
+            withAnimation(.snappy(duration: 0.20, extraBounce: 0)) {
+                isLivePulseTickerVisible = wantTicker
+            }
+        }
+
+        if isLivePulseDrawerVisible != wantDrawer {
+            if wantDrawer {
+                if LivePulseLayout.shouldAutoCollapseSidebar(windowWidth: windowContentWidth) && isSidebarVisible {
+                    if sidebarVisibleBeforeLiveDrawer == nil {
+                        sidebarVisibleBeforeLiveDrawer = true
+                    }
+                    withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                        isSidebarVisible = false
+                    }
+                    settings.isSidebarVisible = false
+                }
+                withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                    isLivePulseDrawerVisible = true
+                }
+            } else {
+                withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                    isLivePulseDrawerVisible = false
+                }
+                let shouldRestoreSidebar = sidebarVisibleBeforeLiveDrawer == true
+                sidebarVisibleBeforeLiveDrawer = nil
+                if shouldRestoreSidebar && !isSidebarVisible {
+                    withAnimation(.snappy(duration: 0.22, extraBounce: 0)) {
+                        isSidebarVisible = true
+                    }
+                    settings.isSidebarVisible = true
+                }
+            }
+        }
+
+        syncLivePulseStreamSignals()
+    }
+
+    public func activeTabScopeKey(for tab: BrowserTab) -> String {
+        let targetURL = tab.pendingLazyURL ?? tab.url
+        let host = (targetURL.host ?? "").lowercased()
+        let path = targetURL.standardized.path.lowercased()
+        if let videoID = YouTubeURLRouter.extractVideoID(from: targetURL) {
+            return "\(host)\(path)?v=\(videoID)"
+        }
+        return "\(host)\(path)"
+    }
+
+    public func effectiveLivePulseDrawerWidth() -> CGFloat {
+        LivePulseLayout.effectiveDrawerWidth(
+            requested: livePulseDrawerWidth,
+            windowWidth: windowContentWidth,
+            isSidebarVisible: isSidebarVisible
+        )
+    }
+
+    public func collectLivePulseStreamSignals() -> [StreamSignal] {
+        var orderedTabs: [(tab: BrowserTab, slot: Int?, isPrimary: Bool)] = []
+        var seenIDs = Set<UUID>()
+
+        if isMultiviewActive {
+            let primaryID = soloMultiviewTabID ?? multiviewAudioTabID ?? multiviewTabIDs.first
+            for (index, tab) in multiviewTabs.enumerated() where seenIDs.insert(tab.id).inserted {
+                orderedTabs.append((tab, index + 1, tab.id == primaryID))
+            }
+        } else {
+            for tab in poppedOutTabs where seenIDs.insert(tab.id).inserted {
+                orderedTabs.append((tab, nil, tab.id == activeMediaTab?.id))
+            }
+            if let selected = selectedTab, seenIDs.insert(selected.id).inserted {
+                orderedTabs.append((selected, nil, true))
+            }
+        }
+
+        return orderedTabs.map { entry in
+            let tab = entry.tab
+            let tabURL = tab.pendingLazyURL ?? tab.url
+            let serviceID = StreamingServiceCatalog.service(matchingURL: tabURL)?.id
+            let route = CleanBoxRules.classifyRoute(tabURL)
+            let isAuthOrBrowse = tab.isSleeping
+                || tab.pendingLazyURL != nil
+                || StreamingServiceCatalog.isTransientAuthURL(tabURL)
+                || route == .auth
+                || (route == .browse && !tab.mediaStatus.hasVideo)
+
+            let display = tab.displayTitle
+            let mediaTitle = tab.mediaStatus.title
+            let combinedTitle: String
+            if !mediaTitle.isEmpty && mediaTitle.caseInsensitiveCompare(display) != .orderedSame {
+                combinedTitle = "\(display) \(mediaTitle)"
+            } else {
+                combinedTitle = display
+            }
+
+            return StreamSignal(
+                tabID: tab.id,
+                windowID: windowID,
+                url: tabURL,
+                title: combinedTitle,
+                serviceID: serviceID,
+                multiviewSlot: entry.slot,
+                isPrimaryFocus: entry.isPrimary,
+                isPlaying: tab.mediaStatus.isPlaying,
+                hasVideo: tab.mediaStatus.hasVideo,
+                isAuthOrBrowse: isAuthOrBrowse,
+                streamContext: tab.mediaStatus.streamContext
+            )
+        }
+    }
+
+    public func toggleLivePulseStreamFocus() {
+        let nextFocus = !settings.livePulseStreamFocusOnly
+        if nextFocus && !settings.livePulseEnabled {
+            settings.livePulseEnabled = true
+            showHUD(icon: "sportscourt.fill", message: "Live Pulse Enabled")
+        }
+        settings.livePulseStreamFocusOnly = nextFocus
+        syncLivePulseStreamSignals()
+        coordinator?.livePulseStore.reconcileLifecycle()
+    }
+
+    public func syncLivePulseStreamSignals() {
+        guard settings.livePulseEnabled else { return }
+        coordinator?.livePulseStore.updateStreamSignals(
+            windowID: windowID,
+            signals: collectLivePulseStreamSignals()
+        )
     }
 
     // MARK: - System Auto-Pause, Sleep Timer, Share Sheet, Find Bar & Session Restoration
@@ -3169,6 +3448,26 @@ public final class AppController {
                 isFeaturedWhenEmpty: false
             )
         )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleLivePulseTicker,
+                title: isLivePulseTickerVisible ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker",
+                keywords: "live pulse ticker scores sports nfl nba mlb nhl",
+                systemImage: "sportscourt",
+                shortcutHint: "⌘⌥B",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleLivePulseDrawer,
+                title: isLivePulseDrawerVisible ? "Hide Live Pulse Drawer" : "Show Live Pulse Drawer",
+                keywords: "live pulse drawer fantasy sleeper espn kalshi polymarket markets",
+                systemImage: "sidebar.trailing",
+                shortcutHint: "⌘⌥I",
+                isFeaturedWhenEmpty: false
+            )
+        )
 
         return CommandPaletteEngine.rank(
             query: commandPaletteQuery,
@@ -3294,6 +3593,10 @@ public final class AppController {
             case .openAirPlayPopover:
                 openAirPlayPopover()
                 return
+            case .toggleLivePulseTicker:
+                toggleLivePulseTicker()
+            case .toggleLivePulseDrawer:
+                toggleLivePulseDrawer()
             }
             focusActiveWebView()
         }
@@ -3750,6 +4053,22 @@ public final class AppController {
         isMainWindowVisible = window.isVisible
         isMainWindowMiniaturized = window.isMiniaturized
         isWindowInNativeFullScreen = inNativeFullScreen
+        let initialWidth = window.contentLayoutRect.width
+        if initialWidth >= 200 {
+            windowContentWidth = initialWidth
+        }
+        if isLivePulseDrawerVisible,
+           !hasLiveFullscreenTab,
+           LivePulseLayout.shouldAutoCollapseSidebar(windowWidth: windowContentWidth),
+           isSidebarVisible {
+            if sidebarVisibleBeforeLiveDrawer == nil {
+                sidebarVisibleBeforeLiveDrawer = true
+            }
+            isSidebarVisible = false
+            settings.isSidebarVisible = false
+        }
+        syncLivePulseStreamSignals()
+        coordinator?.livePulseStore.reconcileLifecycle()
 
         let center = NotificationCenter.default
         // Window-scoped local key monitor so pressing Esc exits Multiview Solo even when
@@ -3792,6 +4111,7 @@ public final class AppController {
                         self.syncUnifiedToolbarForFullScreenState(on: win)
                     }
                     self.coordinator?.markWindowActive(self.windowID)
+                    self.coordinator?.livePulseStore.reconcileLifecycle()
                     if self.poppedOutReason == .leftApp {
                         self.dockMiniPlayer(selectTab: true, focusMain: false)
                     }
@@ -3833,7 +4153,9 @@ public final class AppController {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.isMainWindowMiniaturized = true
+                    guard let self else { return }
+                    self.isMainWindowMiniaturized = true
+                    self.coordinator?.livePulseStore.reconcileLifecycle()
                 }
             },
             center.addObserver(
@@ -3842,8 +4164,32 @@ public final class AppController {
                 queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.isMainWindowMiniaturized = false
-                    self?.isMainWindowVisible = true
+                    guard let self else { return }
+                    self.isMainWindowMiniaturized = false
+                    self.isMainWindowVisible = true
+                    self.coordinator?.livePulseStore.reconcileLifecycle()
+                }
+            },
+            center.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.hasLiveFullscreenTab, let win = self.mainWindow else { return }
+                    let width = win.contentLayoutRect.width
+                    if width >= 200 && abs(self.windowContentWidth - width) >= 1 {
+                        self.windowContentWidth = width
+                    }
+                    if self.isLivePulseDrawerVisible,
+                       LivePulseLayout.shouldAutoCollapseSidebar(windowWidth: self.windowContentWidth),
+                       self.isSidebarVisible {
+                        if self.sidebarVisibleBeforeLiveDrawer == nil {
+                            self.sidebarVisibleBeforeLiveDrawer = true
+                        }
+                        self.isSidebarVisible = false
+                        self.settings.isSidebarVisible = false
+                    }
                 }
             },
             center.addObserver(
@@ -3877,7 +4223,12 @@ public final class AppController {
                     self.isWindowInNativeFullScreen = false
                     if let window = self.mainWindow {
                         self.installUnifiedToolbar(on: window)
+                        let width = window.contentLayoutRect.width
+                        if width >= 200 {
+                            self.windowContentWidth = width
+                        }
                     }
+                    self.syncLivePulseVisibilityFromSettings()
                 }
             },
             center.addObserver(
@@ -3938,12 +4289,14 @@ public final class AppController {
             window.makeKeyAndOrderFront(nil)
             isMainWindowVisible = true
             isMainWindowMiniaturized = false
+            coordinator?.livePulseStore.reconcileLifecycle()
         }
     }
 
     public func hideMainWindow() {
         mainWindow?.orderOut(nil)
         isMainWindowVisible = false
+        coordinator?.livePulseStore.reconcileLifecycle()
     }
 
     public func handleIncomingURL(_ url: URL) {
@@ -4196,6 +4549,7 @@ public final class AppController {
                 for other in tabs where !multiviewTabIDs.contains(other.id) && other.mediaStatus.isPlaying {
                     other.pauseMedia()
                 }
+                syncLivePulseStreamSignals()
                 return
             }
             // Background tab outside Multiview should not hijack audio.
@@ -4227,6 +4581,7 @@ public final class AppController {
                 dockMiniPlayer(selectTab: false, focusMain: false)
             }
         }
+        syncLivePulseStreamSignals()
     }
 
     private func handleTabURLDidChange(tabID: UUID, newURL: URL) {
@@ -4249,6 +4604,7 @@ public final class AppController {
             syncWindowTitle()
         }
         scheduleSessionSave()
+        syncLivePulseStreamSignals()
     }
 
     func applyConfigToAllTabs() {

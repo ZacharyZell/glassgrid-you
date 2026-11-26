@@ -34,6 +34,7 @@
 
       <div class="nav-links">
         <a href="./#multiview">Multiview</a>
+        <a href="./#live-pulse">Live Pulse</a>
         <a href="./#automation">AI &amp; MCP</a>
         <a href="./#pricing">Pricing</a>
         <a href="./#faq">FAQ</a>
@@ -120,15 +121,16 @@
               <span class="release-status release-status--preview">Preview · Source (main) · Signed .dmg Preparing</span>
             </div>
             <div class="release-meta-row">
-              <time datetime="2026-11-24">Nov 24, 2026</time>
+              <time datetime="2026-11-25">Nov 25, 2026</time>
               <span>Source Preview (next Build 6)</span>
               <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commits/main" target="_blank" rel="noopener noreferrer">View Commits on GitHub &rarr;</a>
             </div>
           </div>
 
           <div class="release-delta-summary">
-            <p><strong>Compared to v1.2.0:</strong> Introduces opt-in AI Agent control (28 MCP tools, <code>glassgrid</code> CLI, 12 Siri App Intents), expands the hub to 18 services with Crunchyroll and hardened Prime Video sign-in, renders video Clean-Box across all services, and floats full 2&ndash;4 stream Multiview Grids.</p>
+            <p><strong>Compared to v1.2.0:</strong> Introduces opt-in <strong>Live Pulse</strong> (live NFL/NBA/MLB/NHL scoreboards, Sleeper &amp; ESPN Public Fantasy tracking, strictly read-only Kalshi &amp; Polymarket odds, Spoiler Delay Buffer, Reactive Ticker &amp; Companion Drawer), opt-in AI Agent control (28 MCP tools, <code>glassgrid</code> CLI, 12 Siri App Intents), expands the hub to 18 services with Crunchyroll and hardened Prime Video sign-in, renders video Clean-Box across all services, and floats full 2&ndash;4 stream Multiview Grids.</p>
             <div class="delta-pills">
+              <span class="delta-pill">+Live Pulse (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>)</span>
               <span class="delta-pill">0 &rarr; 28 MCP Tools &amp; 12 Siri Intents</span>
               <span class="delta-pill">17 &rarr; 18 Services (+Crunchyroll)</span>
               <span class="delta-pill">Single &rarr; Floating Multiview Grid</span>
@@ -140,6 +142,11 @@
             <section class="diff-group">
               <span class="diff-tag diff-tag--added">Added</span>
               <ul class="diff-list">
+                <li><strong>Live Pulse Sports, Fantasy &amp; Read-Only Markets (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>):</strong> Strictly opt-in (<strong>OFF by default</strong>) live sports companion supporting NFL, NBA, MLB, and NHL scoreboards (ESPN public feeds), head-to-head fantasy matchups via <strong>Sleeper</strong> and <strong>ESPN Public</strong> leagues, and strictly read-only implied probability odds from <strong>Kalshi</strong> and <strong>Polymarket</strong> (REST + live CLOB WebSocket with 1m/5m delta tracking).</li>
+                <li><strong>Starter vs. Bench (<code>BN</code>) UX &amp; Sport-Aware 1-Line Boxscores:</strong> Matchup totals count Starters only while live Bench (<code>BN</code>) players appear across Matchup (collapsed <code>Bench (N · M live)</code> disclosure), Players (inline <code>Bench</code> filter chip), and Ticker (capped hollow <code>BN</code> pill); added sport/category-aware 1-line boxscores for NFL (<code>QB</code>, <code>RB</code>, <code>WR/TE</code>, <code>K</code>, <code>D/ST</code>), NBA, MLB, and NHL with diacritic/suffix-insensitive name+team fallback matching for rookies without an <code>espn_id</code>.</li>
+                <li><strong>Custom Sport Priority, Watched Stream Focus &amp; Freshness Controls:</strong> Rank NFL/NBA/MLB/NHL priority (<code>#1–#4</code>) to drive Smart Priority ordering, toggle 1-click <strong>Focus</strong> to isolate only the active stream&rsquo;s game(s), and track feed health with a 15s-bucketed freshness indicator (<code>Live</code> / <code>Synced</code> / <code>&lt;1m</code> / <code>2m</code> / <code>5m+</code> / <code>Offline</code>) plus a <code>2.0s</code>-debounced manual refresh button with immediate spoiler-buffer drain.</li>
+                <li><strong>Reactive Ticker Bar (<kbd>⌘⌥B</kbd>), Companion Drawer (<kbd>⌘⌥I</kbd>) &amp; Spoiler Delay Buffer:</strong> Added a <code>30pt</code> Liquid Glass ticker pill rail below the header, a resizable <code>280&ndash;440pt</code> right-hand Companion Drawer (<em>Matchup</em>, <em>Players</em>, <em>Scores</em>, and <em>Markets</em> tabs) with 120Hz AppKit drag divider, passive stream-context matching (YouTube, YouTube TV, Prime Video, Peacock, Paramount+, ESPN+, NFL+, MLB.tv, NBA, Apple TV+, and RedZone/Big Inning/CrunchTime/Frozen Frenzy) via <code>navigator.mediaSession</code>, <code>og:title</code>, and watch <code>h1</code> with auto-binding on single-game national networks (<code>Auto · NBC</code>, <code>Auto · Prime Video</code>), 1-click regional network disambiguation (<code>CBS</code>/<code>FOX</code>), 90-second ad-break hysteresis, Manual Game Pin, and configurable <code>0s</code> / <code>20s</code> / <code>35s</code> Spoiler Delay buffering.</li>
+                <li><strong>6 Fantasy &amp; Markets Companion Quick-Launch Tiles:</strong> Added 1-click <em>Open in Tile</em> presets for <strong>Sleeper</strong>, <strong>ESPN Fantasy</strong>, <strong>Yahoo Fantasy</strong>, <strong>NFL Fantasy</strong>, <strong>Kalshi</strong>, and <strong>Polymarket</strong> alongside the existing 8 Companion Quick Sites (14 total).</li>
                 <li><strong>AI Agent, Local MCP Server &amp; <code>glassgrid</code> CLI:</strong> Bundled stdio MCP server and standalone CLI (zero AppKit/WebKit/Sparkle linkage) exposing <strong>28 tools</strong> and <strong>5 read-only resources</strong> (MCP <code>2025-06-18</code> / <code>2025-03-26</code> / <code>2024-11-05</code>), with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong> plus opt-in local Streamable HTTP MCP (<code>127.0.0.1:41773/mcp</code>).</li>
                 <li><strong>Siri, Apple Intelligence &amp; Shortcuts:</strong> Added <strong>12 native App Intents</strong> and <strong>8 App Shortcuts</strong> (Play/Pause, Now Playing, Search YouTube, Open Service, Launch Multiview Preset, Toggle Mini-Player, Focus Mode, Sleep Timer) extracted into <code>Metadata.appintents</code>, plus opt-in <code>glassgridyou://action/...</code> URL triggers.</li>
                 <li><strong>Universal Clean-Box Service Rendering (<kbd>⌘⇧B</kbd>):</strong> Automatically isolates only the active video player container edge-to-edge across all <strong>18 built-in streaming services</strong> (including cross-origin player iframes like Crunchyroll and overlay SDK players like Prime Video &amp; Apple TV+), while keeping home, browse, guide, and login pages untouched. Toggle anytime with <kbd>⌘⇧B</kbd> or the header pill for Full Page.</li>
@@ -151,7 +158,8 @@
             <section class="diff-group">
               <span class="diff-tag diff-tag--changed">Changed</span>
               <ul class="diff-list">
-                <li><strong>New Settings &rarr; AI &amp; Automation Tab:</strong> Added master opt-in toggle, 3 permission tiers, socket/HTTP live status indicators, Bearer token mask/reveal/rotate controls, and a 100-entry live Activity Log.</li>
+                <li><strong>New Settings &rarr; Live Pulse &amp; Settings &rarr; AI &amp; Automation Tabs:</strong> Added a dedicated <strong>Live Pulse</strong> Preferences pane (master opt-in toggle, Spoiler Delay selector, ordered <code>#1–#4</code> <strong>Sport Priority &amp; Leagues</strong> list, Markets toggle, Sleeper username league lookup, ESPN Public League config, and local cache clear) alongside the <strong>AI &amp; Automation</strong> pane (master toggle, 3 permission tiers, socket/HTTP status, Bearer token controls, and 100-entry Activity Log), widening Settings to <code>660&times;560</code>.</li>
+                <li><strong>Compact Ticker &amp; Drawer Controls + Reduce-Motion-Safe Play Flashes:</strong> Added the 1-click <strong>Focus</strong> toggle and compact <code>0s</code>/<code>20s</code>/<code>35s</code> spoiler pill across the Ticker and Drawer, and added animated numeric transitions + 1-shot <code>1.4s</code> point-delta row highlights gated on <code>!isFrozen &amp;&amp; !accessibilityReduceMotion</code>.</li>
                 <li><strong>Split Screen–Aware Auto Pop-Out for Multiview:</strong> Leaving or covering the app while a Multiview stream is playing now floats the entire Multiview Grid instead of detaching only a single video, and docks cleanly when switching back.</li>
               </ul>
             </section>
@@ -159,6 +167,7 @@
             <section class="diff-group">
               <span class="diff-tag diff-tag--fixed">Fixed</span>
               <ul class="diff-list">
+                <li><strong>Live Pulse Boxscore Accuracy, Ticker Priority &amp; Drawer Glass Clipping:</strong> Replaced generic prefix-3 boxscore parsing in <code>ESPNScoreboardClient.parseSummary</code> (which previously omitted NBA <code>PTS/REB/AST</code> and NFL <code>TD/INT</code>) with sport/category-aware 1-line formatting and NFL <code>D/ST</code> derivation, updated <code>pinnedSummaryText</code> to prefer the watched stream&rsquo;s league and Sport Priority rank, and clipped the Companion Drawer backdrop cleanly inside its <code>16pt</code> rounded card footprint.</li>
                 <li><strong>Prime Video &amp; Crunchyroll Login Reliability:</strong> Hardened sign-in across 18 regional Amazon storefronts with direct OpenID routing, locale-segment stripping (<code>/es-es/login</code>, <code>/pt-br/login</code>), non-destructive session cookie presence checks, and immediate Clean-Box script teardown on auth, OAuth, MFA, or CAPTCHA pages.</li>
                 <li><strong>Connected Streaming Services, SPA Auth &amp; App-Handoff Hardening:</strong> Updated HBO Max (<code>play.hbomax.com</code> / <code>hbomax.com/auth/*</code>), fixed Disney+ <code>/identity/login</code> &amp; MyDisney SSO isolation, prevented false-positive sign-in completion on YouTube TV (<code>/welcome</code>) and Apple TV+, added lazy post-auth SPA script bootstrapping &amp; Sign-In Hub URL KVO, blocked streaming app-handoff URI schemes, and added natural service aliases (<code>hbomax</code>, <code>disney+</code>, <code>appletv+</code>) + MCP discovery completeness across CLI/Siri/MCP clients.</li>
                 <li><strong>Crunchyroll Dual-Path Clean-Box &amp; Wrapper Fill Hardening:</strong> Added dual-path resolution across Crunchyroll Vilos player iframes and modern Katamari inline HTML5 players (with direct no-clobber iframe promotion, intermediate aspect-ratio wrapper neutralization via <code>data-ytmac-cb=&quot;chain&quot;</code>, 4-step SPA settle retries, lazy subframe sizing, and modal-dismiss recovery) so Crunchyroll fills Multiview, Single View, and Mini-Player boxes edge-to-edge while preserving controls and tall-tile letterboxing.</li>
@@ -169,6 +178,7 @@
             <section class="diff-group">
               <span class="diff-tag diff-tag--security">Security &amp; Privacy</span>
               <ul class="diff-list">
+                <li><strong>Opt-In, Cookieless &amp; Read-Only Live Pulse Defaults:</strong> Live Pulse ships strictly <strong>OFF by default</strong> (zero background polling, disk reads, or WebSockets when disabled), uses dedicated cookieless <code>URLSessionConfiguration.ephemeral</code> sessions isolated from WebKit cookies, performs passive local-only stream matching (URL, title, <code>navigator.mediaSession</code>, <code>og:title</code>, watch <code>h1</code>) with immediate empty-string bailout on all login/SSO/MFA/CAPTCHA pages, and is strictly read-only with zero order execution, wallet signing, or wagering (see <a href="terms.html">Terms</a> &amp; <a href="privacy.html">Privacy Policy</a>).</li>
                 <li><strong>Fail-Closed Local Automation Defaults:</strong> AI Agent control, HTTP MCP, and URL triggers ship strictly <strong>OFF by default</strong>. Stdio CLI IPC uses owner-only UNIX domain sockets (<code>0600</code> in <code>0700</code>, <code>getpeereid</code> EUID check, zero tokens in config files); optional HTTP binds strictly to <code>127.0.0.1</code> with <code>Host</code>/<code>Origin</code>/256-bit Bearer token (<code>0600</code> in Application Support) + 60 req/min rate limiting; cookies, SSO logins, arbitrary JS, and site-data wipes are permanently blocked.</li>
               </ul>
             </section>
@@ -177,7 +187,7 @@
           <details class="release-technical">
             <summary>Technical details: v1.3.0 Preview build invariants &amp; CLI summary</summary>
             <div class="release-technical-body">
-              <p><strong>WebKit Invariants:</strong> Zero CSS <code>:has(</code>, zero <code>MutationObserver</code>, zero <code>AudioContext</code>, zero static <code>ytInitialPlayerResponse</code>; Swift 6 strict concurrency (0 warnings Debug &amp; Release); 77 unit tests passing (including offline <code>WKWebView</code> Clean-Box &amp; SPA auth-exit DOM geometry fixtures, 18-service matrix, MCP discovery &amp; security verification).</p>
+              <p><strong>WebKit Invariants:</strong> Zero CSS <code>:has(</code>, zero <code>MutationObserver</code>, zero <code>AudioContext</code>, zero static <code>ytInitialPlayerResponse</code>, zero <code>TimelineView(.animation)</code> (freshness uses 15s leaf <code>TimelineView(.periodic)</code> gated on <code>!isFrozen</code>); Swift 6 strict concurrency (0 warnings Debug &amp; Release); 105 unit tests covering offline <code>WKWebView</code> Clean-Box &amp; SPA auth-exit DOM geometry fixtures, Live Pulse v2 matcher/boxscore/freshness/spoiler/layout tests, 18-service matrix, MCP discovery &amp; security verification.</p>
               <p><strong>CLI Quick Commands:</strong> <code>glassgrid mcp</code>, <code>glassgrid status</code>, <code>glassgrid now-playing</code>, <code>glassgrid tabs</code>, <code>glassgrid service &lt;id&gt;</code>, <code>glassgrid multiview &lt;enter|exit|layout|audio|solo|add|remove&gt;</code>, <code>glassgrid mini-player &lt;enter|exit|toggle|compact|standard|large&gt;</code>, <code>glassgrid appearance &lt;system|light|dark&gt;</code>.</p>
             </div>
           </details>

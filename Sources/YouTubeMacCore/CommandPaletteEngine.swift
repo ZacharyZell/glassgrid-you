@@ -47,6 +47,8 @@ public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case toggleAlwaysOnTop
     case manageStreamingServices
     case openAirPlayPopover
+    case toggleLivePulseTicker
+    case toggleLivePulseDrawer
 }
 
 /// Action payload executed when a Command Palette row is selected.

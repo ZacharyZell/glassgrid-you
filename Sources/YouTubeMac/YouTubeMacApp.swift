@@ -709,6 +709,18 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("s", modifiers: [.command, .option])
             .disabled(targetSnapshot == nil)
 
+            Button((targetSnapshot?.isLivePulseTickerVisible ?? false) ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker") {
+                coordinator.commandTarget?.toggleLivePulseTicker()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil || anyFullscreen)
+
+            Button((targetSnapshot?.isLivePulseDrawerVisible ?? false) ? "Hide Live Pulse Drawer" : "Show Live Pulse Drawer") {
+                coordinator.commandTarget?.toggleLivePulseDrawer()
+            }
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .disabled(targetSnapshot == nil || anyFullscreen)
+
             Button(coordinator.settings.isEffectivelyDark ? "Switch to Day Mode" : "Switch to Night Mode") {
                 if let active = coordinator.commandTarget {
                     active.toggleDayNightMode()

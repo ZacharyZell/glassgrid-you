@@ -29,7 +29,7 @@
 
 ## Why GlassGrid You?
 
-Browser tabs bury YouTube behind cluttered web chrome, drain battery with ambient glow and Shorts feeds, and struggle to feel like a real Mac app. **GlassGrid You** wraps YouTube, YouTube TV, and 18 built-in streaming services in an Apple-grade native SwiftUI + AppKit shell with zero Electron overhead — pairing **Universal Clean-Box** playback, a **Floating Multiview Grid**, and optional local **AI / MCP / CLI / Siri** control with full 4K 60fps HDR10 video, native Safari desktop User-Agent compatibility, Google Sign-In, YouTube Premium, and FairPlay DRM.
+Browser tabs bury YouTube behind cluttered web chrome, drain battery with ambient glow and Shorts feeds, and struggle to feel like a real Mac app. **GlassGrid You** wraps YouTube, YouTube TV, and 18 built-in streaming services in an Apple-grade native SwiftUI + AppKit shell with zero Electron overhead — pairing **Universal Clean-Box** playback, a **Floating Multiview Grid**, opt-in **Live Pulse** (live sports scoreboards, fantasy matchups & read-only odds), and optional local **AI / MCP / CLI / Siri** control with full 4K 60fps HDR10 video, native Safari desktop User-Agent compatibility, Google Sign-In, YouTube Premium, and FairPlay DRM.
 
 ---
 
@@ -82,6 +82,18 @@ Jump straight to open tabs, enabled Streaming Services (including aliases like `
   <img src="docs/screenshots/command-palette-day.png" alt="GlassGrid You Command Palette (⌘K) in Day Mode Liquid Glass" width="100%" />
 </p>
 
+### Live Pulse: Sports Scoreboards, Fantasy & Read-Only Markets (`⌘⌥B` / `⌘⌥I`)
+Follow live NFL, NBA, MLB, and NHL scoreboards, your fantasy matchups, and strictly read-only implied odds alongside your stream (**strictly OFF by default** under **Settings → Live Pulse**):
+- **Reactive Stream Detection & 90s Ad-Break Hysteresis:** Automatically matches active YouTube, YouTube TV, Prime Video, Peacock, Paramount+, ESPN+, NFL+, MLB.tv, NBA, and Apple TV+ streams (plus RedZone, Big Inning, CrunchTime, and Frozen Frenzy whip-around slates) locally using passive `navigator.mediaSession`, `og:title`, watch `h1`, and URL metadata (with strict auth-page bailout)—auto-binding national single-game broadcasts (`Auto · NBC`, `Auto · Prime Video`), offering 1-click regional disambiguation on multi-game networks (`CBS`/`FOX`), and holding context across 90-second commercial breaks.
+- **Starter vs. Bench (`BN`) UX & Compact 1-Line Boxscores:** Matchup totals count Starters only while live Bench (`BN`) players surface cleanly with a 4-cue hollow `BN` treatment in a collapsed Matchup Bench disclosure (`Bench (N · M live)`), an inline **Bench** toggle chip in **Players**, and a capped hollow `BN` Ticker slot—paired with sport/category-aware 1-line boxscores (NFL `QB`/`RB`/`WR`/`TE`/`K`/`D/ST`, NBA, MLB, NHL) and diacritic/suffix-insensitive name+team fallback matching for rookies without an `espn_id`.
+- **Custom Sport Priority & Watched Stream Focus:** Order NFL, NBA, MLB, and NHL priority (`#1–#4`) in **Settings → Live Pulse** (or right-click league pills) to rank Ticker, Players, Scores, and Markets, or toggle **Watched Stream Focus** (`Focus`) in 1 click to isolate only your active stream's game(s).
+- **Liquid Glass Ticker Bar (`⌘⌥B`) & Companion Drawer (`⌘⌥I`):** Toggle a compact `30pt` floating pill rail above the player or a resizable `280–440pt` trailing Companion Drawer with **Matchup**, **Players**, **Scores**, and **Markets** tabs, 15s-bucketed freshness (`Live` / `Synced` / `<1m` / `2m` / `5m+` / `Offline`), debounced 1-click refresh, and 1-click **Open in Tile** launchers for **Sleeper**, **ESPN Fantasy**, **Yahoo Fantasy**, **NFL Fantasy**, **Kalshi**, and **Polymarket**.
+- **Configurable Spoiler Delay Buffer (`0s` / `20s` / `35s`) & Strictly Read-Only Privacy:** Delay live score deltas, fantasy scoring changes, and market probability ticks so broadcast latency never spoils plays ahead of your video stream. Uses dedicated cookieless ephemeral `URLSession` requests (zero access to WebKit cookies or sign-in state) and performs zero order execution, wallet signing, or wagering anywhere in code.
+
+<p align="center">
+  <img src="docs/screenshots/live-pulse-settings-night.png" alt="GlassGrid You Live Pulse Settings pane showing Live Pulse Surfaces, #1–#4 Sport Priority and Leagues, Spoiler Delay Buffer, and Watched Stream Focus in Night Mode" width="85%" />
+</p>
+
 ---
 
 ## Complete Feature Set
@@ -102,6 +114,7 @@ Jump straight to open tabs, enabled Streaming Services (including aliases like `
 ### Playback, Multiview & Distraction-Free Controls
 - **4K 60fps HDR10 & Hybrid WebKit Engine**: Native Safari desktop User-Agent, persistent WebKit cookie store for Google Sign-In and YouTube Premium, full YouTube player settings menu, and clean YouTube TV (`tv.youtube.com`) FairPlay DRM support.
 - **Universal Clean-Box (`⌘⇧B`) & SPA Auth Recovery**: Automatically fits video players edge-to-edge on watch pages across all 18 streaming services while keeping login, browse, and guide pages untouched, tearing down cleanly on auth/MFA/CAPTCHA flows and lazily recovering after single-page sign-in transitions.
+- **Live Pulse (`⌘⌥B` / `⌘⌥I`)**: Opt-in (**OFF by default**) NFL, NBA, MLB, and NHL live scoreboards, Sleeper & ESPN Public fantasy matchup tracking (with Starter vs. hollow `BN` Bench differentiation and sport-aware 1-line boxscores), custom `#1–#4` Sport Priority + 1-click Watched Stream Focus, strictly read-only Kalshi & Polymarket odds, configurable `0s`/`20s`/`35s` Spoiler Delay buffering, 15s-bucketed freshness + manual refresh, 1-click Manual Game Pin, and 6 Fantasy/Markets Companion Quick-Launch tiles.
 - **Floating Multiview Grid (`⌘⇧M`) & Split Screen Awareness**: Floats single videos or full 2–4 stream Multiview Grids when leaving or covering the app, while staying docked during side-by-side Split Screen viewing.
 - **AI & Automation (`Settings → AI & Automation`)**: Opt-in local UNIX-socket & Streamable HTTP MCP server (`28` tools, `5` resources), standalone `glassgrid` CLI, 1-click config installers for Claude Desktop / Claude Code / Gemini CLI / Antigravity / Grok CLI, and 12 Siri App Intents.
 - **Focus Mode (`⌘⇧F`) & Cinema Chrome Dimming**: Hides watch recommendations and comments and gently fades top chrome while you watch, restoring smoothly on hover.
@@ -172,6 +185,8 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 | Shortcut | Action |
 | :--- | :--- |
 | `⌘⌥S` | Toggle Sidebar |
+| `⌘⌥B` | Toggle Live Pulse Ticker Bar |
+| `⌘⌥I` | Toggle Live Pulse Companion Drawer |
 | `⌘⇧L` | Switch Day / Night Mode |
 | `⌘=` / `⌘-` / `⌘0` | Zoom In / Zoom Out / Actual Size |
 
@@ -189,7 +204,7 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 GlassGrid You's source code is **100% open-source under the MIT License** — with zero telemetry, zero subscriptions, and zero paywalls.
 
 - **Latest Signed & Apple-Notarized `.dmg` (`v1.2.0`, $12 One-Time):** [Download GlassGrid You for macOS on Polar](https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb) — instant Gatekeeper-trusted macOS installer (macOS 14.0+, Sparkle Build 5) with no Xcode or build steps required, directly supporting ongoing macOS & WebKit maintenance.
-- **Preview · Source (`main` — `v1.3.0` Preview):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below) to run the latest source changes (Universal Clean-Box, Floating Multiview Grid, local MCP/CLI/Siri control, and 18-service audit) while the `v1.3.0` notarized installer prepares. See the full diff history in the **[Release Log](https://glassgridyou.com/changelog.html)**.
+- **Preview · Source (`main` — `v1.3.0` Preview):** Clone this repository and run `./scripts/bundle.sh` (see [Build & Install](#build--install) below) to run the latest source changes (Live Pulse Sports/Fantasy/Read-Only Markets, Universal Clean-Box, Floating Multiview Grid, local MCP/CLI/Siri control, and 18-service audit) while the `v1.3.0` notarized installer prepares. See the full diff history in the **[Release Log](https://glassgridyou.com/changelog.html)**.
 - **Support Development:** You can also support ongoing development via [GitHub Sponsors](https://github.com/sponsors/ZacharyZell). Maintainers packaging signed & notarized releases can run `./scripts/release-dmg.sh` (see [`docs/RELEASING.md`](docs/RELEASING.md)).
 
 ---
@@ -200,7 +215,7 @@ GlassGrid You's source code is **100% open-source under the MIT License** — wi
 git clone https://github.com/ZacharyZell/glassgrid-you.git
 cd glassgrid-you
 
-# Run unit tests (Swift 6 strict concurrency — 77 tests)
+# Run unit tests (Swift 6 strict concurrency — 105 tests)
 swift test
 
 # Build release binaries, generate Liquid Glass AppIcon.icns, sign, and install to /Applications
@@ -220,10 +235,10 @@ This installs **`/Applications/GlassGrid You.app`** (bundle identifier `com.glas
 
 GlassGrid You is organized into three Swift Package Manager targets plus a unit test suite:
 
-- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `StreamingServices`, `CleanBoxRules`, `WindowDisplayRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `WindowChromeLayout`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`, and `Agent/*` including `MCPProtocol`, `AgentToolCatalog`, `AgentSecurity`, `AgentIPCProtocol`, `AgentHTTPProtocol`, `MCPClientConfigMerger`, and `AgentURLActionParser`).
-- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `OnboardingView`, `OnboardingSignInWebView`, `AirPlayPopoverView`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`, `AgentBridgeController`, `GlassGridAppIntents`).
+- **`Sources/YouTubeMacCore`**: Pure Swift 6 testable domain logic (`YouTubeURLRouter`, `StreamingServices`, `CleanBoxRules`, `WindowDisplayRouter`, `EnhancementScript`, `MultiviewLayout`, `CommandPaletteEngine`, `SponsorBlockClient`, `YouTubeSuggestClient`, `VideoChapterParser`, `SessionModels`, `MiniPlayerGeometry`, `WindowOcclusion`, `WindowChromeLayout`, `UpdateChecker`, `SparkleConfiguration`, `WindowTitleFormatter`, `LivePulse/*` including `LivePulseModels`, `SportsEntityMatcher`, `SpoilerDelayBuffer`, `ESPNScoreboardClient`, `SleeperClient`, `ESPNFantasyClient`, and `PredictionMarketsClient`, plus `Agent/*` including `MCPProtocol`, `AgentToolCatalog`, `AgentSecurity`, `AgentIPCProtocol`, `AgentHTTPProtocol`, `MCPClientConfigMerger`, and `AgentURLActionParser`).
+- **`Sources/YouTubeMac`**: Native SwiftUI + AppKit + WebKit application (`AppCoordinator`, `AppController`, `BrowserTab`, `TabWebViewHost`, `FloatingMiniPlayerController`, `SystemPlaybackGuard`, `SparkleUpdaterManager`, `OnboardingView`, `OnboardingSignInWebView`, `AirPlayPopoverView`, `MultiviewView`, `CommandPaletteView`, `MenuBarView`, `SettingsView`, `AppleChrome`, `AgentBridgeController`, `GlassGridAppIntents`, `LivePulseStore`, `LivePulseTickerBar`, `LivePulseFreshnessView`, `LiveCompanionDrawerView`, `CompanionDrawerDividerNSView`, and `LivePulseSettingsTabView`).
 - **`Sources/GlassGridCLI`**: Standalone CLI and stdio MCP server executable (`main`, `AgentUnixSocketClient`) with zero AppKit, WebKit, or Sparkle linkage.
-- **`Tests/YouTubeMacCoreTests`**: **77 unit tests** across `YouTubeMacCoreTests`, `AgentControlTests`, and offline `WKWebView` `CleanBoxDOMFixtureTests` covering routing, 18-service streaming isolation, SPA auth-exit & Clean-Box DOM geometry fixtures, AirPlay display routing, enhancement scripts, multiview layouts & Solo reducer, SponsorBlock prefix hashing, MCP discovery/security, command palette ranking, chapter parsing, window chrome geometry, and session persistence.
+- **`Tests/YouTubeMacCoreTests`**: **105 unit tests** across `YouTubeMacCoreTests`, `AgentControlTests`, `LivePulseTests`, and offline `WKWebView` `CleanBoxDOMFixtureTests` covering routing, 18-service streaming isolation, SPA auth-exit & Clean-Box DOM geometry fixtures, Live Pulse entity matching (`StreamContextMetadata` across YouTube TV/Prime Video/Peacock/ESPN+ & 90s hysteresis) / spoiler buffering / compact 1-line boxscores & name+team fallback / freshness buckets & league priority / ESPN & Sleeper & Kalshi & Polymarket offline parsers / drawer layout invariants, AirPlay display routing, enhancement scripts, multiview layouts & Solo reducer, SponsorBlock prefix hashing, MCP discovery/security, command palette ranking, chapter parsing, window chrome geometry, and session persistence.
 
 Key engineering invariants enforced in code and CI (see [`AGENTS.md`](AGENTS.md)):
 1. **Zero CSS `:has(` selectors** and **zero `MutationObserver` loops** in injected page scripts to preserve smooth 4K 60fps HDR10 compositing.
@@ -238,6 +253,7 @@ Key engineering invariants enforced in code and CI (see [`AGENTS.md`](AGENTS.md)
 - All cookies and sign-in state live exclusively in Apple's native WebKit persistent `WKWebsiteDataStore` on your Mac.
 - Local history (Continue Watching, Most Watched Channels, Saved Multiview Presets) is stored locally in `UserDefaults` and can be cleared anytime in **Settings → Account & Data**.
 - AI/MCP/CLI/Siri automation ships strictly **OFF by default**; local CLI IPC uses owner-only `0600` UNIX sockets (`getpeereid` verified), opt-in HTTP binds strictly to `127.0.0.1` with a 256-bit Bearer token, and cookies, SSO/transient auth flows, payment URLs, and arbitrary JS execution remain permanently blocked.
+- **Live Pulse (`Settings → Live Pulse`) ships strictly OFF by default** and is **strictly read-only** (zero order execution, wallet signing, or wagering). When enabled, all sports/fantasy/market fetches run over cookieless ephemeral `URLSession`s without touching WebKit cookies, and only Sleeper's projected public player directory is cached locally for 24h in `~/Library/Application Support/GlassGridYou/SleeperCache/`.
 - No analytics, telemetry, crash-reporting SDKs, or third-party trackers are included.
 
 ---

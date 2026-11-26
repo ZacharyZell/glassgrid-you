@@ -713,6 +713,51 @@ struct AddScreenServicePickerPopover: View {
 
             Divider()
 
+            // Quick-Launch Fantasy & Prediction Markets
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Fantasy & Markets")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 6),
+                        GridItem(.flexible(), spacing: 6),
+                        GridItem(.flexible(), spacing: 6)
+                    ],
+                    spacing: 6
+                ) {
+                    ForEach(CompanionQuickSite.livePulseSites) { site in
+                        Button {
+                            onDismiss()
+                            if targetIsMultiview {
+                                controller.openCompanionTile(url: site.url)
+                            } else {
+                                controller.createTab(url: site.url, select: true, routingMode: site.routingMode)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: site.systemImage)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(AppleTheme.accent)
+                                Text(site.name)
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Divider()
+
             // Inline Custom URL Input
             HStack(spacing: 6) {
                 TextField("Custom HTTPS URL (e.g. espn.com)…", text: $customURLInput)

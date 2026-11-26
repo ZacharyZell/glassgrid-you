@@ -37,6 +37,7 @@ struct MainWindowView: View {
     @State private var isFocusPillHovered = false
     @State private var isHeaderHovered = false
     @State private var isSidebarHovered = false
+    @State private var isDrawerHovered = false
 
     private var shouldDimCinemaChrome: Bool {
         controller.focusModeActive
@@ -106,120 +107,168 @@ struct MainWindowView: View {
             }
 
             VStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    topHeaderBar
-                        .zIndex(1)
+                topHeaderBar
+                    .zIndex(1)
+                    .opacity(shouldDimCinemaChrome && !isHeaderHovered ? 0.42 : 1.0)
+                    .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isHeaderHovered)
+                    .onHover { isHeaderHovered = $0 }
 
-                    if shouldShowTabStrip {
-                        TabStripView(controller: controller)
-                    }
-                }
-                .zIndex(1)
-                .opacity(shouldDimCinemaChrome && !isHeaderHovered ? 0.42 : 1.0)
-                .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isHeaderHovered)
-                .onHover { isHeaderHovered = $0 }
+                HStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        if shouldShowTabStrip {
+                            TabStripView(controller: controller)
+                                .zIndex(1)
+                                .opacity(shouldDimCinemaChrome && !isHeaderHovered ? 0.42 : 1.0)
+                                .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isHeaderHovered)
+                                .onHover { isHeaderHovered = $0 }
+                        }
 
-                if controller.isMultiviewActive && !controller.anyTabInFullscreen {
-                    MultiviewControlBar(controller: controller)
-                }
+                        if controller.isMultiviewActive && !controller.anyTabInFullscreen {
+                            MultiviewControlBar(controller: controller)
+                        }
 
-                if shouldShowCompactHomeShelf {
-                    HomeShelfBarView(controller: controller)
-                }
+                        if shouldShowCompactHomeShelf {
+                            HomeShelfBarView(controller: controller)
+                        }
 
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.06))
+                        if controller.isLivePulseTickerVisible, let livePulseStore = controller.livePulseStore {
+                            LivePulseTickerBar(
+                                controller: controller,
+                                store: livePulseStore,
+                                isFrozen: controller.hasLiveFullscreenTab
+                            )
+                            .opacity(shouldDimCinemaChrome && !isHeaderHovered ? 0.42 : 1.0)
+                            .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isHeaderHovered)
+                            .onHover { isHeaderHovered = $0 }
+                        }
+
+                        ZStack(alignment: .leading) {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.06))
+                                .frame(height: 1)
+
+                            if let tab = controller.selectedTab, tab.isLoading {
+                                GeometryReader { proxy in
+                                    Rectangle()
+                                        .fill(AppleTheme.accent)
+                                        .frame(width: proxy.size.width * max(0.08, tab.estimatedProgress), height: 2)
+                                        .animation(.easeOut(duration: 0.18), value: tab.estimatedProgress)
+                                }
+                                .frame(height: 2)
+                            }
+                        }
                         .frame(height: 1)
 
-                    if let tab = controller.selectedTab, tab.isLoading {
-                        GeometryReader { proxy in
-                            Rectangle()
-                                .fill(AppleTheme.accent)
-                                .frame(width: proxy.size.width * max(0.08, tab.estimatedProgress), height: 2)
-                                .animation(.easeOut(duration: 0.18), value: tab.estimatedProgress)
-                        }
-                        .frame(height: 2)
-                    }
-                }
-                .frame(height: 1)
+                        // Single permanent WebKit container: never swapped across if/else branches and never mutates during fullscreen.
+                        ZStack {
+                            TabWebViewHost(
+                                tabs: controller.tabs,
+                                selectedTabID: controller.selectedTabID,
+                                poppedOutTabIDs: controller.poppedOutTabIDs,
+                                anyTabInFullscreen: controller.hasLiveFullscreenTab,
+                                multiviewTabIDs: controller.multiviewTabIDs,
+                                soloMultiviewTabID: controller.soloMultiviewTabID,
+                                multiviewLayoutMode: controller.multiviewLayoutMode,
+                                multiviewSplitRatios: controller.multiviewSplitRatios,
+                                onHoveredTileChanged: { tileID in
+                                    controller.setHoveredMultiviewTile(tileID)
+                                },
+                                onSplitRatiosChanged: { ratios in
+                                    controller.updateMultiviewSplitRatios(ratios)
+                                },
+                                onDividerHoverChanged: { dividerID in
+                                    controller.hoveredMultiviewDividerID = dividerID
+                                },
+                                onDividerDragStateChanged: { dividerID in
+                                    controller.activeMultiviewDividerDragID = dividerID
+                                },
+                                onDividerDoubleClickReset: { dividerID in
+                                    controller.handleMultiviewDividerDoubleClickReset(dividerID)
+                                }
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Single permanent WebKit container: never swapped across if/else branches and never mutates during fullscreen.
-                ZStack {
-                    TabWebViewHost(
-                        tabs: controller.tabs,
-                        selectedTabID: controller.selectedTabID,
-                        poppedOutTabIDs: controller.poppedOutTabIDs,
-                        anyTabInFullscreen: controller.hasLiveFullscreenTab,
-                        multiviewTabIDs: controller.multiviewTabIDs,
-                        soloMultiviewTabID: controller.soloMultiviewTabID,
-                        multiviewLayoutMode: controller.multiviewLayoutMode,
-                        multiviewSplitRatios: controller.multiviewSplitRatios,
-                        onHoveredTileChanged: { tileID in
-                            controller.setHoveredMultiviewTile(tileID)
-                        },
-                        onSplitRatiosChanged: { ratios in
-                            controller.updateMultiviewSplitRatios(ratios)
-                        },
-                        onDividerHoverChanged: { dividerID in
-                            controller.hoveredMultiviewDividerID = dividerID
-                        },
-                        onDividerDragStateChanged: { dividerID in
-                            controller.activeMultiviewDividerDragID = dividerID
-                        },
-                        onDividerDoubleClickReset: { dividerID in
-                            controller.handleMultiviewDividerDoubleClickReset(dividerID)
+                            if controller.isMultiviewActive && !controller.hasLiveFullscreenTab && !isMultiviewGridPoppedOut {
+                                MultiviewOverlayView(controller: controller)
+                            }
+
+                            if shouldShowHiddenHomeRecovery {
+                                HiddenHomeFeedRecoveryView(controller: controller)
+                            } else if shouldShowPopulatedHomeDashboard {
+                                PopulatedHomeDashboardView(controller: controller)
+                            }
+
+                            if !controller.isMultiviewActive,
+                               !controller.hasLiveFullscreenTab,
+                               !isSelectedTabPoppedOut,
+                               let tab = controller.selectedTab,
+                               let loadError = tab.loadError {
+                                TabErrorOverlayView(
+                                    error: loadError,
+                                    isCompactTile: false,
+                                    onRetry: { tab.reloadOrStop() },
+                                    onGoHome: { controller.navigateSelectedTab(to: .home) }
+                                )
+                            }
+
+                            if isMultiviewGridPoppedOut {
+                                poppedOutMultiviewPlaceholder
+                            } else if isSelectedTabPoppedOut, let poppedTab = controller.poppedOutTab {
+                                poppedOutPlaceholder(for: poppedTab)
+                            }
+
+                            if let toast = controller.activeToast {
+                                VStack {
+                                    AppleHUDToast(toast: toast)
+                                        .padding(.top, 14)
+                                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                                    Spacer()
+                                }
+                                .allowsHitTesting(false)
+                            }
                         }
-                    )
+                        .overlay(alignment: .topTrailing) {
+                            if controller.isFindBarPresented && !controller.anyTabInFullscreen && !isSelectedTabPoppedOut {
+                                FindBarView(controller: controller)
+                                    .padding(.top, 10)
+                                    .padding(.trailing, 14)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                        }
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(AppleTheme.canvasColor)
 
-                    if controller.isMultiviewActive && !controller.hasLiveFullscreenTab && !isMultiviewGridPoppedOut {
-                        MultiviewOverlayView(controller: controller)
-                    }
-
-                    if shouldShowHiddenHomeRecovery {
-                        HiddenHomeFeedRecoveryView(controller: controller)
-                    } else if shouldShowPopulatedHomeDashboard {
-                        PopulatedHomeDashboardView(controller: controller)
-                    }
-
-                    if !controller.isMultiviewActive,
-                       !controller.hasLiveFullscreenTab,
-                       !isSelectedTabPoppedOut,
-                       let tab = controller.selectedTab,
-                       let loadError = tab.loadError {
-                        TabErrorOverlayView(
-                            error: loadError,
-                            isCompactTile: false,
-                            onRetry: { tab.reloadOrStop() },
-                            onGoHome: { controller.navigateSelectedTab(to: .home) }
+                    let effectiveDrawerWidth = controller.effectiveLivePulseDrawerWidth()
+                    if controller.isLivePulseDrawerVisible,
+                       effectiveDrawerWidth >= LivePulseLayout.drawerMinWidth,
+                       let livePulseStore = controller.livePulseStore {
+                        CompanionDrawerDividerNSView(
+                            currentWidth: effectiveDrawerWidth,
+                            isFrozen: controller.hasLiveFullscreenTab,
+                            onDragWidthChanged: { newWidth in
+                                controller.updateLivePulseDrawerWidth(newWidth)
+                            },
+                            onDoubleClickReset: {
+                                controller.resetLivePulseDrawerWidth()
+                            }
                         )
-                    }
+                        .frame(width: LivePulseLayout.drawerDividerWidth)
 
-                    if isMultiviewGridPoppedOut {
-                        poppedOutMultiviewPlaceholder
-                    } else if isSelectedTabPoppedOut, let poppedTab = controller.poppedOutTab {
-                        poppedOutPlaceholder(for: poppedTab)
-                    }
-
-                    if let toast = controller.activeToast {
-                        VStack {
-                            AppleHUDToast(toast: toast)
-                                .padding(.top, 14)
-                                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                            Spacer()
-                        }
-                        .allowsHitTesting(false)
+                        LiveCompanionDrawerView(
+                            controller: controller,
+                            store: livePulseStore,
+                            isFrozen: controller.hasLiveFullscreenTab
+                        )
+                        .frame(width: effectiveDrawerWidth)
+                        .opacity(shouldDimCinemaChrome && !isDrawerHovered ? 0.42 : 1.0)
+                        .animation(.easeInOut(duration: 0.22), value: shouldDimCinemaChrome && !isDrawerHovered)
+                        .onHover { isDrawerHovered = $0 }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
-                .overlay(alignment: .topTrailing) {
-                    if controller.isFindBarPresented && !controller.anyTabInFullscreen && !isSelectedTabPoppedOut {
-                        FindBarView(controller: controller)
-                            .padding(.top, 10)
-                            .padding(.trailing, 14)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AppleTheme.canvasColor)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AppleTheme.canvasColor)
@@ -269,18 +318,34 @@ struct MainWindowView: View {
             if !isOmniboxFocused, let newURL {
                 controller.omniboxText = newURL.absoluteString
             }
+            controller.syncLivePulseStreamSignals()
         }
         .onChange(of: controller.selectedTabID) { _, _ in
             if !isOmniboxFocused {
                 controller.syncOmniboxToSelectedTab()
             }
             controller.syncWindowTitle()
+            controller.syncLivePulseStreamSignals()
         }
         .onChange(of: controller.selectedTab?.title) { _, _ in
             controller.syncWindowTitle()
+            controller.syncLivePulseStreamSignals()
         }
         .onChange(of: controller.multiviewTabIDs.count) { _, _ in
             controller.syncWindowTitle()
+            controller.syncLivePulseStreamSignals()
+        }
+        .onChange(of: controller.selectedTab?.mediaStatus.isPlaying) { _, _ in
+            controller.syncLivePulseStreamSignals()
+        }
+        .onChange(of: controller.selectedTab?.mediaStatus.title) { _, _ in
+            controller.syncLivePulseStreamSignals()
+        }
+        .onChange(of: controller.selectedTab?.mediaStatus.streamContext) { _, _ in
+            controller.syncLivePulseStreamSignals()
+        }
+        .onChange(of: controller.multiviewAudioTabID) { _, _ in
+            controller.syncLivePulseStreamSignals()
         }
     }
 
@@ -411,6 +476,25 @@ struct MainWindowView: View {
                                     controller: controller,
                                     onDismiss: { controller.isAirPlayPopoverPresented = false }
                                 )
+                            }
+
+                            if controller.settings.livePulseEnabled {
+                                AppleIconButton(
+                                    systemImage: controller.isLivePulseDrawerVisible ? "sportscourt.fill" : "sportscourt",
+                                    isActive: controller.isLivePulseDrawerVisible || controller.isLivePulseTickerVisible,
+                                    isDisabled: controller.hasLiveFullscreenTab,
+                                    helpText: "Live Pulse Drawer (⌘⌥I) · Right-Click for Ticker"
+                                ) {
+                                    controller.toggleLivePulseDrawer()
+                                }
+                                .contextMenu {
+                                    Button(controller.isLivePulseTickerVisible ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker") {
+                                        controller.toggleLivePulseTicker()
+                                    }
+                                    Button(controller.isLivePulseDrawerVisible ? "Hide Live Companion Drawer" : "Show Live Companion Drawer") {
+                                        controller.toggleLivePulseDrawer()
+                                    }
+                                }
                             }
 
                             controlsMenu
@@ -629,6 +713,28 @@ struct MainWindowView: View {
                 Label("Open YouTube TV in Multiview", systemImage: "tv")
             }
             .disabled(controller.isMultiviewActive && !controller.canAddMultiviewTile)
+
+            Divider()
+
+            Button {
+                controller.toggleLivePulseTicker()
+            } label: {
+                Label(
+                    controller.isLivePulseTickerVisible ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker",
+                    systemImage: controller.isLivePulseTickerVisible ? "waveform.path.ecg.rectangle.fill" : "waveform.path.ecg.rectangle"
+                )
+            }
+            .disabled(controller.hasLiveFullscreenTab)
+
+            Button {
+                controller.toggleLivePulseDrawer()
+            } label: {
+                Label(
+                    controller.isLivePulseDrawerVisible ? "Hide Live Pulse Drawer" : "Show Live Pulse Drawer",
+                    systemImage: controller.isLivePulseDrawerVisible ? "sportscourt.fill" : "sportscourt"
+                )
+            }
+            .disabled(controller.hasLiveFullscreenTab)
 
             Divider()
 

@@ -21,6 +21,7 @@
 
       <div class="nav-links">
         <a href="./#multiview">Multiview</a>
+        <a href="./#live-pulse">Live Pulse</a>
         <a href="./#automation">AI &amp; MCP</a>
         <a href="./#pricing">Pricing</a>
         <a href="./#faq">FAQ</a>
@@ -40,7 +41,7 @@
       <article class="legal-card">
         <a class="legal-back" href="./">&larr; Back to GlassGrid You</a>
         <h1>Privacy Policy</h1>
-        <p class="legal-updated">Last updated: November 24, 2026</p>
+        <p class="legal-updated">Last updated: November 25, 2026</p>
 
         <p>
           <strong>GlassGrid You</strong> is designed to be strictly local and privacy-first. We do not collect telemetry, crash analytics, usage statistics, advertising identifiers, or viewing history, and we do not operate backend tracking servers.
@@ -50,7 +51,8 @@
         <p>All application state stays exclusively on your device inside standard macOS storage:</p>
         <ul>
           <li><strong>WebKit Session Storage:</strong> Cookies, login sessions, and site data for YouTube, YouTube TV, and any enabled streaming services or Companion Web Tiles are stored locally in Apple's <code>WKWebsiteDataStore</code>. You can clear all site data or reset an individual service's cookies &amp; site data anytime from the Sidebar or GlassGrid You Settings (with clear notices where providers share single sign-on, such as Google or MyDisney).</li>
-          <li><strong>App Preferences:</strong> Appearance, enabled streaming services, Clean-Box streaming player preference, Multiview presets, pinned channels, folders, Mini-Player &amp; Grid frames/opacity, Continue Watching resume points, and AI &amp; Automation permission toggles are stored locally in macOS <code>UserDefaults</code>.</li>
+          <li><strong>App Preferences:</strong> Appearance, enabled streaming services, Clean-Box streaming player preference, Multiview presets, pinned channels, folders, Mini-Player &amp; Grid frames/opacity, Continue Watching resume points, opt-in Live Pulse preferences (league filters, Spoiler Delay, Sleeper username, ESPN Public League IDs), and AI &amp; Automation permission toggles are stored locally in macOS <code>UserDefaults</code>.</li>
+          <li><strong>Optional Live Pulse 24-Hour Sleeper Player Cache:</strong> Only when you enable Live Pulse and configure a Sleeper fantasy league, GlassGrid You caches Sleeper's public player directory locally on disk for up to 24 hours at <code>~/Library/Application Support/GlassGridYou/SleeperCache/</code> (projected player ID, name, team, and position only), and lets you clear it anytime in <strong>Settings &rarr; Live Pulse</strong>.</li>
           <li><strong>Optional Loopback Bearer Token:</strong> If you explicitly enable the optional loopback HTTP MCP endpoint, its 256-bit Bearer token is generated locally and stored strictly in an owner-only (<code>0600</code>) file at <code>~/Library/Application Support/GlassGridYou/http-token</code>—never in <code>UserDefaults</code> or stdio client config files.</li>
         </ul>
 
@@ -58,6 +60,7 @@
         <p>When you use GlassGrid You, your Mac connects directly to the services you choose to visit or enable—never proxied through us:</p>
         <ul>
           <li><strong>Streaming Services &amp; Sign-In Hub:</strong> YouTube, YouTube TV, Twitch, Crunchyroll, live sports, and other selected streaming sites load directly inside Apple's native WebKit engine subject to each provider's own privacy policy. GlassGrid You never intercepts, inspects, or stores your passwords.</li>
+          <li><strong>Live Pulse (Optional, Strictly Off by Default):</strong> By default, Live Pulse is disabled and makes <strong>zero</strong> network requests, timers, or WebSocket connections. When you explicitly enable Live Pulse in <strong>Settings &rarr; Live Pulse</strong> (or by opening the Ticker Bar / Companion Drawer), GlassGrid You opens dedicated cookieless, ephemeral <code>URLSession</code> connections (never touching your WebKit cookies or sign-in sessions) directly to public read-only sports, fantasy, and prediction-market endpoints as configured: <code>site.api.espn.com</code> (live scoreboards/summaries), <code>api.sleeper.app</code> (public Sleeper usernames/leagues/matchups), <code>lm-api-reads.fantasy.espn.com</code> (public ESPN fantasy leagues only; private leagues require opening ESPN Fantasy in a Companion Web Tile), <code>external-api.kalshi.com</code> / <code>api.elections.kalshi.com</code> (read-only Kalshi market quotes), and <code>gamma-api.polymarket.com</code> / <code>clob.polymarket.com</code> / <code>wss://ws-subscriptions-clob.polymarket.com</code> (read-only Polymarket odds). Stream-to-game matching runs 100% locally in memory using passive tab URL, title, <code>navigator.mediaSession.metadata</code> (title/artist/album), <code>meta[property=&quot;og:title&quot;]</code>, and watch-page <code>h1</code> heading hints—with strict bailout on all login, SSO, MFA, and CAPTCHA pages—and your viewing history or page metadata is never transmitted to third-party endpoints.</li>
           <li><strong>SponsorBlock (Optional, Off by Default):</strong> When explicitly enabled in Settings, GlassGrid You queries the public SponsorBlock API using a k-anonymous 4-character SHA-256 hash prefix of the video ID so the full video ID is never sent.</li>
           <li><strong>Search Autocomplete (Cookieless &amp; Toggleable):</strong> When enabled, Command Palette search suggestions use cookieless requests and can be disabled anytime in Settings.</li>
           <li><strong>App Updates:</strong> Update checks fetch the public release metadata at <code>https://glassgridyou.com/appcast.xml</code> (Sparkle 2) or public GitHub Releases without transmitting personal identifiers.</li>

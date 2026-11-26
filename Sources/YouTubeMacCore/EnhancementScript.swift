@@ -1709,9 +1709,68 @@ public enum EnhancementScript {
                 return false;
             }
 
+            function clipContextText(raw) {
+                return String(raw || '').replace(/\\s+/g, ' ').trim().slice(0, 200);
+            }
+
+            const EMPTY_STREAM_CONTEXT = {
+                mediaSessionTitle: '',
+                mediaSessionArtist: '',
+                mediaSessionAlbum: '',
+                ogTitle: '',
+                headingHint: ''
+            };
+
+            function extractStreamContextMetadata() {
+                if (isCompanionAuthPage()) {
+                    return EMPTY_STREAM_CONTEXT;
+                }
+                let mediaSessionTitle = '';
+                let mediaSessionArtist = '';
+                let mediaSessionAlbum = '';
+                let ogTitle = '';
+                let headingHint = '';
+                try {
+                    const meta = (typeof navigator !== 'undefined' && navigator.mediaSession) ? navigator.mediaSession.metadata : null;
+                    if (meta) {
+                        mediaSessionTitle = clipContextText(meta.title);
+                        mediaSessionArtist = clipContextText(meta.artist);
+                        mediaSessionAlbum = clipContextText(meta.album);
+                    }
+                } catch (_) {}
+                try {
+                    const ogMeta = document.querySelector('meta[property="og:title"]');
+                    if (ogMeta && typeof ogMeta.content === 'string') {
+                        ogTitle = clipContextText(ogMeta.content);
+                    }
+                } catch (_) {}
+                try {
+                    const isWatch = isWatchPage() || (isWebCompanionHost() && (() => {
+                        const r = isCleanBoxWatchPage();
+                        return Boolean(r && r.type !== 'browse');
+                    })());
+                    if (isWatch) {
+                        const h1 = document.querySelector('h1');
+                        if (h1 && typeof h1.textContent === 'string') {
+                            headingHint = clipContextText(h1.textContent);
+                        }
+                    }
+                } catch (_) {}
+                return {
+                    mediaSessionTitle,
+                    mediaSessionArtist,
+                    mediaSessionAlbum,
+                    ogTitle,
+                    headingHint
+                };
+            }
+
             let boundVideo = null;
             let lastTimeEmit = 0;
             let lastEmittedKey = '';
+            let cachedStreamContext = EMPTY_STREAM_CONTEXT;
+            let lastContextExtractAt = 0;
+            let lastContextURL = '';
 
             function emitMediaState(force) {
                 const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(messageHandlerName);
@@ -1719,6 +1778,13 @@ public enum EnhancementScript {
 
                 const now = Date.now();
                 if (!force && now - lastTimeEmit < 1000) return;
+
+                if (force === true || location.href !== lastContextURL || (now - lastContextExtractAt >= 10000)) {
+                    cachedStreamContext = extractStreamContextMetadata();
+                    lastContextExtractAt = now;
+                    lastContextURL = location.href;
+                }
+                const streamCtx = cachedStreamContext;
 
                 const video = getMainVideo();
                 const player = getPlayer();
@@ -1745,7 +1811,12 @@ public enum EnhancementScript {
                     airPlayAvailable: false,
                     isAirPlayActive: false,
                     isCleanBoxActive: Boolean(lastCleanBoxActive),
-                    isCleanBoxEligible: Boolean(lastCleanBoxEligible)
+                    isCleanBoxEligible: Boolean(lastCleanBoxEligible),
+                    mediaSessionTitle: streamCtx.mediaSessionTitle,
+                    mediaSessionArtist: streamCtx.mediaSessionArtist,
+                    mediaSessionAlbum: streamCtx.mediaSessionAlbum,
+                    ogTitle: streamCtx.ogTitle,
+                    headingHint: streamCtx.headingHint
                 } : (() => {
                     const isPiP = document.pictureInPictureElement === video ||
                         (typeof video.webkitPresentationMode === 'string' && video.webkitPresentationMode === 'picture-in-picture');
@@ -1781,7 +1852,12 @@ public enum EnhancementScript {
                         airPlayAvailable: hasVideo && Boolean(airPlayTargetAvailable),
                         isAirPlayActive,
                         isCleanBoxActive: Boolean(lastCleanBoxActive),
-                        isCleanBoxEligible: Boolean(lastCleanBoxEligible)
+                        isCleanBoxEligible: Boolean(lastCleanBoxEligible),
+                        mediaSessionTitle: streamCtx.mediaSessionTitle,
+                        mediaSessionArtist: streamCtx.mediaSessionArtist,
+                        mediaSessionAlbum: streamCtx.mediaSessionAlbum,
+                        ogTitle: streamCtx.ogTitle,
+                        headingHint: streamCtx.headingHint
                     };
                 })();
 
@@ -1805,6 +1881,11 @@ public enum EnhancementScript {
                     payload.isAirPlayActive,
                     payload.isCleanBoxActive,
                     payload.isCleanBoxEligible,
+                    payload.mediaSessionTitle,
+                    payload.mediaSessionArtist,
+                    payload.mediaSessionAlbum,
+                    payload.ogTitle,
+                    payload.headingHint,
                     secTime,
                     secDur
                 ].join('|');

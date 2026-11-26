@@ -58,6 +58,17 @@ public final class AppSettings {
         static let allowURLSchemeActions = "ytmac.allowURLSchemeActions"
         static let agentHTTPServerEnabled = "ytmac.agentHTTPServerEnabled"
         static let agentHTTPPort = "ytmac.agentHTTPPort"
+        static let livePulseEnabled = "ytmac.livePulse.enabled"
+        static let livePulseShowTicker = "ytmac.livePulse.showTicker"
+        static let livePulseShowDrawer = "ytmac.livePulse.showDrawer"
+        static let livePulseDrawerWidth = "ytmac.livePulse.drawerWidth"
+        static let livePulseSpoilerDelay = "ytmac.livePulse.spoilerDelay"
+        static let livePulseEnabledLeagues = "ytmac.livePulse.enabledLeagues"
+        static let livePulseLeaguePriority = "ytmac.livePulse.leaguePriority"
+        static let livePulseStreamFocusOnly = "ytmac.livePulse.streamFocusOnly"
+        static let livePulseShowMarkets = "ytmac.livePulse.showMarkets"
+        static let livePulseSleeperUsername = "ytmac.livePulse.sleeperUsername"
+        static let livePulseFantasyLeagues = "ytmac.livePulse.fantasyLeagues"
     }
 
     @ObservationIgnored
@@ -89,6 +100,9 @@ public final class AppSettings {
 
     @ObservationIgnored
     var onShortcutsParametersDidChange: (() -> Void)?
+
+    @ObservationIgnored
+    public var onLivePulseSettingsDidChange: (() -> Void)?
 
     public var hideShorts: Bool {
         didSet {
@@ -448,6 +462,132 @@ public final class AppSettings {
         }
     }
 
+    public var livePulseEnabled: Bool {
+        didSet {
+            guard livePulseEnabled != oldValue else { return }
+            defaults.set(livePulseEnabled, forKey: Keys.livePulseEnabled)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseShowTicker: Bool {
+        didSet {
+            guard livePulseShowTicker != oldValue else { return }
+            defaults.set(livePulseShowTicker, forKey: Keys.livePulseShowTicker)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseShowDrawer: Bool {
+        didSet {
+            guard livePulseShowDrawer != oldValue else { return }
+            defaults.set(livePulseShowDrawer, forKey: Keys.livePulseShowDrawer)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseDrawerWidth: Double {
+        didSet {
+            let finite = livePulseDrawerWidth.isFinite ? CGFloat(livePulseDrawerWidth) : LivePulseLayout.drawerDefaultWidth
+            let clamped = Double(LivePulseLayout.clampDrawerWidth(finite))
+            if abs(livePulseDrawerWidth - clamped) > 0.0001 {
+                livePulseDrawerWidth = clamped
+                return
+            }
+            guard abs(livePulseDrawerWidth - oldValue) > 0.0001 else { return }
+            defaults.set(livePulseDrawerWidth, forKey: Keys.livePulseDrawerWidth)
+        }
+    }
+
+    public var livePulseSpoilerDelay: SpoilerDelayOption {
+        didSet {
+            guard livePulseSpoilerDelay != oldValue else { return }
+            defaults.set(livePulseSpoilerDelay.rawValue, forKey: Keys.livePulseSpoilerDelay)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseEnabledLeagues: [SportsLeague] {
+        didSet {
+            guard livePulseEnabledLeagues != oldValue else { return }
+            defaults.set(livePulseEnabledLeagues.map(\.rawValue), forKey: Keys.livePulseEnabledLeagues)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseLeaguePriority: [SportsLeague] {
+        didSet {
+            let normalized = SportsLeague.normalizedPriority(livePulseLeaguePriority)
+            if livePulseLeaguePriority != normalized {
+                livePulseLeaguePriority = normalized
+                return
+            }
+            guard livePulseLeaguePriority != oldValue else { return }
+            defaults.set(livePulseLeaguePriority.map(\.rawValue), forKey: Keys.livePulseLeaguePriority)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseStreamFocusOnly: Bool {
+        didSet {
+            guard livePulseStreamFocusOnly != oldValue else { return }
+            defaults.set(livePulseStreamFocusOnly, forKey: Keys.livePulseStreamFocusOnly)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var orderedEnabledLivePulseLeagues: [SportsLeague] {
+        livePulseLeaguePriority.filter { livePulseEnabledLeagues.contains($0) }
+    }
+
+    public func moveLivePulseLeagueToTop(_ league: SportsLeague) {
+        var updated = SportsLeague.normalizedPriority(livePulseLeaguePriority)
+        updated.removeAll { $0 == league }
+        updated.insert(league, at: 0)
+        livePulseLeaguePriority = updated
+    }
+
+    public func moveLivePulseLeague(_ league: SportsLeague, direction: Int) {
+        guard direction != 0 else { return }
+        var updated = SportsLeague.normalizedPriority(livePulseLeaguePriority)
+        guard let currentIndex = updated.firstIndex(of: league) else { return }
+        let targetIndex = min(max(currentIndex + direction, 0), updated.count - 1)
+        guard targetIndex != currentIndex else { return }
+        updated.remove(at: currentIndex)
+        updated.insert(league, at: targetIndex)
+        livePulseLeaguePriority = updated
+    }
+
+    public func moveLivePulseLeagues(from source: IndexSet, to destination: Int) {
+        var updated = SportsLeague.normalizedPriority(livePulseLeaguePriority)
+        updated.move(fromOffsets: source, toOffset: destination)
+        livePulseLeaguePriority = updated
+    }
+
+    public var livePulseShowMarkets: Bool {
+        didSet {
+            guard livePulseShowMarkets != oldValue else { return }
+            defaults.set(livePulseShowMarkets, forKey: Keys.livePulseShowMarkets)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseSleeperUsername: String {
+        didSet {
+            guard livePulseSleeperUsername != oldValue else { return }
+            defaults.set(livePulseSleeperUsername, forKey: Keys.livePulseSleeperUsername)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseFantasyLeagues: [FantasyLeagueConfig] {
+        didSet {
+            guard livePulseFantasyLeagues != oldValue else { return }
+            saveLivePulseFantasyLeagues()
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
     public var enabledStreamingServices: [StreamingService] {
         StreamingServiceCatalog.resolvedEnabledServices(from: enabledStreamingServiceIDs)
     }
@@ -676,6 +816,48 @@ public final class AppSettings {
         } else {
             self.savedMultiviewPresets = []
         }
+
+        self.livePulseEnabled = defaults.object(forKey: Keys.livePulseEnabled) as? Bool ?? false
+        self.livePulseShowTicker = defaults.object(forKey: Keys.livePulseShowTicker) as? Bool ?? false
+        self.livePulseShowDrawer = defaults.object(forKey: Keys.livePulseShowDrawer) as? Bool ?? false
+
+        if let savedDrawerWidth = defaults.object(forKey: Keys.livePulseDrawerWidth) as? Double,
+           savedDrawerWidth.isFinite {
+            self.livePulseDrawerWidth = Double(LivePulseLayout.clampDrawerWidth(CGFloat(savedDrawerWidth)))
+        } else {
+            self.livePulseDrawerWidth = Double(LivePulseLayout.drawerDefaultWidth)
+        }
+
+        if let rawDelay = defaults.object(forKey: Keys.livePulseSpoilerDelay) as? Int,
+           let parsedDelay = SpoilerDelayOption(rawValue: rawDelay) {
+            self.livePulseSpoilerDelay = parsedDelay
+        } else {
+            self.livePulseSpoilerDelay = .off
+        }
+
+        if let rawLeagues = defaults.stringArray(forKey: Keys.livePulseEnabledLeagues) {
+            self.livePulseEnabledLeagues = rawLeagues.compactMap(SportsLeague.init(rawValue:))
+        } else {
+            self.livePulseEnabledLeagues = SportsLeague.allCases
+        }
+
+        if let rawPriority = defaults.stringArray(forKey: Keys.livePulseLeaguePriority) {
+            self.livePulseLeaguePriority = SportsLeague.normalizedPriority(rawPriority.compactMap(SportsLeague.init(rawValue:)))
+        } else {
+            self.livePulseLeaguePriority = SportsLeague.normalizedPriority([.nfl, .nba, .mlb, .nhl])
+        }
+
+        self.livePulseStreamFocusOnly = defaults.object(forKey: Keys.livePulseStreamFocusOnly) as? Bool ?? false
+
+        self.livePulseShowMarkets = defaults.object(forKey: Keys.livePulseShowMarkets) as? Bool ?? true
+        self.livePulseSleeperUsername = defaults.string(forKey: Keys.livePulseSleeperUsername) ?? ""
+
+        if let data = defaults.data(forKey: Keys.livePulseFantasyLeagues),
+           let decoded = try? JSONDecoder().decode([FantasyLeagueConfig].self, from: data) {
+            self.livePulseFantasyLeagues = decoded
+        } else {
+            self.livePulseFantasyLeagues = []
+        }
     }
 
     public var preferredColorScheme: ColorScheme? {
@@ -775,6 +957,12 @@ public final class AppSettings {
     private func saveWatchedChannels() {
         if let data = try? JSONEncoder().encode(watchedChannels) {
             defaults.set(data, forKey: Keys.watchedChannels)
+        }
+    }
+
+    private func saveLivePulseFantasyLeagues() {
+        if let data = try? JSONEncoder().encode(livePulseFantasyLeagues) {
+            defaults.set(data, forKey: Keys.livePulseFantasyLeagues)
         }
     }
 }

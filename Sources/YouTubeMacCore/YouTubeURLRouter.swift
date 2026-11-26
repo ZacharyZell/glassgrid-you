@@ -33,6 +33,15 @@ public struct CompanionQuickSite: Identifiable, Equatable, Hashable, Sendable {
         return .companion
     }
 
+    public static let livePulseSites: [CompanionQuickSite] = [
+        CompanionQuickSite(id: "sleeper", name: "Sleeper", subtitle: "Fantasy Leagues", urlString: "https://sleeper.com/leagues", systemImage: "trophy"),
+        CompanionQuickSite(id: "espn-fantasy", name: "ESPN Fantasy", subtitle: "Fantasy Sports", urlString: "https://fantasy.espn.com", systemImage: "sportscourt.fill"),
+        CompanionQuickSite(id: "yahoo-fantasy", name: "Yahoo Fantasy", subtitle: "Fantasy Sports", urlString: "https://sports.yahoo.com/fantasy/", systemImage: "figure.american.football"),
+        CompanionQuickSite(id: "nfl-fantasy", name: "NFL Fantasy", subtitle: "NFL.com Leagues", urlString: "https://fantasy.nfl.com", systemImage: "football.fill"),
+        CompanionQuickSite(id: "kalshi", name: "Kalshi", subtitle: "Prediction Markets", urlString: "https://kalshi.com/markets", systemImage: "chart.line.uptrend.xyaxis"),
+        CompanionQuickSite(id: "polymarket", name: "Polymarket", subtitle: "Prediction Markets", urlString: "https://polymarket.com/sports", systemImage: "chart.xyaxis.line")
+    ]
+
     public static let catalog: [CompanionQuickSite] = [
         CompanionQuickSite(id: "twitch", name: "Twitch", subtitle: "Live Streams", urlString: "https://www.twitch.tv", systemImage: "gamecontroller"),
         CompanionQuickSite(id: "espn", name: "ESPN Scores", subtitle: "Live Scoreboard", urlString: "https://www.espn.com/scoreboard", systemImage: "sportscourt"),
@@ -42,7 +51,7 @@ public struct CompanionQuickSite: Identifiable, Equatable, Hashable, Sendable {
         CompanionQuickSite(id: "paramount", name: "Paramount+", subtitle: "CBS & Sports", urlString: "https://www.paramountplus.com", systemImage: "sparkles.tv"),
         CompanionQuickSite(id: "primevideo", name: "Prime Video", subtitle: "Live & TNF", urlString: "https://www.amazon.com/gp/video/storefront", systemImage: "film"),
         CompanionQuickSite(id: "crunchyroll", name: "Crunchyroll", subtitle: "Anime & Simulcasts", urlString: "https://www.crunchyroll.com", systemImage: "play.tv")
-    ]
+    ] + livePulseSites
 }
 
 /// Outcome for deciding how WebKit should handle a navigation request.
