@@ -34,6 +34,8 @@ public final class AppController {
     public var soloMultiviewTabID: UUID?
     public var multiviewLayoutMode: MultiviewLayoutMode = .auto
     public var multiviewSplitRatios: MultiviewSplitRatios = .default
+    public var multiviewCustomVolumes: [UUID: Int] = [:]
+    public var hasCustomMultiviewMix: Bool { !multiviewCustomVolumes.isEmpty }
     public var hoveredMultiviewTileID: UUID?
     public var hoveredMultiviewDividerID: MultiviewDividerID?
     public var activeMultiviewDividerDragID: MultiviewDividerID?
@@ -113,6 +115,9 @@ public final class AppController {
 
     @ObservationIgnored
     private var lastMultiviewAudioSwitchAt: Date = .distantPast
+
+    @ObservationIgnored
+    private var multiviewVolumeDispatchTasks: [UUID: Task<Void, Never>] = [:]
 
     @ObservationIgnored
     private var sidebarVisibleBeforeMultiview: Bool?
@@ -555,6 +560,8 @@ public final class AppController {
         signInCheckTasks[id]?.cancel()
         signInCheckTasks.removeValue(forKey: id)
         signInCheckServiceIDs.removeValue(forKey: id)
+        multiviewVolumeDispatchTasks[id]?.cancel()
+        multiviewVolumeDispatchTasks.removeValue(forKey: id)
 
         if tabs.count <= 1 {
             // In multi-window mode, closing the sole tab of a secondary window closes that window cleanly.
@@ -598,6 +605,8 @@ public final class AppController {
                 multiviewAudioTabID = nil
                 soloMultiviewTabID = nil
                 hoveredMultiviewTileID = nil
+                cancelAllMultiviewVolumeDispatchTasks()
+                multiviewCustomVolumes.removeAll()
                 selectedTabID = survivingID
 
                 if let survivor = tabs.first(where: { $0.id == survivingID }), survivor.id != id, canPopOut(tab: survivor) {
@@ -638,6 +647,10 @@ public final class AppController {
                 multiviewTabIDs = result.state.tabIDs
                 multiviewAudioTabID = result.state.audioTabID
                 soloMultiviewTabID = result.state.soloTabID
+                multiviewCustomVolumes = MultiviewAudioMixer.sanitizedCustomVolumes(
+                    multiviewCustomVolumes,
+                    keeping: Set(result.state.tabIDs)
+                )
                 if hoveredMultiviewTileID == id {
                     hoveredMultiviewTileID = nil
                 }
@@ -679,6 +692,8 @@ public final class AppController {
                 multiviewAudioTabID = nil
                 soloMultiviewTabID = nil
                 hoveredMultiviewTileID = nil
+                cancelAllMultiviewVolumeDispatchTasks()
+                multiviewCustomVolumes.removeAll()
                 restoreSidebarAfterMultiviewIfNeeded()
                 syncBackForwardGestures()
                 selectedTabID = survivingID
@@ -687,7 +702,7 @@ public final class AppController {
                     survivor.needsPostAttachResize = true
                     ensureTabLoaded(survivor)
                     if survivor.mediaStatus.hasVideo {
-                        survivor.setMuted(false)
+                        survivor.setAudioLevel(muted: false, volumePercent: 100)
                     }
                 }
                 applyConfigToAllTabs()
@@ -697,6 +712,10 @@ public final class AppController {
                 multiviewTabIDs = result.state.tabIDs
                 multiviewAudioTabID = result.state.audioTabID
                 soloMultiviewTabID = result.state.soloTabID
+                multiviewCustomVolumes = MultiviewAudioMixer.sanitizedCustomVolumes(
+                    multiviewCustomVolumes,
+                    keeping: Set(result.state.tabIDs)
+                )
                 if hoveredMultiviewTileID == id {
                     hoveredMultiviewTileID = nil
                 }
@@ -737,6 +756,8 @@ public final class AppController {
             multiviewAudioTabID = nil
             soloMultiviewTabID = nil
             hoveredMultiviewTileID = nil
+            cancelAllMultiviewVolumeDispatchTasks()
+            multiviewCustomVolumes.removeAll()
             restoreSidebarAfterMultiviewIfNeeded()
             syncBackForwardGestures()
         }
@@ -757,6 +778,9 @@ public final class AppController {
         if let kept = tabs.first(where: { $0.id == id }) {
             ensureTabLoaded(kept)
             kept.needsPostAttachResize = true
+            if kept.mediaStatus.hasVideo {
+                kept.setAudioLevel(muted: false, volumePercent: 100)
+            }
             kept.applyConfig(configForTab(id: id), force: true)
         }
         scheduleSessionSave()
@@ -1362,6 +1386,8 @@ public final class AppController {
             }
         }
 
+        cancelAllMultiviewVolumeDispatchTasks()
+        multiviewCustomVolumes.removeAll()
         multiviewTabIDs = next.tabIDs
         multiviewAudioTabID = next.audioTabID
         soloMultiviewTabID = nil
@@ -1404,6 +1430,8 @@ public final class AppController {
         }
 
         let previousTileIDs = multiviewTabIDs
+        cancelAllMultiviewVolumeDispatchTasks()
+        multiviewCustomVolumes.removeAll()
         multiviewTabIDs = []
         multiviewAudioTabID = nil
         soloMultiviewTabID = nil
@@ -1627,6 +1655,8 @@ public final class AppController {
         }
 
         let wasFloatingGrid = isFloatingMultiviewGrid
+        multiviewVolumeDispatchTasks[id]?.cancel()
+        multiviewVolumeDispatchTasks.removeValue(forKey: id)
         if let removedTab = tabs.first(where: { $0.id == id }) {
             removedTab.needsPostAttachResize = true
             removedTab.setAudioLevel(muted: false, volumePercent: 100)
@@ -1636,6 +1666,8 @@ public final class AppController {
         if let survivingID = result.remainingSingleTabID {
             if wasFloatingGrid {
                 let prevReason = poppedOutReason ?? .manual
+                cancelAllMultiviewVolumeDispatchTasks()
+                multiviewCustomVolumes.removeAll()
                 multiviewTabIDs = []
                 multiviewAudioTabID = nil
                 soloMultiviewTabID = nil
@@ -1666,6 +1698,10 @@ public final class AppController {
         multiviewTabIDs = result.state.tabIDs
         multiviewAudioTabID = result.state.audioTabID
         soloMultiviewTabID = result.state.soloTabID
+        multiviewCustomVolumes = MultiviewAudioMixer.sanitizedCustomVolumes(
+            multiviewCustomVolumes,
+            keeping: Set(result.state.tabIDs)
+        )
         if hoveredMultiviewTileID == id {
             hoveredMultiviewTileID = nil
         }
@@ -2117,15 +2153,80 @@ public final class AppController {
         applyConfigToAllTabs()
     }
 
+    public func effectiveMultiviewVolume(for tabID: UUID) -> MultiviewAudioLevel {
+        MultiviewAudioMixer.effectiveLevel(
+            for: tabID,
+            activeAudioTabID: multiviewAudioTabID ?? multiviewTabIDs.first,
+            duckBackground: settings.multiviewAudioDuckingEnabled,
+            customVolumes: multiviewCustomVolumes,
+            singleTabMode: false
+        )
+    }
+
+    public func setMultiviewTileVolume(tabID: UUID, volumePercent: Int) {
+        guard isMultiviewActive,
+              multiviewTabIDs.contains(tabID),
+              !hasLiveFullscreenTab,
+              !floatingMiniPlayer.hasLiveFullscreenTab,
+              let tab = tabs.first(where: { $0.id == tabID }) else {
+            return
+        }
+        let clamped = MultiviewAudioMixer.clampVolume(volumePercent)
+        guard multiviewCustomVolumes[tabID] != clamped else { return }
+
+        multiviewCustomVolumes[tabID] = clamped
+        lastMultiviewAudioSwitchAt = Date()
+        let level = MultiviewAudioMixer.levelForSliderChange(clamped)
+        tab.applyOptimisticAudioLevel(muted: level.muted, volumePercent: level.volumePercent)
+
+        multiviewVolumeDispatchTasks[tabID]?.cancel()
+        multiviewVolumeDispatchTasks[tabID] = Task { @MainActor [weak self, weak tab] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isWindowTornDown,
+                  self.isMultiviewActive,
+                  self.multiviewTabIDs.contains(tabID),
+                  let tab else {
+                return
+            }
+            self.multiviewVolumeDispatchTasks.removeValue(forKey: tabID)
+            self.lastMultiviewAudioSwitchAt = Date()
+            tab.setAudioLevel(muted: level.muted, volumePercent: level.volumePercent)
+        }
+        syncFloatingMultiviewGrid()
+    }
+
+    public func resetMultiviewMixer(showFeedback: Bool = true) {
+        cancelAllMultiviewVolumeDispatchTasks()
+        multiviewCustomVolumes.removeAll()
+        if isMultiviewActive {
+            applyMultiviewAudioFocus(unmuteAudioTab: true)
+        }
+        syncFloatingMultiviewGrid()
+        if showFeedback {
+            showHUD(icon: "slider.horizontal.3", message: "Multiview Mixer Reset")
+        }
+    }
+
+    private func cancelAllMultiviewVolumeDispatchTasks() {
+        for (_, task) in multiviewVolumeDispatchTasks {
+            task.cancel()
+        }
+        multiviewVolumeDispatchTasks.removeAll()
+    }
+
     public func focusMultiviewAudio(tabID: UUID, showFeedback: Bool = true) {
         guard isMultiviewActive, multiviewTabIDs.contains(tabID) else { return }
+        if multiviewCustomVolumes[tabID] == 0 {
+            multiviewVolumeDispatchTasks[tabID]?.cancel()
+            multiviewVolumeDispatchTasks.removeValue(forKey: tabID)
+            multiviewCustomVolumes.removeValue(forKey: tabID)
+        }
         let next = MultiviewReducer.focusAudio(tabID, in: multiviewState)
         multiviewAudioTabID = next.audioTabID
         selectedTabID = tabID
         syncOmniboxToSelectedTab()
-        if isFloatingMultiviewGrid {
-            syncFloatingMultiviewGrid()
-        }
         applyMultiviewAudioFocus(unmuteAudioTab: true)
         if showFeedback, let slot = multiviewSlotNumber(for: tabID) {
             let title = tabs.first(where: { $0.id == tabID })?.displayTitle ?? "Stream \(slot)"
@@ -2150,10 +2251,13 @@ public final class AppController {
 
     public func muteAllMultiviewTiles() {
         guard isMultiviewActive else { return }
+        cancelAllMultiviewVolumeDispatchTasks()
+        multiviewCustomVolumes.removeAll()
         lastMultiviewAudioSwitchAt = Date()
         for tab in multiviewTabs {
             tab.setAudioLevel(muted: true, volumePercent: 100)
         }
+        syncFloatingMultiviewGrid()
         showHUD(icon: "speaker.slash.fill", message: "All Streams Muted")
     }
 
@@ -2186,15 +2290,22 @@ public final class AppController {
         multiviewAudioTabID = activeAudioID
         let duckBackground = settings.multiviewAudioDuckingEnabled
         for tab in multiviewTabs {
-            if tab.id == activeAudioID {
-                if unmuteAudioTab {
-                    tab.setAudioLevel(muted: false, volumePercent: 100)
-                }
-            } else if duckBackground {
-                tab.setAudioLevel(muted: false, volumePercent: 15)
-            } else {
-                tab.setAudioLevel(muted: true, volumePercent: 100)
+            if tab.id == activeAudioID && !unmuteAudioTab && multiviewCustomVolumes[tab.id] == nil {
+                continue
             }
+            multiviewVolumeDispatchTasks[tab.id]?.cancel()
+            multiviewVolumeDispatchTasks.removeValue(forKey: tab.id)
+            let level = MultiviewAudioMixer.effectiveLevel(
+                for: tab.id,
+                activeAudioTabID: activeAudioID,
+                duckBackground: duckBackground,
+                customVolumes: multiviewCustomVolumes,
+                singleTabMode: false
+            )
+            tab.setAudioLevel(muted: level.muted, volumePercent: level.volumePercent)
+        }
+        if isFloatingMultiviewGrid {
+            syncFloatingMultiviewGrid()
         }
     }
 
@@ -2285,6 +2396,13 @@ public final class AppController {
             // In Multiview, unmuting a non-audio tile transfers exclusive audio focus cleanly instead of creating two audible streams.
             if isMultiviewActive && multiviewTabIDs.contains(tabID) && tabID != multiviewAudioTabID {
                 focusMultiviewAudio(tabID: tabID, showFeedback: false)
+                return
+            }
+            if isMultiviewActive && multiviewTabIDs.contains(tabID) && multiviewCustomVolumes[tabID] == 0 {
+                multiviewVolumeDispatchTasks[tabID]?.cancel()
+                multiviewVolumeDispatchTasks.removeValue(forKey: tabID)
+                multiviewCustomVolumes.removeValue(forKey: tabID)
+                applyMultiviewAudioFocus(unmuteAudioTab: true)
                 return
             }
             tab.toggleMute()
@@ -2573,6 +2691,9 @@ public final class AppController {
         poppedOutTabIDs = multiviewTabIDs
         poppedOutReason = reason
 
+        let tileVolumes = gridTabs.reduce(into: [UUID: Int]()) {
+            $0[$1.id] = effectiveMultiviewVolume(for: $1.id).volumePercent
+        }
         floatingMiniPlayer.showGrid(
             tabs: gridTabs,
             audioTabID: multiviewAudioTabID ?? gridTabs.first?.id,
@@ -2580,6 +2701,8 @@ public final class AppController {
             splitRatios: multiviewSplitRatios,
             allSpaces: settings.miniPlayerAllSpaces,
             opacity: settings.miniPlayerOpacity,
+            tileVolumes: tileVolumes,
+            hasCustomMix: hasCustomMultiviewMix,
             onFocusAudio: { [weak self] tabID in
                 self?.focusMultiviewAudio(tabID: tabID, showFeedback: false)
             },
@@ -2603,6 +2726,12 @@ public final class AppController {
                 guard let self else { return }
                 for tab in self.multiviewTabs { tab.pauseMedia() }
             },
+            onSetTileVolume: { [weak self] tabID, percent in
+                self?.setMultiviewTileVolume(tabID: tabID, volumePercent: percent)
+            },
+            onResetMixer: { [weak self] in
+                self?.resetMultiviewMixer(showFeedback: true)
+            },
             onDock: { [weak self] in
                 self?.dockMiniPlayer(selectTab: true, focusMain: true)
             },
@@ -2622,11 +2751,16 @@ public final class AppController {
         }
         let gridTabs = multiviewTabs
         guard gridTabs.count >= 2 else { return }
+        let tileVolumes = gridTabs.reduce(into: [UUID: Int]()) {
+            $0[$1.id] = effectiveMultiviewVolume(for: $1.id).volumePercent
+        }
         floatingMiniPlayer.syncGrid(
             tabs: gridTabs,
             audioTabID: multiviewAudioTabID ?? gridTabs.first?.id,
             layoutMode: multiviewLayoutMode,
-            splitRatios: multiviewSplitRatios
+            splitRatios: multiviewSplitRatios,
+            tileVolumes: tileVolumes,
+            hasCustomMix: hasCustomMultiviewMix
         )
     }
 
@@ -3364,11 +3498,13 @@ public final class AppController {
         multiviewTabIDs.removeAll()
         multiviewAudioTabID = nil
         soloMultiviewTabID = nil
+        multiviewCustomVolumes.removeAll()
         mainWindow = nil
         isMainWindowVisible = false
     }
 
     private func cancelAllBackgroundTasks() {
+        cancelAllMultiviewVolumeDispatchTasks()
         sleepTimerTask?.cancel()
         sleepTimerTask = nil
         findDebounceTask?.cancel()
@@ -4761,14 +4897,13 @@ public final class AppController {
 
         if isMultiviewActive {
             if multiviewTabIDs.contains(startedTabID) {
-                // Allow all Multiview tiles to play video simultaneously, applying ducking (15%) or hard mute to non-audio tiles.
-                if startedTabID != multiviewAudioTabID,
-                   let bgTile = tabs.first(where: { $0.id == startedTabID }) {
-                    if settings.multiviewAudioDuckingEnabled {
-                        bgTile.setAudioLevel(muted: false, volumePercent: 15)
-                    } else {
-                        bgTile.setAudioLevel(muted: true, volumePercent: 100)
-                    }
+                // Allow all Multiview tiles to play video simultaneously, applying custom mix, ducking (15%), or hard mute.
+                if (startedTabID != multiviewAudioTabID || multiviewCustomVolumes[startedTabID] != nil),
+                   let tile = tabs.first(where: { $0.id == startedTabID }) {
+                    multiviewVolumeDispatchTasks[startedTabID]?.cancel()
+                    multiviewVolumeDispatchTasks.removeValue(forKey: startedTabID)
+                    let level = effectiveMultiviewVolume(for: startedTabID)
+                    tile.setAudioLevel(muted: level.muted, volumePercent: level.volumePercent)
                 }
                 for other in tabs where !multiviewTabIDs.contains(other.id) && other.mediaStatus.isPlaying {
                     other.pauseMedia()
@@ -4823,6 +4958,9 @@ public final class AppController {
             if tab.authFlowServiceID != nil && !StreamingServiceCatalog.isTransientAuthURL(newURL) {
                 scheduleSignInCompletionCheck(for: tabID, url: newURL, requireAuthFlowForNonPrime: true)
             }
+        }
+        if isFloatingMultiviewGrid && multiviewTabIDs.contains(tabID) {
+            syncFloatingMultiviewGrid()
         }
         if tabID == selectedTabID {
             syncWindowTitle()

@@ -441,6 +441,16 @@ public enum MultiviewGridLayout {
     public static let floatingMiniPlayerSpacing: CGFloat = 6
     public static let floatingTileCornerRadius: CGFloat = 10
 
+    /// Returns `false` for strict-DRM streaming services and YouTube TV so `WKWebView.layer`
+    /// remains unmasked (`cornerRadius = 0`, `masksToBounds = false`) to avoid FairPlay IOSurface clipping.
+    public static func shouldMaskWebViewLayer(for url: URL) -> Bool {
+        if StreamingServiceCatalog.service(matchingURL: url)?.requiresStrictDRM == true ||
+            YouTubeURLRouter.isYouTubeTVHost(url.host) {
+            return false
+        }
+        return true
+    }
+
     /// Returns true if tile `index` is a large primary / 2-up slot eligible for up to 1080p quality.
     public static func isPrimarySlot(index: Int, count: Int, mode: MultiviewLayoutMode) -> Bool {
         guard count > 0, index >= 0, index < count else { return false }
@@ -795,5 +805,60 @@ public enum MultiviewGridLayout {
             trailingPercent: 100 - leadingPct
         )
         return (result, spacing > 0 ? [divider] : [])
+    }
+}
+
+/// Pure, unit-testable audio level target (`muted` + clamped `0...100` volume percentage) for Multiview tiles.
+public struct MultiviewAudioLevel: Equatable, Hashable, Codable, Sendable {
+    public let muted: Bool
+    public let volumePercent: Int
+
+    public init(muted: Bool, volumePercent: Int) {
+        self.volumePercent = min(max(volumePercent, 0), 100)
+        self.muted = muted
+    }
+}
+
+/// Pure mixer rules unifying Active Audio Focus, Background Ducking (15%), and per-tile custom volume overrides.
+public enum MultiviewAudioMixer {
+    public static func clampVolume(_ percent: Int) -> Int {
+        min(max(percent, 0), 100)
+    }
+
+    public static func levelForSliderChange(_ percent: Int) -> MultiviewAudioLevel {
+        let p = clampVolume(percent)
+        return MultiviewAudioLevel(muted: p == 0, volumePercent: p)
+    }
+
+    public static func effectiveLevel(
+        for tabID: UUID,
+        activeAudioTabID: UUID?,
+        duckBackground: Bool,
+        customVolumes: [UUID: Int],
+        singleTabMode: Bool = false
+    ) -> MultiviewAudioLevel {
+        if let rawCustom = customVolumes[tabID] {
+            let custom = clampVolume(rawCustom)
+            return MultiviewAudioLevel(muted: custom == 0, volumePercent: custom)
+        }
+        if tabID == activeAudioTabID || singleTabMode {
+            return MultiviewAudioLevel(muted: false, volumePercent: 100)
+        }
+        if duckBackground {
+            return MultiviewAudioLevel(muted: false, volumePercent: 15)
+        }
+        return MultiviewAudioLevel(muted: true, volumePercent: 100)
+    }
+
+    public static func sanitizedCustomVolumes(
+        _ volumes: [UUID: Int],
+        keeping validIDs: Set<UUID>
+    ) -> [UUID: Int] {
+        var result: [UUID: Int] = [:]
+        result.reserveCapacity(min(volumes.count, validIDs.count))
+        for (tabID, rawPercent) in volumes where validIDs.contains(tabID) {
+            result[tabID] = clampVolume(rawPercent)
+        }
+        return result
     }
 }

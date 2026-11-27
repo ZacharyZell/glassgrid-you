@@ -7,11 +7,19 @@ cd "$ROOT_DIR"
 APP_NAME="GlassGrid You"
 EXECUTABLE_NAME="GlassGridYou"
 BUNDLE_ID="com.glassgridyou.mac"
-APP_VERSION="${APP_VERSION:-1.3.0}"
-APP_BUILD="${APP_BUILD:-6}"
+APP_VERSION="${APP_VERSION:-1.3.1}"
+APP_BUILD="${APP_BUILD:-7}"
 SKIP_INSTALL="${SKIP_INSTALL:-0}"
 ENABLE_HARDENED_RUNTIME="${ENABLE_HARDENED_RUNTIME:-0}"
-CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+CODESIGN_WAS_EXPLICIT=0
+if [[ -n "${CODESIGN_IDENTITY+x}" && -n "${CODESIGN_IDENTITY}" ]]; then
+    CODESIGN_WAS_EXPLICIT=1
+fi
+if [[ "$CODESIGN_WAS_EXPLICIT" == "0" ]]; then
+    AUTO_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F'"' '/Developer ID Application:/ { print $2; exit }' || true)"
+    CODESIGN_IDENTITY="${AUTO_IDENTITY:--}"
+fi
 SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://glassgridyou.com/appcast.xml}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
@@ -224,7 +232,7 @@ else
     echo "==> Note: appintentsmetadataprocessor not found (CLT-only environment); skipping Metadata.appintents extraction."
 fi
 
-echo "==> Signing embedded Sparkle.framework, glassgrid helper, and app bundle strictly inside-out..."
+echo "==> Signing embedded Sparkle.framework, glassgrid helper, and app bundle strictly inside-out ($CODESIGN_IDENTITY)..."
 xattr -cr "$APP_BUNDLE"
 
 BASE_SIGN_ARGS=(--force)

@@ -157,6 +157,9 @@ public final class BrowserTab: NSObject, Identifiable {
     var onURLDidChange: ((UUID, URL) -> Void)?
 
     @ObservationIgnored
+    var onEffectiveURLChanged: (() -> Void)?
+
+    @ObservationIgnored
     var onSponsorSkipped: ((String) -> Void)?
 
     @ObservationIgnored
@@ -338,6 +341,7 @@ public final class BrowserTab: NSObject, Identifiable {
             updateAuthFlowTracking(for: targetURL)
         }
         url = targetURL
+        onEffectiveURLChanged?()
         webView.load(URLRequest(url: targetURL))
     }
 
@@ -540,7 +544,22 @@ public final class BrowserTab: NSObject, Identifiable {
         evaluateMediaCommand(EnhancementScript.setMutedScript(muted: muted))
     }
 
+    public func applyOptimisticAudioLevel(muted: Bool, volumePercent: Int) {
+        let clamped = MultiviewAudioMixer.clampVolume(volumePercent)
+        if mainFrameMediaStatus.hasVideo || subframeMediaStatus == nil {
+            mainFrameMediaStatus.isMuted = muted
+            mainFrameMediaStatus.volumePercent = clamped
+        }
+        if var sub = subframeMediaStatus {
+            sub.isMuted = muted
+            sub.volumePercent = clamped
+            subframeMediaStatus = sub
+        }
+        recomputeMergedMediaStatus()
+    }
+
     public func setAudioLevel(muted: Bool, volumePercent: Int) {
+        applyOptimisticAudioLevel(muted: muted, volumePercent: volumePercent)
         evaluateMediaCommand(EnhancementScript.setAudioLevelScript(muted: muted, volumePercent: volumePercent))
     }
 
@@ -718,6 +737,7 @@ public final class BrowserTab: NSObject, Identifiable {
         onOpenInNewTab = nil
         onStartedPlaying = nil
         onURLDidChange = nil
+        onEffectiveURLChanged = nil
         onSponsorSkipped = nil
         onDidClickContent = nil
         onUnmutedByUser = nil
@@ -835,7 +855,8 @@ public final class BrowserTab: NSObject, Identifiable {
                 isAirPlayActive: sub.isAirPlayActive,
                 isCleanBoxActive: mainFrameMediaStatus.isCleanBoxActive,
                 isCleanBoxEligible: !isPassthrough && (mainFrameMediaStatus.isCleanBoxEligible || sub.hasVideo),
-                streamContext: mainFrameMediaStatus.streamContext
+                streamContext: mainFrameMediaStatus.streamContext,
+                volumePercent: sub.volumePercent
             )
         } else {
             resolved = mainFrameMediaStatus
@@ -875,6 +896,7 @@ public final class BrowserTab: NSObject, Identifiable {
                 }
                 url = webURL
                 onURLDidChange?(id, webURL)
+                onEffectiveURLChanged?()
                 if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webURL) {
                     if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
                         updatedConfig.cleanBoxBypassed = false
@@ -900,6 +922,19 @@ public final class BrowserTab: NSObject, Identifiable {
                 }
             }
         }
+    }
+
+    private static func parseVolumePercent(from body: [String: Any]) -> Int {
+        if let intVal = body["volumePercent"] as? Int {
+            return MultiviewAudioMixer.clampVolume(intVal)
+        }
+        if let doubleVal = body["volumePercent"] as? Double, doubleVal.isFinite {
+            return MultiviewAudioMixer.clampVolume(Int(doubleVal.rounded()))
+        }
+        if let numVal = body["volumePercent"] as? NSNumber {
+            return MultiviewAudioMixer.clampVolume(numVal.intValue)
+        }
+        return 100
     }
 }
 
@@ -1004,6 +1039,9 @@ extension BrowserTab: WKNavigationDelegate {
         loadError = nil
         clearSubframeMediaState()
         documentLoadedOnCompanionAuthPage = isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webView.url ?? url)
+        if !isSleeping && pendingLazyURL == nil && webView.url != nil {
+            onEffectiveURLChanged?()
+        }
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -1236,7 +1274,8 @@ extension BrowserTab: WKScriptMessageHandler {
                 isHomeFeedEmpty: false,
                 airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
                 isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false,
-                isCleanBoxEligible: !isPassthrough
+                isCleanBoxEligible: !isPassthrough,
+                volumePercent: Self.parseVolumePercent(from: body)
             )
             recomputeMergedMediaStatus()
             if !wasPlaying && mediaStatus.isPlaying {
@@ -1325,6 +1364,7 @@ extension BrowserTab: WKScriptMessageHandler {
             headingHint: AgentSecurity.sanitizeWebText(body["headingHint"] as? String ?? "", maxLength: 180).text
         )
 
+        let isPassthrough = CleanBoxRules.profile(for: webView.url ?? url)?.strategy == .companionPassthrough
         let newMainStatus = MediaStatus(
             hasVideo: body["hasVideo"] as? Bool ?? false,
             isPlaying: body["isPlaying"] as? Bool ?? false,
@@ -1341,8 +1381,9 @@ extension BrowserTab: WKScriptMessageHandler {
             airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
             isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false,
             isCleanBoxActive: body["isCleanBoxActive"] as? Bool ?? false,
-            isCleanBoxEligible: body["isCleanBoxEligible"] as? Bool ?? false,
-            streamContext: streamContext
+            isCleanBoxEligible: !isPassthrough && (body["isCleanBoxEligible"] as? Bool ?? false),
+            streamContext: streamContext,
+            volumePercent: Self.parseVolumePercent(from: body)
         )
         let wasPlaying = mediaStatus.isPlaying
         mainFrameMediaStatus = newMainStatus

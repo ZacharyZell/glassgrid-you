@@ -271,7 +271,7 @@ public enum CleanBoxRules {
         ),
         CleanBoxServiceProfile(
             serviceID: "hulu",
-            strategy: .companionSelector,
+            strategy: .companionPassthrough,
             hosts: ["hulu.com"],
             playerSelectors: [
                 ".Player__container",
@@ -310,7 +310,7 @@ public enum CleanBoxRules {
         ),
         CleanBoxServiceProfile(
             serviceID: "netflix",
-            strategy: .companionSelector,
+            strategy: .companionPassthrough,
             hosts: ["netflix.com"],
             playerSelectors: [
                 "[data-uia=\"watch-video\"]",

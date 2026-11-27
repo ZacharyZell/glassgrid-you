@@ -1806,6 +1806,7 @@ public enum EnhancementScript {
                     currentTime: 0,
                     duration: 0,
                     isMuted: false,
+                    volumePercent: 100,
                     isPiP: false,
                     isTheater,
                     isHDR: false,
@@ -1826,11 +1827,19 @@ public enum EnhancementScript {
                     const hasVideo = (isWebCompanionHost() || isWatchPage())
                         && Boolean(video.src || video.currentSrc || video.srcObject || video.readyState > 0 || (isWebCompanionHost() && video.querySelector && video.querySelector('source[src]')));
                     let isMuted = Boolean(video.muted || video.volume === 0);
+                    let volumePercent = 100;
                     try {
                         if (player && typeof player.isMuted === 'function') {
                             isMuted = Boolean(player.isMuted());
                         }
-                    } catch (_) {}
+                        const rawVol = (player && typeof player.getVolume === 'function' && Number.isFinite(player.getVolume()))
+                            ? (player.getVolume() / 100)
+                            : Number(video.volume ?? 1);
+                        volumePercent = Math.round(Math.min(Math.max(Number.isFinite(rawVol) ? rawVol : 1, 0), 1) * 100);
+                    } catch (_) {
+                        const fallbackVol = Number(video.volume ?? 1);
+                        volumePercent = Math.round(Math.min(Math.max(Number.isFinite(fallbackVol) ? fallbackVol : 1, 0), 1) * 100);
+                    }
                     const rate = Number.isFinite(video.playbackRate) && video.playbackRate > 0 ? video.playbackRate : 1.0;
                     const rawPlaying = hasVideo && !video.paused && !video.ended && video.readyState >= 2;
                     const effectivePlaying = (isScrubSuppressingStateChange(video) && wasPlayingBeforeScrub && hasVideo)
@@ -1847,6 +1856,7 @@ public enum EnhancementScript {
                         currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
                         duration: Number.isFinite(video.duration) ? video.duration : 0,
                         isMuted,
+                        volumePercent,
                         isPiP: Boolean(isPiP),
                         isTheater,
                         isHDR: hasVideo && detectHDR(),
@@ -1875,6 +1885,7 @@ public enum EnhancementScript {
                     payload.channelURL,
                     payload.urlString,
                     payload.isMuted,
+                    payload.volumePercent,
                     payload.isPiP,
                     payload.isTheater,
                     payload.isHDR,
@@ -2807,6 +2818,8 @@ public enum EnhancementScript {
                 const hasVideo = hasSubframeMediaSource(v);
                 lastSubframeHasVideo = hasVideo;
                 const isMuted = Boolean(v && (v.muted || v.volume === 0));
+                const rawVol = v ? Number(v.volume ?? 1) : 1;
+                const volumePercent = Math.round(Math.min(Math.max(Number.isFinite(rawVol) ? rawVol : 1, 0), 1) * 100);
                 const isPlaying = Boolean(hasVideo && v && !v.paused && !v.ended && v.readyState >= 2);
                 const currentTime = (v && Number.isFinite(v.currentTime)) ? v.currentTime : 0;
                 const duration = (v && Number.isFinite(v.duration)) ? v.duration : 0;
@@ -2815,7 +2828,7 @@ public enum EnhancementScript {
                 const isAirPlayActive = Boolean(hasVideo && v && v.webkitCurrentPlaybackTargetIsWireless);
 
                 const sig = [
-                    hasVideo, isPlaying, isMuted, isPiP,
+                    hasVideo, isPlaying, isMuted, volumePercent, isPiP,
                     Math.round(playbackRate * 100),
                     airPlayAvail, isAirPlayActive,
                     Math.floor(currentTime), Math.floor(duration)
@@ -2828,6 +2841,7 @@ public enum EnhancementScript {
                     hasVideo,
                     isPlaying,
                     isMuted,
+                    volumePercent,
                     isPiP,
                     playbackRate,
                     airPlayAvailable: hasVideo && airPlayAvail,
@@ -2905,6 +2919,7 @@ public enum EnhancementScript {
                             hasVideo: false,
                             isPlaying: false,
                             isMuted: false,
+                            volumePercent: 100,
                             isPiP: false,
                             playbackRate: 1.0,
                             airPlayAvailable: false,

@@ -169,6 +169,12 @@ final class FlippedTabHostContainerView: NSView {
     private var activeDividerDragID: MultiviewDividerID?
     private var hoveredDividerID: MultiviewDividerID?
     private var resignKeyObserver: (any NSObjectProtocol)?
+    nonisolated(unsafe) private var urlObservations: [UUID: NSKeyValueObservation] = [:]
+
+    deinit {
+        urlObservations.values.forEach { $0.invalidate() }
+        urlObservations.removeAll()
+    }
 
     var isDraggingDivider: Bool {
         activeDividerDragID != nil
@@ -194,6 +200,37 @@ final class FlippedTabHostContainerView: NSView {
             }
         } else {
             cancelActiveDividerDrags()
+            invalidateURLObservations()
+        }
+    }
+
+    private func invalidateURLObservations() {
+        urlObservations.values.forEach { $0.invalidate() }
+        urlObservations.removeAll()
+    }
+
+    func syncURLObservations() {
+        let activeMultiviewSet = Set(multiviewTabIDs)
+        let relevantTabs = activeMultiviewSet.count >= 2
+            ? tabs.filter { activeMultiviewSet.contains($0.id) }
+            : []
+        let relevantIDs = Set(relevantTabs.map(\.id))
+        for existingID in Array(urlObservations.keys) where !relevantIDs.contains(existingID) {
+            urlObservations[existingID]?.invalidate()
+            urlObservations.removeValue(forKey: existingID)
+        }
+        for tab in relevantTabs where urlObservations[tab.id] == nil {
+            let webView = tab.webView
+            urlObservations[tab.id] = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard !self.anyTabInFullscreen,
+                          !self.tabs.contains(where: { $0.webView.fullscreenState != .notInFullscreen }) else {
+                        return
+                    }
+                    self.applyLayout()
+                }
+            }
         }
     }
 
@@ -366,8 +403,9 @@ final class FlippedTabHostContainerView: NSView {
                 webView.frame = targetFrame
             }
 
-            // Clip video edges cleanly to the 12pt rounded Multiview card radius (0 in Solo or single-tab).
-            let desiredRadius: CGFloat = (isMultiview && activeSoloID == nil && tileRect != nil) ? 12 : 0
+            // Clip video edges cleanly to the 12pt rounded Multiview card radius (0 in Solo, single-tab, or strict-DRM/YTTV tiles).
+            let allowLayerMask = MultiviewGridLayout.shouldMaskWebViewLayer(for: tab.webView.url ?? tab.url)
+            let desiredRadius: CGFloat = (isMultiview && activeSoloID == nil && tileRect != nil && allowLayerMask) ? 12 : 0
             let desiredMasks = desiredRadius > 0
             if !webView.wantsLayer {
                 webView.wantsLayer = true
@@ -584,6 +622,7 @@ struct TabWebViewHost: NSViewRepresentable {
         container.onDividerHoverChanged = onDividerHoverChanged
         container.onDividerDragStateChanged = onDividerDragStateChanged
         container.onDividerDoubleClickReset = onDividerDoubleClickReset
+        container.syncURLObservations()
         container.applyLayout()
     }
 }

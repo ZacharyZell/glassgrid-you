@@ -64,8 +64,8 @@ Run the release script with the target semantic version and build number:
 
 ```bash
 ./scripts/release-dmg.sh \
-  --version 1.3.0 \
-  --build 6 \
+  --version 1.3.1 \
+  --build 7 \
   --sparkle-public-key "<YOUR_BASE64_ED25519_PUBLIC_KEY>"
 ```
 
@@ -89,7 +89,7 @@ What `release-dmg.sh` does automatically:
 To verify inside-out Hardened Runtime signing, `Sparkle.framework` embedding, `.dmg` creation, and SHA-256 checksum generation locally without notarization:
 
 ```bash
-./scripts/release-dmg.sh --version 1.3.0 --ad-hoc --skip-notarize
+./scripts/release-dmg.sh --version 1.3.1 --ad-hoc --skip-notarize
 ```
 
 ---

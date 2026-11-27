@@ -6,6 +6,26 @@
     <description>Most recent releases of GlassGrid You for macOS.</description>
     <language>en</language>
     <item>
+      <title>Version 1.3.1</title>
+      <pubDate>Fri, 27 Nov 2026 08:05:33 +0000</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.3.1</h2>
+        <ul>
+          <li><strong>FairPlay DRM Playback Hardening:</strong> Switches Disney+, Netflix, and Hulu to passive FairPlay-safe passthrough and keeps strict-DRM &amp; YouTube TV tiles unmasked cleanly in windowed, Multiview, and Mini-Player playback.</li>
+          <li><strong>Per-Tile Multiview Volume Mixer:</strong> Adjust any tile independently (0%&ndash;100%) from a dark-HUD popover or the Floating Grid's <em>Stream Volumes</em> sliders, with active-focus &amp; 15% background ducking preservation and 1-click <em>Reset Mix</em>.</li>
+          <li><strong>Floating Mini-Player Resizing &amp; Polish:</strong> Added smooth 8-edge &amp; corner drag resizing, direct Shrink (&minus;) / Expand (+) header controls, new <strong>XL</strong> presets (880&times;495 Single / 1040&times;585 Grid), exact <code>1.25&times;</code> / <code>1.75&times;</code> speed labels, and high-contrast Day/Night popovers.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://glassgridyou.com/updates/GlassGrid-You-1.3.1.dmg"
+        sparkle:edSignature="YKcSlcj1HiiJq3QS1jFAJCKWA4Qg6k+ytZUu8nCBa+DkGvYTS9Fyk6PQjTrzR3QnZk09HVGeRJ4xoG+qgOo0Dg=="
+        length="8729563"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.3.0</title>
       <pubDate>Thu, 26 Nov 2026 20:35:13 +0000</pubDate>
       <sparkle:version>6</sparkle:version>

@@ -1820,8 +1820,29 @@ private struct MultiviewCompactControlsPopover: View {
 
             Divider()
 
-            // Mute All & Exit to Single View
+            // Mute All, Reset Mixer & Exit to Single View
             VStack(spacing: AppSpacing.xs) {
+                if controller.hasCustomMultiviewMix {
+                    Button {
+                        controller.resetMultiviewMixer()
+                        onDismiss()
+                    } label: {
+                        HStack(spacing: AppSpacing.sm) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .frame(width: 18, alignment: .center)
+                            Text("Reset Audio Mixer")
+                                .font(AppFont.callout(weight: .medium))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, AppSpacing.sm)
+                        .minHitTarget(28, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Button {
                     controller.muteAllMultiviewTiles()
                     onDismiss()

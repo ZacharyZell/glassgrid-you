@@ -593,8 +593,14 @@ public final class AgentBridgeController: AgentCommandExecutor {
             return .failure(code: "not_found", message: "Target tab not found.")
         }
         let muted = args["muted"]?.boolValue ?? (percent == 0)
-        if controller.isMultiviewActive && controller.multiviewTabIDs.contains(tab.id) && !muted && tab.id != controller.multiviewAudioTabID {
-            controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
+        if controller.isMultiviewActive && controller.multiviewTabIDs.contains(tab.id) {
+            let targetPercent = muted ? 0 : percent
+            if controller.hasLiveFullscreenTab {
+                tab.setAudioLevel(muted: muted, volumePercent: percent)
+            } else {
+                controller.setMultiviewTileVolume(tabID: tab.id, volumePercent: targetPercent)
+            }
+            return .success(muted || targetPercent == 0 ? "Muted" : "Volume \(targetPercent)%")
         }
         tab.setAudioLevel(muted: muted, volumePercent: percent)
         return .success(muted ? "Muted" : "Volume \(percent)%")
@@ -865,6 +871,13 @@ public final class AgentBridgeController: AgentCommandExecutor {
             }
             controller.muteAllMultiviewTiles()
             return .success("Muted All Multiview Streams")
+
+        case "reset_mixer":
+            guard controller.isMultiviewActive else {
+                return .failure(code: "multiview_inactive", message: "Multiview is not active.")
+            }
+            controller.resetMultiviewMixer(showFeedback: true)
+            return .success("Multiview Mixer Reset")
 
         default:
             break
@@ -1565,6 +1578,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
             "formattedTime": .string(MediaState.formatTime(cur)),
             "formattedDuration": .string(MediaState.formatTime(dur)),
             "isMuted": .bool(status.isMuted),
+            "volumePercent": .int(status.volumePercent),
             "playbackRate": .double(status.playbackRate),
             "isHDR": .bool(status.isHDR),
             "isPiP": .bool(status.isPiP),
@@ -1653,13 +1667,16 @@ public final class AgentBridgeController: AgentCommandExecutor {
 
         let tilesJSON: [JSONValue] = ctrl.multiviewTabs.enumerated().map { idx, tab in
             let effectiveURL = tab.pendingLazyURL ?? tab.url
+            let effectiveAudio = ctrl.effectiveMultiviewVolume(for: tab.id)
             return .object([
                 "slot": .int(idx + 1),
                 "tabID": .string(tab.id.uuidString),
                 "title": .string(AgentSecurity.sanitizeWebText(tab.displayTitle, maxLength: AgentSecurity.maxWebTitleLength).text),
                 "url": .string(effectiveURL.absoluteString),
                 "isPlaying": .bool(tab.mediaStatus.isPlaying),
-                "isActiveAudio": .bool(ctrl.multiviewAudioTabID == tab.id)
+                "isActiveAudio": .bool(ctrl.multiviewAudioTabID == tab.id),
+                "volumePercent": .int(effectiveAudio.volumePercent),
+                "isMuted": .bool(effectiveAudio.muted)
             ])
         }
 
@@ -1680,6 +1697,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
             "layoutMode": .string(ctrl.multiviewLayoutMode.rawValue),
             "soloTabID": ctrl.soloMultiviewTabID.map { .string($0.uuidString) } ?? .null,
             "audioTabID": ctrl.multiviewAudioTabID.map { .string($0.uuidString) } ?? .null,
+            "hasCustomMix": .bool(ctrl.hasCustomMultiviewMix),
             "canAddTile": .bool(ctrl.canAddMultiviewTile),
             "maxTiles": .int(MultiviewGridLayout.maxTiles),
             "tiles": .array(tilesJSON),

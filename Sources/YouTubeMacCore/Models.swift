@@ -671,6 +671,7 @@ public struct MediaStatus: Equatable, Sendable {
     public var channelURLString: String
     public var urlString: String
     public var isMuted: Bool
+    public var volumePercent: Int
     public var isPiP: Bool
     public var isTheater: Bool
     public var isHDR: Bool
@@ -699,7 +700,8 @@ public struct MediaStatus: Equatable, Sendable {
         isAirPlayActive: false,
         isCleanBoxActive: false,
         isCleanBoxEligible: false,
-        streamContext: .empty
+        streamContext: .empty,
+        volumePercent: 100
     )
 
     public init(
@@ -719,7 +721,8 @@ public struct MediaStatus: Equatable, Sendable {
         isAirPlayActive: Bool = false,
         isCleanBoxActive: Bool = false,
         isCleanBoxEligible: Bool = false,
-        streamContext: StreamContextMetadata = .empty
+        streamContext: StreamContextMetadata = .empty,
+        volumePercent: Int = 100
     ) {
         self.hasVideo = hasVideo
         self.isPlaying = isPlaying
@@ -728,6 +731,7 @@ public struct MediaStatus: Equatable, Sendable {
         self.channelURLString = channelURLString
         self.urlString = urlString
         self.isMuted = isMuted
+        self.volumePercent = min(max(volumePercent, 0), 100)
         self.isPiP = isPiP
         self.isTheater = isTheater
         self.isHDR = isHDR

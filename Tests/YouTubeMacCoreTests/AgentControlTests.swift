@@ -130,10 +130,12 @@ final class AgentControlTests: XCTestCase {
         let ctx = AgentRequestContext(source: .mcpStdio, clientName: "test")
 
         // Initialize
+        XCTAssertEqual(handler.serverVersion, "1.3.1")
         let initReq = Data(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#.utf8)
         if case .reply(let replyData) = await handler.handleMessageData(initReq, context: ctx, executor: executor),
            let decoded = try? JSONValue.decode(from: replyData) {
             XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["protocolVersion"]?.stringValue, "2025-06-18")
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.3.1")
         } else {
             XCTFail("Expected initialize reply")
         }
@@ -500,6 +502,22 @@ final class AgentControlTests: XCTestCase {
         XCTAssertNotNil(prefsTool)
         let cleanBoxProp = prefsTool?.inputSchema.objectValue?["properties"]?.objectValue?["clean_box_streaming_players"]?.objectValue
         XCTAssertEqual(cleanBoxProp?["type"]?.stringValue, "boolean")
+
+        let multiviewTool = AgentToolCatalog.tool(named: "multiview_control")
+        XCTAssertNotNil(multiviewTool)
+        let multiviewActions = multiviewTool?.inputSchema.objectValue?["properties"]?.objectValue?["action"]?.objectValue?["enum"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+        XCTAssertTrue(multiviewActions.contains("reset_mixer"))
+
+        let setVolumeTool = AgentToolCatalog.tool(named: "set_volume")
+        XCTAssertNotNil(setVolumeTool)
+        let setVolumeProps = setVolumeTool?.inputSchema.objectValue?["properties"]?.objectValue
+        XCTAssertNotNil(setVolumeProps?["volume_percent"])
+        XCTAssertNotNil(setVolumeProps?["muted"])
+        XCTAssertNotNil(setVolumeProps?["tab_id"])
+        XCTAssertNotNil(setVolumeProps?["slot"])
+        XCTAssertNotNil(setVolumeProps?["window_id"])
+        let setVolumeRequired = setVolumeTool?.inputSchema.objectValue?["required"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+        XCTAssertEqual(setVolumeRequired, ["volume_percent"])
     }
 
     func testConnectedServiceSecurityAliasResolutionAndMCPDiscovery() async throws {

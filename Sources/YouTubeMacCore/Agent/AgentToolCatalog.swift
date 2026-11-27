@@ -304,7 +304,7 @@ public enum AgentToolCatalog {
             requiredTier: .playbackAndNavigation,
             inputSchema: schema(
                 properties: [
-                    "action": enumProp(["enter", "exit", "toggle", "set_layout", "cycle_layout", "solo", "exit_solo", "focus_audio", "cycle_audio_next", "cycle_audio_prev", "mute_all", "promote_primary"], "Multiview action."),
+                    "action": enumProp(["enter", "exit", "toggle", "set_layout", "cycle_layout", "solo", "exit_solo", "focus_audio", "cycle_audio_next", "cycle_audio_prev", "mute_all", "reset_mixer", "promote_primary"], "Multiview action."),
                     "layout": enumProp(["auto", "spotlight", "stacked"], "Target layout when action is set_layout."),
                     "tab_id": strProp("Optional target tab UUID string."),
                     "slot": intProp("Optional 1-based Multiview slot (1..4).", min: 1, max: 4),

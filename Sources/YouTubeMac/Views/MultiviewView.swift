@@ -1,5 +1,33 @@
+import AppKit
 import SwiftUI
 import YouTubeMacCore
+
+/// Forces a dark HUD `NSAppearance` onto the `NSPopover`'s backing `NSWindow` so SwiftUI `.popover`
+/// media overlays stay crisp and legible in both Day (Light) and Night (Dark) window appearances.
+struct DarkPopoverAppearanceSyncView: NSViewRepresentable {
+    func makeNSView(context: Context) -> DarkPopoverAppearanceHostNSView {
+        DarkPopoverAppearanceHostNSView()
+    }
+
+    func updateNSView(_ nsView: DarkPopoverAppearanceHostNSView, context: Context) {
+        nsView.syncWindowAppearance()
+    }
+}
+
+@MainActor
+final class DarkPopoverAppearanceHostNSView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncWindowAppearance()
+    }
+
+    func syncWindowAppearance() {
+        guard let window else { return }
+        if window.appearance?.name != .darkAqua {
+            window.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+}
 
 /// Compact macOS 26/27 Liquid Glass control bar for Native Multiview (2-Up / 3-Up / 2×2 Quad-Box).
 struct MultiviewControlBar: View {
@@ -101,8 +129,49 @@ struct MultiviewControlBar: View {
                 }
                 .layoutPriority(-1)
 
-                // Trailing action capsule: Save Layout, Add Stream, Mute All, Exit Single View
+                // Trailing action capsule: Reset Mix (when custom), Save Layout, Add Stream, Mute All, Exit Single View
                 HStack(spacing: AppSpacing.sm) {
+                    if controller.hasCustomMultiviewMix {
+                        Button {
+                            controller.resetMultiviewMixer()
+                        } label: {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: AppSpacing.xs) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(AppIconFont.sm(weight: .semibold))
+                                    Text("Reset Mix")
+                                        .font(AppFont.caption(weight: .semibold))
+                                }
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+
+                                HStack(spacing: AppSpacing.xs) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(AppIconFont.sm(weight: .semibold))
+                                    Text("Reset")
+                                        .font(AppFont.caption(weight: .semibold))
+                                }
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                    .fixedSize()
+                                    .padding(.horizontal, AppSpacing.md)
+                            }
+                            .foregroundStyle(AppleTheme.accentText)
+                            .frame(height: 28)
+                            .appleGlass(
+                                in: Capsule(style: .continuous),
+                                tint: AppleTheme.accentText.opacity(0.14),
+                                interactive: true
+                            )
+                            .contentShape(Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Reset Multiview Audio Mixer")
+                    }
+
                     savePresetButton
 
                     addStreamMenu
@@ -285,6 +354,7 @@ struct MultiviewControlBar: View {
 struct MultiviewOverlayView: View {
     @Bindable var controller: AppController
     @State private var hoveredActionPillTileID: UUID?
+    @State private var volumePopoverTileID: UUID?
 
     var body: some View {
         GeometryReader { proxy in
@@ -305,7 +375,9 @@ struct MultiviewOverlayView: View {
             ZStack(alignment: .topLeading) {
                 if let soloTab = controller.soloMultiviewTab,
                    let soloIdx = tiles.firstIndex(where: { $0.id == soloTab.id }) {
-                    let isHovered = (controller.hoveredMultiviewTileID == soloTab.id) || (hoveredActionPillTileID == soloTab.id)
+                    let isHovered = (controller.hoveredMultiviewTileID == soloTab.id)
+                        || (hoveredActionPillTileID == soloTab.id)
+                        || (volumePopoverTileID == soloTab.id)
                     tileTopCornerControls(
                         tab: soloTab,
                         index: soloIdx,
@@ -321,8 +393,9 @@ struct MultiviewOverlayView: View {
                             let rect = frames[index]
                             let isAudio = (controller.multiviewAudioTab?.id == tab.id)
                             let isFocused = (controller.selectedTabID == tab.id)
-                            let isHovered = controller.activeMultiviewDividerDragID == nil
-                                && ((controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id))
+                            let isHovered = (volumePopoverTileID == tab.id)
+                                || (controller.activeMultiviewDividerDragID == nil
+                                    && ((controller.hoveredMultiviewTileID == tab.id) || (hoveredActionPillTileID == tab.id)))
 
                             // 0. Per-tile load failure / WebContent crash recovery card (strictly scoped to this tile's rect)
                             if let tileError = tab.loadError {
@@ -371,6 +444,11 @@ struct MultiviewOverlayView: View {
                         }
                     }
                 }
+            }
+        }
+        .onChange(of: controller.multiviewTabIDs) { _, newIDs in
+            if let openID = volumePopoverTileID, !newIDs.contains(openID) {
+                volumePopoverTileID = nil
             }
         }
     }
@@ -441,7 +519,7 @@ struct MultiviewOverlayView: View {
                 Spacer(minLength: AppSpacing.sm)
 
                 if showActions {
-                    tileActionPill(tab: tab, index: index, totalCount: totalCount)
+                    tileActionPill(tab: tab, index: index, totalCount: totalCount, isAudio: isAudio)
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }
             }
@@ -459,7 +537,22 @@ struct MultiviewOverlayView: View {
         maxWidth: CGFloat
     ) -> some View {
         let isSilentCompanionWeb = tab.isCompanionTab && !tab.mediaStatus.hasVideo
-        let isMuted = tab.mediaStatus.isMuted || !isAudio
+        let effective = controller.effectiveMultiviewVolume(for: tab.id)
+        let isMuted = effective.muted || effective.volumePercent == 0
+        let hasCustomVolume = controller.multiviewCustomVolumes[tab.id] != nil
+        let badgeIcon: String = {
+            if isSilentCompanionWeb { return "globe" }
+            if isMuted { return "speaker.slash.fill" }
+            return isAudio ? "waveform" : "speaker.wave.1.fill"
+        }()
+        let badgeIconColor: Color = {
+            if isSilentCompanionWeb { return Color.white.opacity(0.86) }
+            if isMuted { return Color.white.opacity(0.82) }
+            if isAudio || hasCustomVolume { return AppleTheme.accentText }
+            return Color.white.opacity(0.86)
+        }()
+        let showVolumePercent = !isSilentCompanionWeb && !isMuted && (!isAudio || hasCustomVolume)
+
         Button {
             if isSilentCompanionWeb {
                 controller.selectTab(id: tab.id)
@@ -479,14 +572,15 @@ struct MultiviewOverlayView: View {
                             .fill(isAudio ? AppleTheme.accentFill : Color.white.opacity(0.22))
                     )
 
-                if isSilentCompanionWeb {
-                    Image(systemName: "globe")
-                        .font(AppIconFont.xs(weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.86))
-                } else {
-                    Image(systemName: isMuted ? "speaker.slash.fill" : "waveform")
-                        .font(AppIconFont.xs(weight: .semibold))
-                        .foregroundStyle(isMuted ? Color.white.opacity(0.82) : AppleTheme.accentText)
+                Image(systemName: badgeIcon)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle(badgeIconColor)
+
+                if showVolumePercent {
+                    Text("\(effective.volumePercent)%")
+                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                        .foregroundStyle(hasCustomVolume ? AppleTheme.accentText : Color.white.opacity(0.88))
+                        .fixedSize()
                 }
 
                 if tileTitleVisible(maxWidth: maxWidth) {
@@ -522,15 +616,51 @@ struct MultiviewOverlayView: View {
     }
 
     @ViewBuilder
-    private func tileActionPill(tab: BrowserTab, index: Int, totalCount: Int) -> some View {
+    private func tileActionPill(tab: BrowserTab, index: Int, totalCount: Int, isAudio: Bool) -> some View {
         let isYTTV = YouTubeURLRouter.isYouTubeTVHost(tab.url.host)
         let isCompanion = tab.isCompanionTab
         let isSoloed = (controller.soloMultiviewTabID == tab.id)
         let companionServiceName = isCompanion ? StreamingServiceCatalog.service(matchingURL: tab.url)?.name : nil
+        let effective = controller.effectiveMultiviewVolume(for: tab.id)
+        let isPopoverOpen = (volumePopoverTileID == tab.id)
+        let hasCustomVolume = controller.multiviewCustomVolumes[tab.id] != nil
+        let volumeIcon: String = {
+            if effective.muted || effective.volumePercent == 0 {
+                return "speaker.slash.fill"
+            }
+            return effective.volumePercent < 50 ? "speaker.wave.1.fill" : "speaker.wave.2.fill"
+        }()
 
         // Strictly <= 5 compact icons in top-36pt pill (never encroaches on bottom 64pt video scrubber).
         HStack(spacing: AppSpacing.xxs) {
-            // 1. Zero-Latency Solo / Back to Grid
+            // 1. Per-Tile Volume Slider Popover
+            Button {
+                volumePopoverTileID = isPopoverOpen ? nil : tab.id
+            } label: {
+                Image(systemName: volumeIcon)
+                    .font(AppIconFont.xs(weight: .semibold))
+                    .foregroundStyle((isPopoverOpen || hasCustomVolume) ? AppleTheme.accentText : .white.opacity(0.92))
+                    .minHitTarget(24, shape: Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Tile Volume (\(effective.volumePercent)%)")
+            .popover(
+                isPresented: Binding(
+                    get: { volumePopoverTileID == tab.id },
+                    set: { open in
+                        if open {
+                            volumePopoverTileID = tab.id
+                        } else if volumePopoverTileID == tab.id {
+                            volumePopoverTileID = nil
+                        }
+                    }
+                ),
+                arrowEdge: .bottom
+            ) {
+                tileVolumePopoverContent(tab: tab, slotNumber: index + 1, isAudio: isAudio)
+            }
+
+            // 2. Zero-Latency Solo / Back to Grid
             tileIconButton(
                 systemImage: isSoloed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
                 helpText: isSoloed ? "Back to Multiview Grid (Esc / ⌘⌥Z)" : "Solo / Expand Tile (⌘⌥Z)"
@@ -538,7 +668,7 @@ struct MultiviewOverlayView: View {
                 controller.toggleMultiviewSolo(tabID: tab.id)
             }
 
-            // 2. Live Stream Sync Micro-Nudge (-5s, -1s, +1s, Jump to Live)
+            // 3. Live Stream Sync Micro-Nudge (-5s, -1s, +1s, Jump to Live)
             if tab.mediaStatus.hasVideo {
                 Menu {
                     Button("Nudge Back −5s") {
@@ -570,25 +700,25 @@ struct MultiviewOverlayView: View {
                 .help("Live Stream Sync Micro-Nudge")
             }
 
-            // 3. Reload / Browse
-            if isCompanion {
-                tileIconButton(
-                    systemImage: "arrow.clockwise",
-                    helpText: "Reload Stream"
-                ) {
-                    tab.reloadOrStop()
-                }
-            } else {
-                tileIconButton(
-                    systemImage: isYTTV ? "tv" : "house",
-                    helpText: isYTTV ? "Open YouTube TV Live Guide" : "Browse YouTube in This Tile"
-                ) {
-                    controller.navigateMultiviewTileToBrowse(id: tab.id)
-                }
-            }
-
-            // 4. Overflow Tile Actions (Reorder, Promote, Open in Safari, Exit to Single View)
+            // 4. Overflow Tile Actions (Reload/Browse, Reorder, Promote, Open in Safari, Exit to Single View)
             Menu {
+                if isCompanion {
+                    Button("Reload Stream") {
+                        tab.reloadOrStop()
+                    }
+                    Button(companionServiceName.map { "Browse \($0)" } ?? "Browse Service Home") {
+                        controller.navigateMultiviewTileToBrowse(id: tab.id)
+                    }
+                } else {
+                    Button(isYTTV ? "Open YouTube TV Live Guide" : "Browse YouTube in This Tile") {
+                        controller.navigateMultiviewTileToBrowse(id: tab.id)
+                    }
+                    Button("Reload Stream") {
+                        tab.reloadOrStop()
+                    }
+                }
+                Divider()
+
                 if !isSoloed {
                     if index > 0 {
                         Button("Promote to Main Tile") {
@@ -611,13 +741,6 @@ struct MultiviewOverlayView: View {
                     Button(tab.isCleanBoxBypassed ? "Clean-Box Video" : "Show Full Page") {
                         controller.toggleCleanBox(forTabID: tab.id)
                     }
-                }
-                if isCompanion {
-                    Button(companionServiceName.map { "Browse \($0)" } ?? "Browse Service Home") {
-                        controller.navigateMultiviewTileToBrowse(id: tab.id)
-                    }
-                }
-                if showCleanBoxAction || isCompanion {
                     Divider()
                 }
                 Button("Expand to Single View") {
@@ -660,6 +783,142 @@ struct MultiviewOverlayView: View {
         .onHover { hovering in
             hoveredActionPillTileID = hovering ? tab.id : (hoveredActionPillTileID == tab.id ? nil : hoveredActionPillTileID)
         }
+    }
+
+    @ViewBuilder
+    private func tileVolumePopoverContent(tab: BrowserTab, slotNumber: Int, isAudio: Bool) -> some View {
+        let effective = controller.effectiveMultiviewVolume(for: tab.id)
+        let hasCustomVolume = controller.multiviewCustomVolumes[tab.id] != nil
+        let statusLabel: String = {
+            if effective.muted || effective.volumePercent == 0 {
+                return hasCustomVolume ? "Custom Mix · Muted" : "Muted"
+            }
+            if hasCustomVolume {
+                return "Custom Mix"
+            }
+            if isAudio {
+                return "Focused Audio"
+            }
+            return controller.settings.multiviewAudioDuckingEnabled ? "Ducked Background" : "Background"
+        }()
+
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack(spacing: AppSpacing.sm) {
+                Text("\(slotNumber)")
+                    .font(AppFont.micro(weight: .bold, tabular: true))
+                    .foregroundStyle(.white)
+                    .frame(width: 18, height: 18)
+                    .background(
+                        Circle()
+                            .fill(isAudio ? AppleTheme.accentFill : Color.white.opacity(0.20))
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tab.displayTitle)
+                        .font(AppFont.callout(weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Text(statusLabel)
+                        .font(AppFont.micro(weight: .medium))
+                        .foregroundStyle(hasCustomVolume ? AppleTheme.accentText : AppleTheme.textSecondary)
+                }
+
+                Spacer(minLength: AppSpacing.sm)
+
+                Text("\(effective.volumePercent)%")
+                    .font(AppFont.callout(weight: .bold, tabular: true))
+                    .foregroundStyle(effective.muted || effective.volumePercent == 0 ? AppleTheme.textSecondary : .primary)
+            }
+
+            Slider(
+                value: Binding(
+                    get: { Double(controller.effectiveMultiviewVolume(for: tab.id).volumePercent) },
+                    set: { newVal in
+                        controller.setMultiviewTileVolume(tabID: tab.id, volumePercent: Int(newVal.rounded()))
+                    }
+                ),
+                in: 0...100,
+                step: 5
+            )
+            .controlSize(.small)
+            .tint(AppleTheme.accentFill)
+
+            HStack(spacing: AppSpacing.xs) {
+                ForEach([0, 15, 50, 100], id: \.self) { preset in
+                    let isSelected = effective.volumePercent == preset
+                    Button {
+                        controller.setMultiviewTileVolume(tabID: tab.id, volumePercent: preset)
+                    } label: {
+                        Text(preset == 0 ? "Mute" : "\(preset)%")
+                            .font(AppFont.caption(weight: isSelected ? .semibold : .medium, tabular: true))
+                            .frame(maxWidth: .infinity)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(isSelected ? AppleTheme.accentFill : Color.primary.opacity(0.10))
+                            )
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !isAudio || controller.hasCustomMultiviewMix {
+                Divider()
+
+                HStack(spacing: AppSpacing.sm) {
+                    if !isAudio {
+                        Button {
+                            controller.focusMultiviewAudio(tabID: tab.id, showFeedback: false)
+                        } label: {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "waveform")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text("Focus")
+                                    .font(AppFont.caption(weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.primary.opacity(0.10))
+                            )
+                            .foregroundStyle(Color.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if controller.hasCustomMultiviewMix {
+                        Button {
+                            controller.resetMultiviewMixer()
+                        } label: {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text("Reset Mix")
+                                    .font(AppFont.caption(weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(AppleTheme.accentText.opacity(0.18))
+                            )
+                            .foregroundStyle(AppleTheme.accentText)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(AppSpacing.lg)
+        .frame(width: 248)
+        .background(DarkPopoverAppearanceSyncView())
+        .foregroundStyle(Color.primary)
+        .preferredColorScheme(.dark)
+        .environment(\.font, AppFont.body)
     }
 
     @ViewBuilder

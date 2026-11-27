@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="GlassGrid You"
-VERSION="1.3.0"
-BUILD_NUMBER="6"
+VERSION="1.3.1"
+BUILD_NUMBER="7"
 IDENTITY=""
 NOTARY_PROFILE="GlassGridYouNotary"
 AD_HOC="0"
@@ -22,8 +22,8 @@ Usage: ./scripts/release-dmg.sh [options]
 Builds, embeds Sparkle 2, signs inside-out (Hardened Runtime), packages, and optionally notarizes GlassGrid You as a macOS .dmg.
 
 Options:
-  --version <semver>             CFBundleShortVersionString (default: 1.3.0)
-  --build <number>               CFBundleVersion (default: 6)
+  --version <semver>             CFBundleShortVersionString (default: 1.3.1)
+  --build <number>               CFBundleVersion (default: 7)
   --identity <name>              Codesigning identity (auto-detects "Developer ID Application" if omitted)
   --notary-profile <name>        notarytool Keychain profile name (default: GlassGridYouNotary)
   --sparkle-public-key <base64>  Optional Sparkle Ed25519 public key (SUPublicEDKey) for signed auto-updates
@@ -194,8 +194,11 @@ echo "==> Generating and verifying portable SHA-256 checksum..."
     shasum -a 256 -c "$(basename "$SHA_PATH")"
 )
 
-# Optional Sparkle EdDSA signature & appcast <item> snippet if sign_update is installed in PATH.
+# Optional Sparkle EdDSA signature & appcast <item> snippet if sign_update is installed in PATH or Sparkle artifacts.
 SIGN_UPDATE_BIN="${SPARKLE_SIGN_UPDATE:-$(command -v sign_update || true)}"
+if [[ -z "$SIGN_UPDATE_BIN" && -x "$ROOT_DIR/.build/artifacts/sparkle/Sparkle/bin/sign_update" ]]; then
+    SIGN_UPDATE_BIN="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/bin/sign_update"
+fi
 APPCAST_SNIPPET="$OUTPUT_DIR/appcast-item-${VERSION}.xml"
 if [[ "$AD_HOC" != "1" && -n "$SIGN_UPDATE_BIN" && -x "$SIGN_UPDATE_BIN" ]]; then
     echo "==> Signing DMG for Sparkle appcast using $SIGN_UPDATE_BIN..."

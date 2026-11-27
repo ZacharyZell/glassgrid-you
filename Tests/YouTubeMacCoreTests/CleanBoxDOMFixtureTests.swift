@@ -6,14 +6,17 @@ import XCTest
 
 @MainActor
 final class CleanBoxDOMFixtureTests: XCTestCase {
-    private final class OfflineFixtureHost: NSObject, WKNavigationDelegate {
+    private final class OfflineFixtureHost: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let window: NSWindow
         let webView: WKWebView
+        private let captureBridgeMessages: Bool
+        private(set) var bridgeMessages: [[String: Any]] = []
         private var didAllowInitialMainLoad = false
         private var loadContinuation: CheckedContinuation<Void, Error>?
 
-        init(size: NSSize, config: DistractionFreeConfig) {
+        init(size: NSSize, config: DistractionFreeConfig, captureBridgeMessages: Bool = false) {
             _ = NSApplication.shared
+            self.captureBridgeMessages = captureBridgeMessages
             let wkConfig = WKWebViewConfiguration()
             wkConfig.userContentController.addUserScript(
                 WKUserScript(
@@ -35,6 +38,9 @@ final class CleanBoxDOMFixtureTests: XCTestCase {
             self.window = win
             self.webView = wv
             super.init()
+            if captureBridgeMessages {
+                wkConfig.userContentController.add(self, name: "ytmacBridge")
+            }
             wv.navigationDelegate = self
         }
 
@@ -59,10 +65,19 @@ final class CleanBoxDOMFixtureTests: XCTestCase {
         }
 
         func teardown() {
+            if captureBridgeMessages {
+                webView.configuration.userContentController.removeScriptMessageHandler(forName: "ytmacBridge")
+            }
             webView.navigationDelegate = nil
             webView.stopLoading()
             window.contentView = nil
             window.close()
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if let dict = message.body as? [String: Any] {
+                bridgeMessages.append(dict)
+            }
         }
 
         func webView(
@@ -507,5 +522,127 @@ final class CleanBoxDOMFixtureTests: XCTestCase {
         XCTAssertEqual(hboRes?["attr"] as? String, "player")
         XCTAssertEqual((hboRes?["w"] as? NSNumber)?.intValue, 640)
         XCTAssertEqual((hboRes?["h"] as? NSNumber)?.intValue, 360)
+    }
+
+    func testNetflixAndHuluPassthroughLeaveWatchPlayerUntouched() async throws {
+        let config = makeTileConfig()
+        let bootstrap = EnhancementScript.bootstrapScript(config: config)
+        let audioScript = EnhancementScript.setAudioLevelScript(muted: false, volumePercent: 45)
+        for snippet in [bootstrap, audioScript] {
+            XCTAssertFalse(snippet.contains(":has("))
+            XCTAssertFalse(snippet.contains("MutationObserver"))
+            XCTAssertFalse(snippet.contains("AudioContext"))
+            XCTAssertFalse(snippet.contains("ytInitialPlayerResponse"))
+        }
+
+        let host = OfflineFixtureHost(size: NSSize(width: 640, height: 360), config: config, captureBridgeMessages: true)
+        defer { host.teardown() }
+
+        // 1. Netflix /watch/80057281 with [data-uia="watch-video"] / .NFPlayer + <video>
+        let netflixHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head><style>
+          body { margin: 0; background: #000; }
+          .watch-video[data-uia="watch-video"] { width: 480px; height: 270px; position: relative; }
+          .NFPlayer { width: 100%; height: 100%; }
+          video { width: 100%; height: 100%; }
+        </style></head>
+        <body>
+          <div class="watch-video" data-uia="watch-video" id="nflx-wrap">
+            <div class="NFPlayer" id="nflx-player">
+              <video id="nflx-v" src="https://cdn.example.invalid/nflx.mp4"></video>
+            </div>
+          </div>
+          <script>
+            const v = document.getElementById('nflx-v');
+            Object.defineProperty(v, 'readyState', { value: 4, configurable: true });
+            Object.defineProperty(v, 'duration', { value: 2400, configurable: true });
+          </script>
+        </body>
+        </html>
+        """
+
+        try await host.loadFixture(
+            html: netflixHTML,
+            baseURL: URL(string: "https://www.netflix.com/watch/80057281")!
+        )
+
+        let netflixRes = try await host.eval("""
+        (() => ({
+            active: document.documentElement.dataset.ytmacCleanBox ?? '',
+            taggedCount: document.querySelectorAll('[data-ytmac-cb]').length,
+            styleEl: document.getElementById('ytmac-cleanbox-style') !== null,
+            foundVideoId: (window.__ytmacGetMainVideo && window.__ytmacGetMainVideo()?.id) || ''
+        }))()
+        """) as? [String: Any]
+        XCTAssertEqual(netflixRes?["active"] as? String, "false")
+        XCTAssertEqual((netflixRes?["taggedCount"] as? NSNumber)?.intValue, 0)
+        XCTAssertEqual(netflixRes?["styleEl"] as? Bool, false)
+        XCTAssertEqual(netflixRes?["foundVideoId"] as? String, "nflx-v")
+
+        let appliedAudio = try await host.eval(audioScript) as? Bool
+        XCTAssertEqual(appliedAudio, true)
+        try await Task.sleep(for: .milliseconds(40))
+
+        let netflixAudioState = try await host.eval("""
+        (() => {
+            const v = document.getElementById('nflx-v');
+            return {
+                muted: Boolean(v.muted),
+                volumePercent: Math.round(v.volume * 100)
+            };
+        })()
+        """) as? [String: Any]
+        XCTAssertEqual(netflixAudioState?["muted"] as? Bool, false)
+        XCTAssertEqual((netflixAudioState?["volumePercent"] as? NSNumber)?.intValue, 45)
+        XCTAssertEqual(host.bridgeMessages.last?["volumePercent"] as? Int, 45)
+        XCTAssertEqual(host.bridgeMessages.last?["isMuted"] as? Bool, false)
+
+        // 2. Hulu /watch/123 with #dash-player-container + <video>
+        let huluHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head><style>
+          body { margin: 0; background: #000; }
+          #dash-player-container { width: 480px; height: 270px; position: relative; }
+          video { width: 100%; height: 100%; }
+        </style></head>
+        <body>
+          <div id="dash-player-container">
+            <video id="hulu-v" src="https://cdn.example.invalid/hulu.mp4"></video>
+          </div>
+          <script>
+            const v = document.getElementById('hulu-v');
+            Object.defineProperty(v, 'readyState', { value: 4, configurable: true });
+            Object.defineProperty(v, 'duration', { value: 1800, configurable: true });
+          </script>
+        </body>
+        </html>
+        """
+
+        try await host.loadFixture(
+            html: huluHTML,
+            baseURL: URL(string: "https://www.hulu.com/watch/123")!
+        )
+
+        let huluRes = try await host.eval("""
+        (() => ({
+            active: document.documentElement.dataset.ytmacCleanBox ?? '',
+            taggedCount: document.querySelectorAll('[data-ytmac-cb]').length,
+            styleEl: document.getElementById('ytmac-cleanbox-style') !== null,
+            foundVideoId: (window.__ytmacGetMainVideo && window.__ytmacGetMainVideo()?.id) || ''
+        }))()
+        """) as? [String: Any]
+        XCTAssertEqual(huluRes?["active"] as? String, "false")
+        XCTAssertEqual((huluRes?["taggedCount"] as? NSNumber)?.intValue, 0)
+        XCTAssertEqual(huluRes?["styleEl"] as? Bool, false)
+        XCTAssertEqual(huluRes?["foundVideoId"] as? String, "hulu-v")
+
+        let appliedHuluAudio = try await host.eval(audioScript) as? Bool
+        XCTAssertEqual(appliedHuluAudio, true)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(host.bridgeMessages.last?["volumePercent"] as? Int, 45)
+        XCTAssertEqual(host.bridgeMessages.last?["isMuted"] as? Bool, false)
     }
 }

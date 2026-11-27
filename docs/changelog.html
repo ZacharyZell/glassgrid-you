@@ -76,16 +76,16 @@
         <span class="section-label">Release Log &amp; Version Diffs</span>
         <h1>What changed in every update.</h1>
         <p class="changelog-sub">
-          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.3.0</strong>, Build 6).
+          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.3.1</strong>, Build 7).
         </p>
 
         <nav class="release-jump-strip" aria-label="Jump to version">
           <a class="release-jump-pill" href="#v1-3-1">
-            <span class="jump-dot jump-dot--preview" aria-hidden="true"></span>
-            <span>v1.3.1 (Source)</span>
+            <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span>v1.3.1</span>
           </a>
           <a class="release-jump-pill" href="#v1-3-0">
-            <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
             <span>v1.3.0</span>
           </a>
           <a class="release-jump-pill" href="#v1-2-0">
@@ -142,22 +142,23 @@
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.3.1</h2>
-              <span class="release-status release-status--preview">Preview · Source (main)</span>
+              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 7</span>
             </div>
             <div class="release-meta-row">
-              <time datetime="2026-11-26">Nov 26, 2026</time>
-              <span>Source Build (Unnotarized Preview)</span>
-              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/commits/main" target="_blank" rel="noopener noreferrer">View Commits on GitHub &rarr;</a>
+              <time datetime="2026-11-27">Nov 27, 2026</time>
+              <span>DMG: 8,729,563 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/756e993...main" target="_blank" rel="noopener noreferrer">Diff v1.3.0 &rarr; v1.3.1 &rarr;</a>
             </div>
           </div>
 
           <div class="release-delta-summary">
-            <p><strong>Compared to v1.3.0:</strong> Switches Disney+ Clean-Box handling to passive FairPlay-safe passthrough so windowed, Multiview, and Mini-Player playback never blanks outside native fullscreen, and upgrades the Floating Mini-Player with responsive 8-edge/corner drag resizing, direct Shrink (<code>&minus;</code>) / Expand (<code>+</code>) header buttons, and new <strong>XL</strong> presets.</p>
+            <p><strong>Compared to v1.3.0:</strong> Expands passive FairPlay-safe passthrough across <strong>Disney+, Netflix, and Hulu</strong> with unmasked DRM tile layers so windowed, Multiview, and Mini-Player streams never blank outside fullscreen; adds <strong>Per-Tile Multiview Volume Sliders</strong> (docked &amp; Floating Grid <em>Stream Volumes</em> + <code>reset_mixer</code>); and upgrades the Floating Mini-Player with responsive 8-edge/corner drag resizing, direct Shrink (<code>&minus;</code>) / Expand (<code>+</code>) header buttons, new <strong>XL</strong> presets, and exact <code>1.25&times;</code> / <code>1.75&times;</code> speed labels.</p>
             <div class="delta-pills">
-              <span class="delta-pill">Disney+ &rarr; Passive FairPlay Passthrough</span>
-              <span class="delta-pill">+8-Edge Mini-Player Drag Resize</span>
-              <span class="delta-pill">+Direct &minus; / + Header &amp; XL Presets</span>
-              <span class="delta-pill">125 &rarr; 126 Unit Tests</span>
+              <span class="delta-pill">Disney+/Netflix/Hulu &rarr; FairPlay Passthrough</span>
+              <span class="delta-pill">+Per-Tile Multiview Volume Mixer</span>
+              <span class="delta-pill">+8-Edge Mini-Player Drag &amp; XL Presets</span>
+              <span class="delta-pill">+Developer ID Build Auto-Detection</span>
+              <span class="delta-pill">125 &rarr; 129 Unit Tests</span>
             </div>
           </div>
 
@@ -165,23 +166,25 @@
             <section class="diff-group">
               <span class="diff-tag diff-tag--added">Added</span>
               <ul class="diff-list">
-                <li><strong>8-Edge &amp; Corner Floating Mini-Player Drag Resizing:</strong> Added a dedicated topmost <code>MiniPlayerEdgeResizeView</code> (<code>8pt</code> edge hit strips, <code>12–14pt</code> corner handles, bottom-right hover resize grip, and macOS 15+ <code>NSCursor.frameResize</code> cursors) with pure <code>MiniPlayerGeometry.dragResizedFrame</code> math (16:9 aspect-locked in Single mode; free clamped scaling above <code>440&times;248</code> in Grid mode) and explicit perimeter passthrough in <code>WindowDragNSView</code> so dragging edges or header corners reliably resizes instead of moving the panel.</li>
-                <li><strong>Direct Shrink (<code>&minus;</code>) / Expand (<code>+</code>) Header Buttons &amp; XL Presets:</strong> Added 1-click size stepping controls straight in the Single and Multiview Grid hover headers alongside new <strong>XL</strong> presets (<strong>880&times;495</strong> Single / <strong>1040&times;585</strong> Grid), live <code>W&times;H</code> dimension readout in Display Options, and <code>extraLarge</code> support across MCP (<code>mini_player_control</code>) and <code>glassgrid mini-player</code> CLI commands.</li>
+                <li><strong>Per-Tile Multiview Volume Sliders &amp; Mixer:</strong> Added 1-click Per-Tile Volume Slider dark-HUD popovers (<code>0&ndash;100%</code> slider, <code>Mute</code> / <code>15%</code> / <code>50%</code> / <code>100%</code> quick pills, <code>Focus</code>, and <code>Reset Mix</code>) inside Multiview&rsquo;s 5-icon top pill, plus synchronized <strong>Stream Volumes</strong> sliders and <em>Reset Mixer</em> inside the Floating Multiview Grid&rsquo;s <code>304pt</code> Options popover and <code>reset_mixer</code> support via MCP/CLI (using strictly DRM-safe native <code>HTMLMediaElement.volume</code> / player APIs with zero <code>AudioContext</code> and 50ms debounced JS dispatch).</li>
+                <li><strong>8-Edge &amp; Corner Floating Mini-Player Drag Resizing:</strong> Added a dedicated topmost <code>MiniPlayerEdgeResizeView</code> (<code>8pt</code> edge hit strips, <code>12–14pt</code> corner handles, bottom-right hover resize grip, and macOS 15+ <code>NSCursor.frameResize</code> cursors) with pure <code>MiniPlayerGeometry.dragResizedFrame</code> math (16:9 aspect-locked in Single mode; free clamped scaling above <code>440&times;248</code> in Grid mode) and explicit perimeter passthrough in <code>WindowDragNSView</code>.</li>
+                <li><strong>Direct Shrink (<code>&minus;</code>) / Expand (<code>+</code>) Header Buttons &amp; XL Presets:</strong> Added 1-click size stepping controls straight in the Single and Multiview Grid hover headers alongside new <strong>XL</strong> presets (<strong>880&times;495</strong> Single / <strong>1040&times;585</strong> Grid), live <code>W&times;H</code> dimension readout, and <code>extraLarge</code> support across MCP (<code>mini_player_control</code>) and <code>glassgrid mini-player</code> CLI commands.</li>
+                <li><strong>Local Developer ID Auto-Detection (<code>scripts/bundle.sh</code>):</strong> Automatically selects an installed <code>Developer ID Application</code> certificate when <code>CODESIGN_IDENTITY</code> is unset (falling back to ad-hoc <code>-</code> on contributor/CI machines) so local rebuilds stop triggering macOS Keychain <code>WebCrypto Master Key</code> re-prompts.</li>
               </ul>
             </section>
 
             <section class="diff-group">
               <span class="diff-tag diff-tag--changed">Changed</span>
               <ul class="diff-list">
-                <li><strong>Adaptive <code>&ge;300pt</code> Mini-Player Header &amp; <code>304pt</code> Display Options Popover:</strong> Compacted Single-mode header items dynamically below <code>420pt</code>/<code>360pt</code>/<code>340pt</code> so Shrink/Expand, Display Options, and Dock/Close buttons remain accessible down to <code>300&times;169</code>, widened the Display Options popover from <code>288pt</code> to <code>304pt</code> so all 4 preset pills render without text truncation, and made the floating panel key on popover preparation so controls respond reliably inside <code>.nonactivatingPanel</code>.</li>
+                <li><strong>Adaptive <code>&ge;300pt</code> Mini-Player Header &amp; <code>304pt</code> Dark-HUD Popover:</strong> Dynamically folds secondary Single-mode header buttons below <code>420pt</code>/<code>360pt</code>/<code>340pt</code> down to <code>300&times;169</code>, widens Display Options to <code>304pt</code> for non-truncating 4-pill size selection, and locks floating/tile HUD popovers with <code>NSAppearance.Name.darkAqua</code> + <code>.preferredColorScheme(.dark)</code> for crisp contrast in both Day and Night modes.</li>
               </ul>
             </section>
 
             <section class="diff-group">
               <span class="diff-tag diff-tag--fixed">Fixed</span>
               <ul class="diff-list">
-                <li><strong>Disney+ Non-Fullscreen Black-Screen &amp; Pop-Out Playback Fix:</strong> Moved Disney+ from DOM-mutating Clean-Box styling (<code>position: fixed</code> / <code>z-index</code> / black ancestor fills over <code>&lt;disney-web-player&gt;</code>) to passive <code>.companionPassthrough</code>, removed offscreen <code>cornerRadius</code>/<code>masksToBounds</code> layer masking on the Mini-Player container that interfered with FairPlay protected video surfaces, prioritized the selected active tab when popping out via <kbd>⌘⇧M</kbd> or header controls, enabled pop-out on companion <code>.watch</code> routes even before async media metadata settles, and added subtle throttled WebKit viewport sync after resize gestures.</li>
-                <li><strong>Aspect-Locked Clamping &amp; Fullscreen Guardrails:</strong> Updated <code>MiniPlayerGeometry.resizedFrame</code> / <code>resizedGridFrame</code> to maintain exact 16:9 ratios when clamped by short screens and guarded floating preset/step transitions against fullscreen mutation.</li>
+                <li><strong>Strict-DRM Non-Fullscreen Playback &amp; Unmasked Multiview Tiles:</strong> Moved <strong>Disney+, Netflix, and Hulu</strong> to passive <code>.companionPassthrough</code>, removed offscreen <code>WKWebView.layer</code> masking (<code>cornerRadius</code>/<code>masksToBounds</code>) on all 7 strict-DRM services and YouTube TV in docked &amp; floating Multiview grids (with dynamic URL navigation re-evaluation), removed Mini-Player <code>rootView.layer</code> masking, prioritized <code>selectedTab</code> and companion <code>.watch</code> routes on pop-out, and expanded <code>CleanBoxDOMFixtureTests</code> + <code>YouTubeMacCoreTests</code> to <strong>129 tests</strong>.</li>
+                <li><strong>Mini-Player Speed Pill Labels &amp; Aspect Clamping:</strong> Replaced inline <code>%.2g&times;</code> speed formatting with <code>MediaStatus.formatPlaybackRate</code> so <code>1.25&times;</code> and <code>1.75&times;</code> display accurately without rounding, updated short-screen <code>resizedFrame</code> / <code>resizedGridFrame</code> clamping to preserve 16:9 geometry, and guarded step/preset transitions against fullscreen mutation.</li>
               </ul>
             </section>
           </div>
@@ -191,7 +194,7 @@
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.3.0</h2>
-              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 6</span>
+              <span class="release-status">Signed .dmg · Build 6</span>
             </div>
             <div class="release-meta-row">
               <time datetime="2026-11-26">Nov 26, 2026</time>

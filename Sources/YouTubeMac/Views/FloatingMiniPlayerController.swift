@@ -20,13 +20,25 @@ private final class MiniPlayerHoverState {
     var audioTabID: UUID?
     var layoutMode: MultiviewLayoutMode = .auto
     var splitRatios: MultiviewSplitRatios = .default
+    var tileVolumes: [UUID: Int] = [:]
+    var hasCustomMix: Bool = false
 
     var isHeaderVisible: Bool {
         isHovered || isPopoverPresented
     }
 
+    func effectiveVolume(for tab: BrowserTab) -> Int {
+        if let explicit = tileVolumes[tab.id] {
+            return MultiviewAudioMixer.clampVolume(explicit)
+        }
+        if tab.mediaStatus.isMuted {
+            return 0
+        }
+        return MultiviewAudioMixer.clampVolume(tab.mediaStatus.volumePercent)
+    }
+
     var allMuted: Bool {
-        !hostedTabs.isEmpty && hostedTabs.allSatisfy { !$0.mediaStatus.hasVideo || $0.mediaStatus.isMuted }
+        !hostedTabs.isEmpty && hostedTabs.allSatisfy { !$0.mediaStatus.hasVideo || effectiveVolume(for: $0) == 0 }
     }
 
     var canShrinkSingle: Bool {
@@ -345,12 +357,14 @@ private final class FlippedMiniPlayerContainerView: NSView {
                 webView.wantsLayer = true
             }
             if let layer = webView.layer {
-                let masks = tileRadius > 0
-                if layer.cornerRadius != tileRadius {
-                    layer.cornerRadius = tileRadius
+                let allowLayerMask = tileRadius > 0
+                    && MultiviewGridLayout.shouldMaskWebViewLayer(for: tab.webView.url ?? tab.url)
+                let effectiveRadius: CGFloat = allowLayerMask ? tileRadius : 0
+                if layer.cornerRadius != effectiveRadius {
+                    layer.cornerRadius = effectiveRadius
                 }
-                if layer.masksToBounds != masks {
-                    layer.masksToBounds = masks
+                if layer.masksToBounds != allowLayerMask {
+                    layer.masksToBounds = allowLayerMask
                 }
             }
         }
@@ -412,11 +426,20 @@ private struct FloatingMultiviewGridOverlayView: View {
                             .allowsHitTesting(false)
 
                         if !hideCornerBadgeForTopHeader {
+                            let effectiveVol = hoverState.effectiveVolume(for: tab)
+                            let isSilent = effectiveVol == 0
+                            let badgeIcon = isAudioActive
+                                ? (isSilent ? "speaker.slash.fill" : "waveform")
+                                : (isSilent ? "speaker.slash.fill" : "speaker.wave.1.fill")
                             HStack(spacing: AppSpacing.xs) {
                                 Text("\(index + 1)")
                                     .font(AppFont.micro(weight: .bold, tabular: true))
-                                Image(systemName: isAudioActive ? "waveform" : "speaker.slash.fill")
+                                Image(systemName: badgeIcon)
                                     .font(AppIconFont.xs(weight: .semibold))
+                                if !isSilent && (!isAudioActive || effectiveVol < 100) {
+                                    Text("\(effectiveVol)%")
+                                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                                }
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, AppSpacing.sm)
@@ -672,8 +695,10 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         }
                                         .padding(AppSpacing.lg)
                                         .frame(width: 240)
+                                        .background(DarkPopoverAppearanceSyncView())
                                         .foregroundStyle(Color.primary)
                                         .preferredColorScheme(.dark)
+                                        .environment(\.font, AppFont.body)
                                     }
                                 }
 
@@ -723,7 +748,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                                     Button {
                                                         onSetPlaybackRate(rate)
                                                     } label: {
-                                                        Text(rate == 1.0 ? "1×" : (rate.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(rate))×" : String(format: "%.2g×", rate)))
+                                                        Text(MediaStatus.formatPlaybackRate(rate))
                                                             .font(AppFont.micro(weight: isSelected ? .semibold : .medium, tabular: true))
                                                             .padding(.horizontal, AppSpacing.sm)
                                                             .minHitTarget(24, shape: Capsule(style: .continuous))
@@ -774,8 +799,10 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     }
                                     .padding(AppSpacing.lg)
                                     .frame(width: 304)
+                                    .background(DarkPopoverAppearanceSyncView())
                                     .foregroundStyle(Color.primary)
                                     .preferredColorScheme(.dark)
+                                    .environment(\.font, AppFont.body)
                                 }
 
                                 Button {
@@ -833,6 +860,8 @@ private struct FloatingMultiviewHeaderOverlayView: View {
     let onTogglePlayActive: () -> Void
     let onPlayAll: () -> Void
     let onPauseAll: () -> Void
+    let onSetTileVolume: (UUID, Int) -> Void
+    let onResetMixer: () -> Void
     let onSetOpacity: (Double) -> Void
     let onSelectGridPreset: (MiniPlayerGridSizePreset) -> Void
     let onStepSize: (Bool) -> Void
@@ -960,11 +989,11 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                     isDisplayOptionsPresented.toggle()
                                 } label: {
                                     Image(systemName: "slider.horizontal.3")
-                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accentText : .white)
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 || hoverState.hasCustomMix ? AppleTheme.accentText : .white)
                                         .frame(width: 24, height: 24)
                                         .contentShape(Circle())
                                 }
-                                .help("Grid Opacity, Layout & Size Presets")
+                                .help("Grid Opacity, Stream Volumes, Layout & Size Presets")
                                 .accessibilityLabel("Floating Grid Options")
                                 .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
                                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
@@ -986,6 +1015,83 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                                 step: 0.05
                                             )
                                             .controlSize(.small)
+                                        }
+
+                                        if !hoverState.hostedTabs.isEmpty {
+                                            Divider()
+
+                                            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                                HStack {
+                                                    Text("Stream Volumes")
+                                                        .font(AppFont.caption(weight: .semibold))
+                                                    Spacer()
+                                                    if hoverState.hasCustomMix {
+                                                        Button {
+                                                            onResetMixer()
+                                                        } label: {
+                                                            HStack(spacing: AppSpacing.xs) {
+                                                                Image(systemName: "arrow.counterclockwise")
+                                                                    .font(AppIconFont.xs(weight: .semibold))
+                                                                Text("Reset Mixer")
+                                                                    .font(AppFont.micro(weight: .semibold))
+                                                            }
+                                                            .padding(.horizontal, AppSpacing.sm)
+                                                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                            .background(
+                                                                Capsule(style: .continuous)
+                                                                    .fill(AppleTheme.accentText.opacity(0.18))
+                                                            )
+                                                            .foregroundStyle(AppleTheme.accentText)
+                                                        }
+                                                        .buttonStyle(.plain)
+                                                        .help("Reset Stream Volume Mixer")
+                                                    }
+                                                }
+
+                                                VStack(spacing: AppSpacing.xs) {
+                                                    ForEach(Array(hoverState.hostedTabs.enumerated()), id: \.element.id) { index, tab in
+                                                        let isFocused = (tab.id == hoverState.audioTabID)
+                                                        let volume = hoverState.effectiveVolume(for: tab)
+                                                        HStack(spacing: AppSpacing.sm) {
+                                                            Text("\(index + 1)")
+                                                                .font(AppFont.micro(weight: .bold, tabular: true))
+                                                                .foregroundStyle(.white)
+                                                                .frame(width: 16, height: 16)
+                                                                .background(
+                                                                    Circle()
+                                                                        .fill(isFocused ? AppleTheme.accentFill : Color.white.opacity(0.20))
+                                                                )
+
+                                                            Text(tab.displayTitle)
+                                                                .font(AppFont.caption(weight: .medium))
+                                                                .foregroundStyle(Color.primary)
+                                                                .lineLimit(1)
+                                                                .truncationMode(.tail)
+                                                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                                            Slider(
+                                                                value: Binding(
+                                                                    get: { Double(hoverState.effectiveVolume(for: tab)) },
+                                                                    set: { newVal in
+                                                                        onSetTileVolume(tab.id, Int(newVal.rounded()))
+                                                                    }
+                                                                ),
+                                                                in: 0...100,
+                                                                step: 5
+                                                            )
+                                                            .controlSize(.small)
+                                                            .frame(width: 90)
+                                                            .tint(AppleTheme.accentFill)
+
+                                                            Text("\(volume)%")
+                                                                .font(AppFont.caption(weight: .semibold, tabular: true))
+                                                                .foregroundStyle(volume == 0 ? AppleTheme.textSecondary : Color.primary)
+                                                                .frame(width: 36, alignment: .trailing)
+                                                        }
+                                                        .frame(minHeight: 24)
+                                                    }
+                                                }
+                                            }
                                         }
 
                                         Divider()
@@ -1092,8 +1198,10 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                     }
                                     .padding(AppSpacing.lg)
                                     .frame(width: 304)
+                                    .background(DarkPopoverAppearanceSyncView())
                                     .foregroundStyle(Color.primary)
                                     .preferredColorScheme(.dark)
+                                    .environment(\.font, AppFont.body)
                                 }
 
                                 Button(action: onDock) {
@@ -1158,6 +1266,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     private var frameSaveTask: Task<Void, Never>?
     private var cornerSnapTask: Task<Void, Never>?
     private var hostedTabsResizeSyncTask: Task<Void, Never>?
+    private var urlObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
 
     var onFrameChanged: ((NSRect) -> Void)?
     var onGridFrameChanged: ((NSRect) -> Void)?
@@ -1243,12 +1352,15 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.mode = .single
         hoverState.hostedTabs = [tab]
         hoverState.audioTabID = tab.id
+        hoverState.tileVolumes = [:]
+        hoverState.hasCustomMix = false
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
         hoverState.panelSize = panel.frame.size
         hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
         edgeResizeView?.isVisibleGrip = false
         onDockHandler = onDock
+        syncHostedTabURLObservations(for: [tab])
 
         if let webContainer {
             webContainer.mode = .single
@@ -1281,6 +1393,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         splitRatios: MultiviewSplitRatios,
         allSpaces: Bool,
         opacity: Double = 1.0,
+        tileVolumes: [UUID: Int] = [:],
+        hasCustomMix: Bool = false,
         onFocusAudio: @escaping (UUID) -> Void,
         onCycleLayout: @escaping () -> Void,
         onSelectLayout: @escaping (MultiviewLayoutMode) -> Void,
@@ -1288,6 +1402,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onTogglePlayActive: @escaping () -> Void,
         onPlayAll: @escaping () -> Void,
         onPauseAll: @escaping () -> Void,
+        onSetTileVolume: @escaping (UUID, Int) -> Void,
+        onResetMixer: @escaping () -> Void,
         onDock: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -1311,12 +1427,15 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.audioTabID = audioTabID ?? tabs.first?.id
         hoverState.layoutMode = layoutMode
         hoverState.splitRatios = splitRatios
+        hoverState.tileVolumes = tileVolumes
+        hoverState.hasCustomMix = hasCustomMix
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
         hoverState.panelSize = panel.frame.size
         hoverState.currentGridSizePreset = MiniPlayerGridSizePreset.closest(to: panel.frame.size)
         edgeResizeView?.isVisibleGrip = false
         onDockHandler = onDock
+        syncHostedTabURLObservations(for: tabs)
 
         if let webContainer {
             webContainer.mode = .multiviewGrid
@@ -1337,6 +1456,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onTogglePlayActive: onTogglePlayActive,
             onPlayAll: onPlayAll,
             onPauseAll: onPauseAll,
+            onSetTileVolume: onSetTileVolume,
+            onResetMixer: onResetMixer,
             onDock: onDock,
             onClose: onClose
         )
@@ -1348,7 +1469,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         tabs: [BrowserTab],
         audioTabID: UUID?,
         layoutMode: MultiviewLayoutMode,
-        splitRatios: MultiviewSplitRatios
+        splitRatios: MultiviewSplitRatios,
+        tileVolumes: [UUID: Int] = [:],
+        hasCustomMix: Bool = false
     ) {
         guard hoverState.mode == .multiviewGrid,
               !hasLiveFullscreenTab,
@@ -1360,6 +1483,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.audioTabID = audioTabID ?? tabs.first?.id
         hoverState.layoutMode = layoutMode
         hoverState.splitRatios = splitRatios
+        hoverState.tileVolumes = tileVolumes
+        hoverState.hasCustomMix = hasCustomMix
+        syncHostedTabURLObservations(for: tabs)
 
         if let webContainer {
             webContainer.mode = .multiviewGrid
@@ -1417,12 +1543,34 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         progressHostView?.removeFromSuperview()
         progressHostView = nil
         onDockHandler = nil
+        urlObservations.removeAll()
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
         hoverState.hostedTabs = []
         hoverState.audioTabID = nil
+        hoverState.tileVolumes = [:]
+        hoverState.hasCustomMix = false
         hoverState.mode = .single
         return previous
+    }
+
+    private func syncHostedTabURLObservations(for tabs: [BrowserTab]) {
+        let activeIDs = Set(tabs.map { ObjectIdentifier($0.webView) })
+        urlObservations = urlObservations.filter { activeIDs.contains($0.key) }
+        for tab in tabs {
+            let key = ObjectIdentifier(tab.webView)
+            guard urlObservations[key] == nil else { continue }
+            urlObservations[key] = tab.webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.hoverState.mode == .multiviewGrid,
+                          !self.hasLiveFullscreenTab else {
+                        return
+                    }
+                    self.webContainer?.applyLayout()
+                }
+            }
+        }
     }
 
     func stepSize(smaller: Bool) {
@@ -1929,6 +2077,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onTogglePlayActive: @escaping () -> Void,
         onPlayAll: @escaping () -> Void,
         onPauseAll: @escaping () -> Void,
+        onSetTileVolume: @escaping (UUID, Int) -> Void,
+        onResetMixer: @escaping () -> Void,
         onDock: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
@@ -1945,6 +2095,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onTogglePlayActive: onTogglePlayActive,
                 onPlayAll: onPlayAll,
                 onPauseAll: onPauseAll,
+                onSetTileVolume: onSetTileVolume,
+                onResetMixer: onResetMixer,
                 onSetOpacity: { [weak self] newOpacity in
                     self?.updateOpacity(newOpacity)
                     self?.onOpacityChanged?(newOpacity)

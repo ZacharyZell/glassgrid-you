@@ -2489,4 +2489,194 @@ final class YouTubeMacCoreTests: XCTestCase {
             .openExternal(URL(string: "mailto:support@glassgridyou.com")!)
         )
     }
+
+    func testStrictDRMStrategyAndFairPlayLayerMaskingMatrix() {
+        let strictIDs = ["disneyplus", "netflix", "hulu", "max", "primevideo", "appletv", "crunchyroll"]
+        for id in strictIDs {
+            let service = StreamingServiceCatalog.service(id: id)
+            XCTAssertNotNil(service, "Expected catalog entry for \(id)")
+            XCTAssertEqual(service?.requiresStrictDRM, true, "Expected requiresStrictDRM == true for \(id)")
+        }
+
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "disneyplus")?.strategy, .companionPassthrough)
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "netflix")?.strategy, .companionPassthrough)
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "hulu")?.strategy, .companionPassthrough)
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "primevideo")?.strategy, .companionOverlaySDK)
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "appletv")?.strategy, .companionOverlaySDK)
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "crunchyroll")?.strategy, .companionIframe)
+        XCTAssertEqual(CleanBoxRules.profile(serviceID: "max")?.strategy, .companionSelector)
+
+        let unmaskedURLs = [
+            "https://www.disneyplus.com/play/abc123",
+            "https://www.netflix.com/watch/80057281",
+            "https://www.hulu.com/watch/123",
+            "https://play.hbomax.com/video/watch/123",
+            "https://www.amazon.com/gp/video/detail/B001",
+            "https://www.primevideo.com/detail/B001",
+            "https://tv.apple.com/us/show/severance/umc.cmc.1",
+            "https://www.crunchyroll.com/watch/GX9U34054/raiders",
+            "https://tv.youtube.com/watch/abc123"
+        ]
+        for raw in unmaskedURLs {
+            XCTAssertFalse(
+                MultiviewGridLayout.shouldMaskWebViewLayer(for: URL(string: raw)!),
+                "Expected unmasked layer for FairPlay/strict-DRM host: \(raw)"
+            )
+        }
+
+        let maskedURLs = [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://www.twitch.tv/shroud"
+        ]
+        for raw in maskedURLs {
+            XCTAssertTrue(
+                MultiviewGridLayout.shouldMaskWebViewLayer(for: URL(string: raw)!),
+                "Expected masked layer for \(raw)"
+            )
+        }
+    }
+
+    func testMultiviewAudioMixerAndMediaStatusVolumeAndSpeed() {
+        XCTAssertEqual(MultiviewAudioMixer.clampVolume(-10), 0)
+        XCTAssertEqual(MultiviewAudioMixer.clampVolume(140), 100)
+        XCTAssertEqual(MultiviewAudioMixer.clampVolume(42), 42)
+
+        XCTAssertEqual(
+            MultiviewAudioMixer.levelForSliderChange(0),
+            MultiviewAudioLevel(muted: true, volumePercent: 0)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.levelForSliderChange(35),
+            MultiviewAudioLevel(muted: false, volumePercent: 35)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.levelForSliderChange(-5),
+            MultiviewAudioLevel(muted: true, volumePercent: 0)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.levelForSliderChange(150),
+            MultiviewAudioLevel(muted: false, volumePercent: 100)
+        )
+
+        let activeTab = UUID()
+        let backgroundTab = UUID()
+        let customTab = UUID()
+        let closedTab = UUID()
+
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: activeTab,
+                activeAudioTabID: activeTab,
+                duckBackground: false,
+                customVolumes: [:]
+            ),
+            MultiviewAudioLevel(muted: false, volumePercent: 100)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: backgroundTab,
+                activeAudioTabID: activeTab,
+                duckBackground: true,
+                customVolumes: [:]
+            ),
+            MultiviewAudioLevel(muted: false, volumePercent: 15)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: backgroundTab,
+                activeAudioTabID: activeTab,
+                duckBackground: false,
+                customVolumes: [:]
+            ),
+            MultiviewAudioLevel(muted: true, volumePercent: 100)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: backgroundTab,
+                activeAudioTabID: nil,
+                duckBackground: false,
+                customVolumes: [:],
+                singleTabMode: true
+            ),
+            MultiviewAudioLevel(muted: false, volumePercent: 100)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: customTab,
+                activeAudioTabID: activeTab,
+                duckBackground: true,
+                customVolumes: [customTab: 70]
+            ),
+            MultiviewAudioLevel(muted: false, volumePercent: 70)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: activeTab,
+                activeAudioTabID: activeTab,
+                duckBackground: false,
+                customVolumes: [activeTab: 0]
+            ),
+            MultiviewAudioLevel(muted: true, volumePercent: 0)
+        )
+        XCTAssertEqual(
+            MultiviewAudioMixer.effectiveLevel(
+                for: customTab,
+                activeAudioTabID: activeTab,
+                duckBackground: false,
+                customVolumes: [customTab: 135]
+            ),
+            MultiviewAudioLevel(muted: false, volumePercent: 100)
+        )
+
+        let sanitized = MultiviewAudioMixer.sanitizedCustomVolumes(
+            [activeTab: 70, backgroundTab: 140, customTab: -10, closedTab: 50],
+            keeping: [activeTab, backgroundTab, customTab]
+        )
+        XCTAssertEqual(sanitized, [activeTab: 70, backgroundTab: 100, customTab: 0])
+        XCTAssertNil(sanitized[closedTab])
+
+        XCTAssertEqual(MediaStatus.empty.volumePercent, 100)
+        let defaultStatus = MediaStatus(
+            hasVideo: true,
+            isPlaying: true,
+            title: "Sample",
+            channel: "Channel",
+            urlString: "https://www.youtube.com/watch?v=1",
+            isMuted: false,
+            isPiP: false,
+            isTheater: false
+        )
+        XCTAssertEqual(defaultStatus.volumePercent, 100)
+
+        let lowClampedStatus = MediaStatus(
+            hasVideo: true,
+            isPlaying: true,
+            title: "Sample",
+            channel: "Channel",
+            urlString: "https://www.youtube.com/watch?v=1",
+            isMuted: true,
+            isPiP: false,
+            isTheater: false,
+            volumePercent: -25
+        )
+        XCTAssertEqual(lowClampedStatus.volumePercent, 0)
+
+        let highClampedStatus = MediaStatus(
+            hasVideo: true,
+            isPlaying: true,
+            title: "Sample",
+            channel: "Channel",
+            urlString: "https://www.youtube.com/watch?v=1",
+            isMuted: false,
+            isPiP: false,
+            isTheater: false,
+            volumePercent: 180
+        )
+        XCTAssertEqual(highClampedStatus.volumePercent, 100)
+
+        XCTAssertEqual(MediaStatus.formatPlaybackRate(1.25), "1.25×")
+        XCTAssertEqual(MediaStatus.formatPlaybackRate(1.75), "1.75×")
+        XCTAssertEqual(MediaStatus.formatPlaybackRate(1.0), "1×")
+        XCTAssertEqual(MediaStatus.formatPlaybackRate(1.5), "1.5×")
+    }
 }
