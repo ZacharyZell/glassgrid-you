@@ -103,6 +103,9 @@ public enum AgentURLActionParser {
 
         case "multiview":
             let action = (params["action"] ?? "toggle").lowercased()
+            if action == "sync_all" || action == "sync-all" || action == "sync" {
+                return .success(ParsedURLAction(toolName: "sync_multiview_all", arguments: [:]))
+            }
             let allowed = Set(["enter", "exit", "toggle", "set_layout", "cycle_layout", "solo", "exit_solo", "focus_audio", "cycle_audio_next", "cycle_audio_prev", "mute_all"])
             guard allowed.contains(action) else {
                 return .failure(AgentURLActionError("Unsupported multiview URL action."))
@@ -115,6 +118,13 @@ public enum AgentURLActionParser {
                 args["slot"] = .int(slot)
             }
             return .success(ParsedURLAction(toolName: "multiview_control", arguments: args))
+
+        case "ghost-mode", "ghost_mode":
+            var args: [String: JSONValue] = [:]
+            if let enabled = parseBool(params["enabled"]) {
+                args["enabled"] = .bool(enabled)
+            }
+            return .success(ParsedURLAction(toolName: "toggle_ghost_mode", arguments: args))
 
         case "preset":
             var args: [String: JSONValue] = [:]

@@ -1410,10 +1410,138 @@ struct LivePulseV2Tests {
         #expect(fiveMinutesPlus == LivePulseFreshnessState(label: "5m+", isStale: true, isTickerStale: true, isOffline: false, isLiveDot: false))
     }
 
-    @Test("SportsLeague.normalizedPriority deduplicates and appends missing leagues in canonical order")
+    @Test("SportsLeague.normalizedPriority deduplicates and appends all 9 leagues and preserves 4-league default")
     func sportsLeagueNormalizedPriorityDeduplicationAndCompletion() {
-        #expect(SportsLeague.normalizedPriority([]) == [.nfl, .nba, .mlb, .nhl])
-        #expect(SportsLeague.normalizedPriority([.nhl, .nba, .nhl]) == [.nhl, .nba, .nfl, .mlb])
-        #expect(SportsLeague.normalizedPriority([.mlb, .nfl, .nhl, .nba]) == [.mlb, .nfl, .nhl, .nba])
+        #expect(SportsLeague.allCases.count == 9)
+        #expect(SportsLeague.defaultEnabledLeagues == [.nfl, .nba, .mlb, .nhl])
+        #expect(SportsLeague.primaryLeagues == [.nfl, .nba, .mlb, .nhl])
+        #expect(LivePulseDrawerTab.allCases.count == 5)
+        #expect(LivePulseDrawerTab.allCases.contains(.chat))
+
+        #expect(
+            SportsLeague.normalizedPriority([]) ==
+            [.nfl, .nba, .mlb, .nhl, .ncaaf, .ncaab, .mls, .epl, .f1]
+        )
+        #expect(
+            SportsLeague.normalizedPriority([.nhl, .nba, .nhl]) ==
+            [.nhl, .nba, .nfl, .mlb, .ncaaf, .ncaab, .mls, .epl, .f1]
+        )
+        #expect(
+            SportsLeague.normalizedPriority([.f1, .epl, .mls, .ncaab, .ncaaf, .mlb, .nfl, .nhl, .nba]) ==
+            [.f1, .epl, .mls, .ncaab, .ncaaf, .mlb, .nfl, .nhl, .nba]
+        )
+    }
+
+    @Test("Parses NCAAF Top 25 rank badges, NCAAB, MLS, EPL, F1 leaderboard, and summary recentPlays")
+    func expandedLeaguesF1LeaderboardAndRecentPlaysParsing() throws {
+        // 1. NCAAF with Top 25 rank: 1 and unranked (> 25 -> nil)
+        let ncaafData = Data("""
+        {
+          "events": [{
+            "id": "ncaaf-1",
+            "competitions": [{
+              "status": { "displayClock": "05:12", "period": 3, "type": { "name": "STATUS_IN_PROGRESS", "state": "in", "shortDetail": "5:12 - 3rd" } },
+              "competitors": [
+                { "homeAway": "away", "score": "28", "curatedRank": { "current": 1 }, "team": { "id": "130", "abbreviation": "OSU", "displayName": "Ohio State Buckeyes", "shortDisplayName": "Ohio State" } },
+                { "homeAway": "home", "score": "14", "curatedRank": { "current": 99 }, "team": { "id": "2", "abbreviation": "PSU", "displayName": "Penn State Nittany Lions", "shortDisplayName": "Penn State" } }
+              ]
+            }]
+          }]
+        }
+        """.utf8)
+        let ncaafGames = ESPNScoreboardClient.parseScoreboard(from: ncaafData, league: .ncaaf)
+        #expect(ncaafGames.count == 1)
+        #expect(ncaafGames[0].away.rank == 1)
+        #expect(ncaafGames[0].home.rank == nil)
+
+        // 2. NCAAB, MLS, EPL basic scoreboard parity
+        for (league, abbrA, abbrB) in [(SportsLeague.ncaab, "DUKE", "UNC"), (.mls, "LAFC", "MIA"), (.epl, "ARS", "MCI")] {
+            let leagueData = Data("""
+            {
+              "events": [{
+                "id": "\(league.rawValue)-1",
+                "competitions": [{
+                  "status": { "type": { "name": "STATUS_IN_PROGRESS", "state": "in", "shortDetail": "Live" } },
+                  "competitors": [
+                    { "homeAway": "away", "score": "2", "team": { "id": "1", "abbreviation": "\(abbrA)", "displayName": "\(abbrA) Team" } },
+                    { "homeAway": "home", "score": "1", "team": { "id": "2", "abbreviation": "\(abbrB)", "displayName": "\(abbrB) Team" } }
+                  ]
+                }]
+              }]
+            }
+            """.utf8)
+            let parsed = ESPNScoreboardClient.parseScoreboard(from: leagueData, league: league)
+            #expect(parsed.count == 1)
+            #expect(parsed[0].league == league)
+            #expect(parsed[0].away.abbreviation == abbrA)
+            #expect(parsed[0].home.abbreviation == abbrB)
+        }
+
+        // 3. F1 driver leaderboard mapping (home = P1 leader, away = P2)
+        let f1Data = Data("""
+        {
+          "events": [{
+            "id": "f1-las-vegas",
+            "competitions": [{
+              "status": { "period": 42, "type": { "name": "STATUS_IN_PROGRESS", "state": "in", "shortDetail": "Lap 42/50" } },
+              "competitors": [
+                { "id": "33", "order": 2, "athlete": { "id": "33", "displayName": "Max Verstappen", "shortName": "M. Verstappen", "abbreviation": "VER" } },
+                { "id": "4", "order": 1, "athlete": { "id": "4", "displayName": "Lando Norris", "shortName": "L. Norris", "abbreviation": "NOR" } },
+                { "id": "16", "order": 3, "athlete": { "id": "16", "displayName": "Charles Leclerc", "shortName": "C. Leclerc" } }
+              ]
+            }]
+          }]
+        }
+        """.utf8)
+        let f1Games = ESPNScoreboardClient.parseScoreboard(from: f1Data, league: .f1)
+        #expect(f1Games.count == 1)
+        #expect(f1Games[0].home.abbreviation == "NOR")
+        #expect(f1Games[0].home.score == 1)
+        #expect(f1Games[0].home.record == "P1")
+        #expect(f1Games[0].away.abbreviation == "VER")
+        #expect(f1Games[0].away.score == 2)
+        #expect(f1Games[0].away.record == "P2")
+
+        // 4. Summary recentPlays + winprobability parsing
+        let summaryData = Data("""
+        {
+          "header": {
+            "competitions": [{
+              "competitors": [
+                { "team": { "id": "12", "abbreviation": "KC" } },
+                { "team": { "id": "2", "abbreviation": "BUF" } }
+              ]
+            }]
+          },
+          "winprobability": [
+            { "homeWinPercentage": 48.0 },
+            { "homeWinPercentage": 62.5 }
+          ],
+          "drives": {
+            "previous": [{
+              "plays": [
+                { "id": "p1", "text": "P. Mahomes pass short to T. Kelce for 12 yds.", "period": { "displayValue": "Q4" }, "clock": { "displayValue": "1:52" }, "team": { "id": "12" }, "scoringPlay": false }
+              ]
+            }],
+            "current": {
+              "plays": [
+                { "id": "p2", "text": "TOUCHDOWN!\u{202E} I. Pacheco 8 yd rush.", "period": { "displayValue": "Q4" }, "clock": { "displayValue": "0:41" }, "team": { "id": "12" }, "scoringPlay": true, "awayScore": 31, "homeScore": 27 }
+              ]
+            }
+          }
+        }
+        """.utf8)
+        let summary = try #require(ESPNScoreboardClient.parseSummary(from: summaryData, eventID: "401671789", league: .nfl))
+        #expect(abs((summary.homeWinProb ?? 0) - 0.625) < 0.0001)
+        #expect(abs((summary.awayWinProb ?? 0) - 0.375) < 0.0001)
+        #expect(summary.recentPlays.count == 2)
+        // Newest-first ordering
+        #expect(summary.recentPlays[0].id == "p2")
+        #expect(summary.recentPlays[0].isScoringPlay == true)
+        #expect(summary.recentPlays[0].teamAbbreviation == "KC")
+        #expect(summary.recentPlays[0].text == "TOUCHDOWN! I. Pacheco 8 yd rush.")
+        #expect(summary.recentPlays[0].awayScore == 31)
+        #expect(summary.recentPlays[0].homeScore == 27)
+        #expect(summary.recentPlays[1].id == "p1")
     }
 }

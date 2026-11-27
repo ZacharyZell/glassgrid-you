@@ -140,12 +140,109 @@ public enum YouTubeURLRouter {
         return .companion
     }
 
-    /// Resolves a user-entered website or URL (e.g. `twitch.tv/nfl`, `https://espn.com/scoreboard`) into a safe `http(s)` URL.
+    /// Expands power-user shorthands (`twitch:<channel>`, `yt:<query_or_id>`, `yttv:<query_or_watch>`) into HTTPS URLs.
+    public static func resolveShorthandURL(_ rawInput: String) -> URL? {
+        let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("://") else {
+            return nil
+        }
+        guard let colonIdx = trimmed.firstIndex(of: ":") else {
+            return nil
+        }
+
+        let prefix = trimmed[..<colonIdx].lowercased()
+        let rawArg = String(trimmed[trimmed.index(after: colonIdx)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch prefix {
+        case "twitch":
+            if rawArg.isEmpty {
+                return URL(string: "https://www.twitch.tv/")
+            }
+            let cleanChannel = rawArg.hasPrefix("/") ? String(rawArg.dropFirst()) : rawArg
+            guard (1...25).contains(cleanChannel.count),
+                  cleanChannel.unicodeScalars.allSatisfy({ s in
+                      (s.value >= 48 && s.value <= 57)
+                          || (s.value >= 65 && s.value <= 90)
+                          || (s.value >= 97 && s.value <= 122)
+                          || s == "_"
+                  }) else {
+                return nil
+            }
+            return URL(string: "https://www.twitch.tv/\(cleanChannel)")
+
+        case "yt":
+            if rawArg.isEmpty {
+                return URL(string: "https://www.youtube.com/")
+            }
+            if !rawArg.contains(" "),
+               rawArg.count == 11,
+               isValidVideoID(rawArg) {
+                return URL(string: "https://www.youtube.com/watch?v=\(rawArg)")
+            }
+            if rawArg.hasPrefix("@"), !rawArg.contains(" "), rawArg.count >= 2, rawArg.count <= 40 {
+                let encoded = rawArg.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rawArg
+                return URL(string: "https://www.youtube.com/\(encoded)")
+            }
+            return youtubeSearchURL(for: rawArg)
+
+        case "yttv":
+            if rawArg.isEmpty {
+                return URL(string: "https://tv.youtube.com/")
+            }
+            if !rawArg.contains(" "), rawArg.lowercased().hasPrefix("watch/") {
+                let idPart = String(rawArg.dropFirst("watch/".count))
+                if isValidVideoID(idPart) {
+                    return URL(string: "https://tv.youtube.com/watch/\(idPart)")
+                }
+            }
+            return youtubeTVSearchURL(for: rawArg)
+
+        default:
+            return nil
+        }
+    }
+
+    /// Builds a validated YouTube search URL for `query`.
+    public static func youtubeSearchURL(for query: String) -> URL? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var components = URLComponents(string: "https://www.youtube.com/results")!
+        components.queryItems = [URLQueryItem(name: "search_query", value: trimmed)]
+        return components.url
+    }
+
+    /// Builds a validated Twitch search URL for `query`.
+    public static func twitchSearchURL(for query: String) -> URL? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var components = URLComponents(string: "https://www.twitch.tv/search")!
+        components.queryItems = [URLQueryItem(name: "term", value: trimmed)]
+        return components.url
+    }
+
+    /// Builds a validated YouTube TV search URL for `query`.
+    public static func youtubeTVSearchURL(for query: String) -> URL? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var components = URLComponents(string: "https://tv.youtube.com/search")!
+        components.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        return components.url
+    }
+
+    /// Resolves a user-entered website or URL (e.g. `twitch.tv/nfl`, `twitch:nfl`, `https://espn.com/scoreboard`) into a safe `http(s)` URL.
     /// Rejects dangerous or non-web schemes (`javascript:`, `file:`, `data:`, etc.).
     public static func resolveCompanionURL(_ rawInput: String) -> URL? {
         let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              !trimmed.contains(" "),
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        if let shorthand = resolveShorthandURL(trimmed) {
+            return shorthand
+        }
+
+        guard !trimmed.contains(" "),
               !trimmed.contains("\n"),
               !trimmed.contains("\t") else {
             return nil
@@ -362,11 +459,15 @@ public enum YouTubeURLRouter {
         return openExternalLinksInBrowser ? .openExternal(url) : .allowInApp
     }
 
-    /// Resolves omnibox input into a direct YouTube URL or a YouTube search query URL.
+    /// Resolves omnibox input into a direct YouTube/shorthand URL or a YouTube search query URL.
     public static func resolveOmniboxInput(_ rawInput: String, redirectShortsToWatch: Bool) -> URL? {
         let trimmed = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return nil
+        }
+
+        if let shorthand = resolveShorthandURL(trimmed) {
+            return shorthand
         }
 
         if let directURL = parseCandidateYouTubeURL(trimmed) {

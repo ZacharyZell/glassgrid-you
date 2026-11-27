@@ -239,6 +239,7 @@ private struct MenuBarActiveControllerView: View {
     @State private var isSettingsHovered = false
     @State private var isQuitHovered = false
     @State private var isChaptersExpanded = false
+    @State private var isTranscriptExpanded = false
 
     private var nowPlaying: MediaStatus {
         controller.nowPlayingStatus
@@ -274,6 +275,10 @@ private struct MenuBarActiveControllerView: View {
 
             if controller.activeChapters.count >= 2 {
                 chaptersSection
+            }
+
+            if isTranscriptExpanded {
+                transcriptSection
             }
 
             Divider()
@@ -329,9 +334,15 @@ private struct MenuBarActiveControllerView: View {
                 }
 
                 VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                    Text(nowPlaying.title.isEmpty ? "YouTube" : nowPlaying.title)
-                        .font(AppFont.body(weight: .semibold))
-                        .lineLimit(2)
+            if nowPlaying.hasVideo, let activeTab = controller.activeMediaTab {
+                Text(controller.effectiveTitle(for: activeTab))
+                    .font(AppFont.body(weight: .semibold))
+                    .lineLimit(2)
+            } else {
+                Text(nowPlaying.title.isEmpty ? "YouTube" : nowPlaying.title)
+                    .font(AppFont.body(weight: .semibold))
+                    .lineLimit(2)
+            }
 
                     HStack(spacing: AppSpacing.sm) {
                         Text(
@@ -546,6 +557,69 @@ private struct MenuBarActiveControllerView: View {
     }
 
     @ViewBuilder
+    private var transcriptSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: "captions.bubble")
+                    .font(AppIconFont.sm(weight: .semibold))
+                    .foregroundStyle(AppleTheme.accentText)
+                Text("Transcript")
+                    .font(AppFont.callout(weight: .semibold))
+                Spacer()
+                if controller.isFetchingTranscript {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else if let cues = controller.currentTranscript?.cues, !cues.isEmpty {
+                    Button("Copy") {
+                        if let text = controller.currentTranscript?.formattedPlainText() {
+                            let pb = NSPasteboard.general
+                            pb.clearContents()
+                            pb.setString(text, forType: .string)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.accentText)
+                    .minHitTarget(24)
+                }
+            }
+
+            if let cues = controller.currentTranscript?.cues, !cues.isEmpty {
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                        ForEach(cues.prefix(80)) { cue in
+                            Button {
+                                controller.seek(to: cue.startSeconds)
+                            } label: {
+                                HStack(alignment: .top, spacing: AppSpacing.sm) {
+                                    Text(cue.formattedTimestamp)
+                                        .font(AppFont.caption(weight: .semibold, tabular: true))
+                                        .foregroundStyle(AppleTheme.accentText)
+                                        .frame(width: 44, alignment: .leading)
+                                    Text(cue.text)
+                                        .font(AppFont.caption)
+                                        .foregroundStyle(.primary.opacity(0.88))
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.horizontal, AppSpacing.sm)
+                                .padding(.vertical, AppSpacing.xs)
+                                .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 150)
+            } else if !controller.isFetchingTranscript {
+                Text("No captions found for the active video.")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
     private var transportControls: some View {
         LiquidGlassGroup(spacing: AppSpacing.md) {
             HStack(spacing: AppSpacing.sm) {
@@ -683,6 +757,40 @@ private struct MenuBarActiveControllerView: View {
                 isActive: controller.focusModeActive
             ) {
                 controller.toggleFocusMode()
+            }
+
+            if controller.isMiniPlayer {
+                MenuBarActionRow(
+                    title: coordinator.floatingMiniPlayer.isGhostMode ? "Ghost Mode: On (⌘⌥O)" : "Ghost Mode (⌘⌥O)",
+                    systemImage: coordinator.floatingMiniPlayer.isGhostMode ? "eye.slash.fill" : "eye.slash",
+                    isActive: coordinator.floatingMiniPlayer.isGhostMode
+                ) {
+                    _ = controller.toggleMiniPlayerGhostMode()
+                }
+            }
+
+            if nowPlaying.hasVideo {
+                MenuBarActionRow(
+                    title: "Add Timestamp Bookmark (⌘⇧K)",
+                    systemImage: "bookmark.badge.plus"
+                ) {
+                    _ = controller.addCurrentTimestampBookmark(note: "")
+                }
+
+                MenuBarActionRow(
+                    title: isTranscriptExpanded ? "Hide Transcript" : "Transcripts",
+                    systemImage: "captions.bubble",
+                    isActive: isTranscriptExpanded
+                ) {
+                    withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
+                        isTranscriptExpanded.toggle()
+                    }
+                    if isTranscriptExpanded {
+                        Task { @MainActor in
+                            _ = await controller.fetchCurrentTabTranscript()
+                        }
+                    }
+                }
             }
 
             MenuBarActionRow(

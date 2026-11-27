@@ -134,7 +134,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
         httpServer?.stopSynchronously()
     }
 
-    // MARK: - URL Scheme Action Handler (`glassgridyou://action/...`)
+    // MARK: - URL Scheme Action Handler (`glassgridyou://action/...` & `glassgridyou://multiview?...`)
 
     public func handleActionURL(_ url: URL) {
         guard let coordinator else { return }
@@ -153,6 +153,11 @@ public final class AgentBridgeController: AgentCommandExecutor {
                 icon: "hand.raised.fill",
                 message: "URL Actions Disabled in Settings"
             )
+            return
+        }
+
+        if MultiviewShareLinkCodec.isMultiviewShareURL(url) {
+            handleMultiviewShareOrActionURL(url, coordinator: coordinator, context: context)
             return
         }
 
@@ -180,6 +185,82 @@ public final class AgentBridgeController: AgentCommandExecutor {
                 }
             }
         }
+    }
+
+    private func handleMultiviewShareOrActionURL(
+        _ url: URL,
+        coordinator: AppCoordinator,
+        context: AgentRequestContext
+    ) {
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let rawAction = queryItems.first(where: { $0.name.lowercased() == "action" })?.value?.lowercased() {
+            let mappedTool: String?
+            switch rawAction {
+            case "sync_all", "sync-all", "sync":
+                mappedTool = "sync_multiview_all"
+            case "ghost_mode", "ghost-mode":
+                mappedTool = "toggle_ghost_mode"
+            default:
+                mappedTool = nil
+            }
+            if let mappedTool {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let outcome = await self.execute(
+                        toolName: mappedTool,
+                        arguments: [:],
+                        context: context
+                    )
+                    if !outcome.ok {
+                        coordinator.commandTarget?.showHUD(icon: "exclamationmark.triangle", message: outcome.message)
+                    }
+                }
+                return
+            }
+        }
+
+        guard let payload = MultiviewShareLinkCodec.decode(url, tier: currentPermissionTier) else {
+            recordActivity(
+                source: .urlAction,
+                action: "multiview_share",
+                summary: "Blocked invalid or unauthorized Multiview share URL",
+                succeeded: false,
+                errorCode: "invalid_multiview_url"
+            )
+            coordinator.commandTarget?.showHUD(icon: "exclamationmark.triangle", message: "Blocked Invalid Multiview Link")
+            return
+        }
+
+        guard !coordinator.hasAnyWindowInLiveFullscreen else {
+            recordActivity(
+                source: .urlAction,
+                action: "multiview_share",
+                summary: "Blocked during WebKit fullscreen",
+                succeeded: false,
+                errorCode: "blocked_by_fullscreen"
+            )
+            coordinator.commandTarget?.showHUD(icon: "exclamationmark.triangle", message: "Exit Fullscreen to Launch Multiview")
+            return
+        }
+
+        let preset = MultiviewPreset(
+            name: "Shared Multiview",
+            urlStrings: payload.urls.map(\.absoluteString),
+            layoutMode: payload.layoutMode
+        )
+        if let target = coordinator.commandTarget {
+            target.launchMultiviewPreset(preset)
+            target.focusMainWindow()
+        } else {
+            coordinator.launchPresetInNewWindow(preset)
+        }
+        recordActivity(
+            source: .urlAction,
+            action: "multiview_share",
+            summary: "Launched shared Multiview (\(payload.urls.count) streams)",
+            succeeded: true,
+            errorCode: nil
+        )
     }
 
     // MARK: - AgentCommandExecutor
@@ -262,7 +343,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
             await waitForWindowReadiness(timeoutSeconds: 3.0)
         }
 
-        let outcome = dispatchTool(name: toolName, args: arguments, currentTier: currentTier)
+        let outcome = await dispatchTool(name: toolName, args: arguments, currentTier: currentTier)
         recordActivity(
             source: context.source,
             action: toolName,
@@ -282,7 +363,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
         name: String,
         args: [String: JSONValue],
         currentTier: AgentPermissionLevel
-    ) -> AgentCommandOutcome {
+    ) async -> AgentCommandOutcome {
         guard let coordinator else {
             return .failure(code: "app_unavailable", message: "AppCoordinator is unavailable.")
         }
@@ -441,6 +522,18 @@ public final class AgentBridgeController: AgentCommandExecutor {
 
         case "find_on_page":
             return executeFindOnPage(args: args, coordinator: coordinator)
+
+        case "get_transcript":
+            return await executeGetTranscript(args: args, coordinator: coordinator)
+
+        case "sync_multiview_all":
+            return executeSyncMultiviewAll(args: args, coordinator: coordinator)
+
+        case "toggle_ghost_mode":
+            return executeToggleGhostMode(args: args, coordinator: coordinator)
+
+        case "add_bookmark":
+            return executeAddBookmark(args: args, coordinator: coordinator)
 
         default:
             return .failure(code: "unknown_tool", message: "Unknown tool '\(name)'.")
@@ -1507,6 +1600,155 @@ public final class AgentBridgeController: AgentCommandExecutor {
         }
     }
 
+    private func executeGetTranscript(args: [String: JSONValue], coordinator: AppCoordinator) async -> AgentCommandOutcome {
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard let controller = resolveWindow(
+            idString: winID,
+            fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+        ) else {
+            return .failure(code: "no_window", message: "No open GlassGrid You window.")
+        }
+        guard let transcript = await controller.fetchCurrentTabTranscript() else {
+            return .failure(code: "no_transcript", message: "No transcript or captions available for the current video.")
+        }
+
+        let rawQuery = args["query"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = (rawQuery?.isEmpty == false) ? rawQuery : nil
+        let maxCues = min(max(args["max_cues"]?.intValue ?? YouTubeTranscript.maxCues, 1), YouTubeTranscript.maxCues)
+        let matchedCues = query.map { transcript.matching(query: $0) } ?? transcript.cues
+        let cappedCues = Array(matchedCues.prefix(maxCues))
+
+        var totalBytes = 0
+        var cuesJSON: [JSONValue] = []
+        cuesJSON.reserveCapacity(cappedCues.count)
+        for cue in cappedCues {
+            let cleanText = AgentSecurity.sanitizeWebText(cue.text, maxLength: YouTubeTranscript.maxCueTextLength).text
+            let cueBytes = cleanText.utf8.count
+            if totalBytes + cueBytes > YouTubeTranscript.maxTotalBytes {
+                break
+            }
+            totalBytes += cueBytes
+            cuesJSON.append(.object([
+                "id": .int(cue.id),
+                "startSeconds": .double(cue.startSeconds),
+                "durationSeconds": .double(cue.durationSeconds),
+                "timestamp": .string(cue.formattedTimestamp),
+                "text": .string(cleanText)
+            ]))
+        }
+
+        let rawTitle = transcript.title.isEmpty
+            ? (controller.activeMediaTab.map { controller.effectiveTitle(for: $0) } ?? "")
+            : transcript.title
+        let cleanTitle = AgentSecurity.sanitizeWebText(rawTitle, maxLength: AgentSecurity.maxWebTitleLength).text
+        return .success(
+            "Fetched \(cuesJSON.count) transcript cue\(cuesJSON.count == 1 ? "" : "s").",
+            data: .object([
+                "contentTrust": .string(AgentSecurity.untrustedWebContentTag),
+                "windowID": .string(controller.windowID.uuidString),
+                "videoID": .string(transcript.videoID),
+                "title": .string(cleanTitle),
+                "languageCode": .string(transcript.languageCode),
+                "source": .string(transcript.source),
+                "query": query.map(JSONValue.string) ?? .null,
+                "totalCueCount": .int(transcript.cues.count),
+                "returnedCueCount": .int(cuesJSON.count),
+                "cues": .array(cuesJSON)
+            ])
+        )
+    }
+
+    private func executeSyncMultiviewAll(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard let controller = resolveWindow(idString: winID, fallback: coordinator.commandTarget) else {
+            return .failure(code: "no_window", message: "No open GlassGrid You window.")
+        }
+        guard controller.isMultiviewActive else {
+            return .failure(code: "multiview_inactive", message: "Multiview is not active.")
+        }
+        controller.syncAllMultiviewTilesToLive()
+        return .success(
+            "Synced Multiview Streams",
+            data: .object([
+                "windowID": .string(controller.windowID.uuidString),
+                "tileCount": .int(controller.multiviewTabIDs.count)
+            ])
+        )
+    }
+
+    private func executeToggleGhostMode(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard !coordinator.hasAnyWindowInLiveFullscreen,
+              !coordinator.floatingMiniPlayer.hasLiveFullscreenTab else {
+            return .failure(code: "blocked_by_fullscreen", message: "Cannot change Ghost Mode while a video is in WebKit fullscreen.")
+        }
+        guard coordinator.floatingMiniPlayer.isVisible else {
+            return .failure(code: "mini_player_inactive", message: "Floating Mini-Player is not active.")
+        }
+
+        let targetController = resolveWindow(
+            idString: winID,
+            fallback: coordinator.openWindows.first(where: \.isMiniPlayer)
+                ?? coordinator.nowPlayingController
+                ?? coordinator.commandTarget
+        )
+
+        let isGhostMode: Bool
+        if let enabled = args["enabled"]?.boolValue {
+            coordinator.floatingMiniPlayer.setGhostMode(enabled)
+            isGhostMode = coordinator.floatingMiniPlayer.isGhostMode
+        } else if let targetController {
+            isGhostMode = targetController.toggleMiniPlayerGhostMode()
+        } else {
+            isGhostMode = coordinator.floatingMiniPlayer.toggleGhostMode()
+        }
+
+        return .success(
+            isGhostMode ? "Ghost Mode On (Hold ⌥ to Interact)" : "Ghost Mode Off",
+            data: .object(["ghostMode": .bool(isGhostMode)])
+        )
+    }
+
+    private func executeAddBookmark(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard let controller = resolveWindow(
+            idString: winID,
+            fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+        ) else {
+            return .failure(code: "no_window", message: "No open GlassGrid You window.")
+        }
+        let cleanNote = AgentSecurity.sanitizeWebText(args["note"]?.stringValue ?? "", maxLength: 240).text
+        guard let bookmark = controller.addCurrentTimestampBookmark(note: cleanNote) else {
+            return .failure(code: "no_active_video", message: "No active video or page to bookmark.")
+        }
+        let cleanTitle = AgentSecurity.sanitizeWebText(bookmark.title, maxLength: AgentSecurity.maxWebTitleLength).text
+        return .success(
+            "Saved Bookmark at \(bookmark.formattedTimestamp)",
+            data: .object([
+                "contentTrust": .string(AgentSecurity.untrustedWebContentTag),
+                "id": .string(bookmark.id.uuidString),
+                "videoID": bookmark.videoID.map(JSONValue.string) ?? .null,
+                "title": .string(cleanTitle),
+                "url": .string(bookmark.url?.absoluteString ?? bookmark.urlString),
+                "timestampSeconds": .double(bookmark.timestampSeconds),
+                "formattedTimestamp": .string(bookmark.formattedTimestamp),
+                "note": .string(AgentSecurity.sanitizeWebText(bookmark.note, maxLength: 240).text)
+            ])
+        )
+    }
+
     // MARK: - Snapshot Builders (All Web Fields Sanitized + Tagged)
 
     private func buildAppStateJSON(windowIDString: String?) -> JSONValue {
@@ -1552,8 +1794,9 @@ public final class AgentBridgeController: AgentCommandExecutor {
         }
 
         let status = tab.mediaStatus
+        let effectiveTitle = controller.effectiveTitle(for: tab)
         let cleanTitle = AgentSecurity.sanitizeWebText(
-            status.title.isEmpty ? tab.displayTitle : status.title,
+            effectiveTitle.isEmpty ? status.title : effectiveTitle,
             maxLength: AgentSecurity.maxWebTitleLength
         ).text
         let cleanChannel = AgentSecurity.sanitizeWebText(status.channel, maxLength: AgentSecurity.maxChannelNameLength).text
@@ -1627,7 +1870,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
         let windowsJSON: [JSONValue] = targetWindows.map { ctrl in
             let tabsJSON: [JSONValue] = ctrl.tabs.enumerated().map { idx, tab in
                 let effectiveURL = tab.pendingLazyURL ?? tab.url
-                let cleanTitle = AgentSecurity.sanitizeWebText(tab.displayTitle, maxLength: AgentSecurity.maxWebTitleLength).text
+                let cleanTitle = AgentSecurity.sanitizeWebText(ctrl.effectiveTitle(for: tab), maxLength: AgentSecurity.maxWebTitleLength).text
                 return .object([
                     "id": .string(tab.id.uuidString),
                     "index": .int(idx + 1),
@@ -1671,7 +1914,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
             return .object([
                 "slot": .int(idx + 1),
                 "tabID": .string(tab.id.uuidString),
-                "title": .string(AgentSecurity.sanitizeWebText(tab.displayTitle, maxLength: AgentSecurity.maxWebTitleLength).text),
+                "title": .string(AgentSecurity.sanitizeWebText(ctrl.effectiveTitle(for: tab), maxLength: AgentSecurity.maxWebTitleLength).text),
                 "url": .string(effectiveURL.absoluteString),
                 "isPlaying": .bool(tab.mediaStatus.isPlaying),
                 "isActiveAudio": .bool(ctrl.multiviewAudioTabID == tab.id),

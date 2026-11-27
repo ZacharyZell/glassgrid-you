@@ -47,7 +47,17 @@ public final class AppController {
     public var isMainWindowMiniaturized: Bool = false
     public var isWindowInNativeFullScreen: Bool = false
     public var isSigningOutData: Bool = false
-    public var activeToast: HUDToast?
+    public var activeToast: HUDToast? = nil
+    public var deArrowTitlesByVideoID: [String: String] = [:]
+    public var isMultiviewAutoSyncEnabled: Bool = false
+    public var multiviewMasterTabID: UUID? = nil
+    public var stalledMultiviewTabIDs: Set<UUID> = []
+    public var channelInboxEntries: [ChannelInboxEntry] = []
+    public var isLoadingChannelInbox: Bool = false
+    public var currentTranscript: YouTubeTranscript? = nil
+    public var isFetchingTranscript: Bool = false
+    public var isTranscriptPopoverPresented: Bool = false
+    public var isBookmarksPopoverPresented: Bool = false
     public var isContinueWatchingExpanded: Bool = true
     public var selectedHomeTopic: SuggestedTopic = .all
 
@@ -129,10 +139,22 @@ public final class AppController {
     private let fallbackSponsorBlockClient = SponsorBlockClient()
 
     @ObservationIgnored
+    private let fallbackDeArrowClient = DeArrowClient()
+
+    @ObservationIgnored
+    private let fallbackChannelInboxClient = ChannelInboxClient()
+
+    @ObservationIgnored
     private let fallbackSuggestClient = YouTubeSuggestClient()
 
     @ObservationIgnored
     private var sponsorFetchTasks: [UUID: Task<Void, Never>] = [:]
+
+    @ObservationIgnored
+    private var deArrowFetchTasks: [String: Task<Void, Never>] = [:]
+
+    @ObservationIgnored
+    private var attemptedDeArrowVideoIDs: Set<String> = []
 
     @ObservationIgnored
     private var signInCheckTasks: [UUID: Task<Void, Never>] = [:]
@@ -142,6 +164,24 @@ public final class AppController {
 
     @ObservationIgnored
     private var toastDismissTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var activeToastActionHandler: (@MainActor () -> Void)?
+
+    @ObservationIgnored
+    private var multiviewSyncWatchdogTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var multiviewStallDetector = MultiviewStallDetector()
+
+    @ObservationIgnored
+    private var lastObservedTileTimes: [UUID: Double] = [:]
+
+    @ObservationIgnored
+    private var transcriptFetchTask: Task<YouTubeTranscript?, Never>?
+
+    @ObservationIgnored
+    private var channelInboxTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var poppedOutReason: PopOutReason?
@@ -164,6 +204,14 @@ public final class AppController {
 
     private var sponsorBlockClient: SponsorBlockClient {
         coordinator?.sponsorBlockClient ?? fallbackSponsorBlockClient
+    }
+
+    private var deArrowClient: DeArrowClient {
+        coordinator?.deArrowClient ?? fallbackDeArrowClient
+    }
+
+    private var channelInboxClient: ChannelInboxClient {
+        coordinator?.channelInboxClient ?? fallbackChannelInboxClient
     }
 
     private var suggestClient: YouTubeSuggestClient {
@@ -459,18 +507,37 @@ public final class AppController {
 
     // MARK: - HUD Toast
 
-    public func showHUD(icon: String, message: String) {
+    public func showHUD(
+        icon: String,
+        message: String,
+        actionTitle: String? = nil,
+        actionHandler: (@MainActor () -> Void)? = nil
+    ) {
         toastDismissTask?.cancel()
+        activeToastActionHandler = actionTitle != nil ? actionHandler : nil
+        let dismissDelayMs: Int = actionTitle != nil ? 3800 : 1150
         withAnimation(.easeOut(duration: 0.16)) {
-            activeToast = HUDToast(icon: icon, message: message)
+            activeToast = HUDToast(icon: icon, message: message, actionTitle: actionTitle)
         }
         toastDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1150))
+            try? await Task.sleep(for: .milliseconds(dismissDelayMs))
             guard !Task.isCancelled, let self else { return }
+            self.activeToastActionHandler = nil
             withAnimation(.easeIn(duration: 0.22)) {
                 self.activeToast = nil
             }
         }
+    }
+
+    public func executeActiveToastAction() {
+        let handler = activeToastActionHandler
+        toastDismissTask?.cancel()
+        toastDismissTask = nil
+        activeToastActionHandler = nil
+        withAnimation(.easeIn(duration: 0.16)) {
+            activeToast = nil
+        }
+        handler?()
     }
 
     // MARK: - Tab Management
@@ -490,7 +557,9 @@ public final class AppController {
                !isMiniPlayer,
                shouldAutoPopOut(tab: leaving) {
                 popOutToMiniPlayer(tab: leaving, reason: .leftPage)
-            } else if targetIsWatch && leaving.mediaStatus.isPlaying {
+            } else if (targetIsWatch || settings.singleViewAutoPauseEnabled),
+                      !isTabPoppedOut(leaving.id),
+                      leaving.mediaStatus.isPlaying {
                 leaving.pauseMedia()
             }
         }
@@ -539,8 +608,10 @@ public final class AppController {
             }
         }
         refreshSponsorSegmentsIfNeeded(for: tab, url: targetURL)
+        refreshDeArrowTitleIfNeeded(for: tab, url: targetURL)
         scheduleSessionSave()
         syncLivePulseStreamSignals()
+        coordinator?.refreshNotchMediaHUD()
         return tab
     }
 
@@ -601,6 +672,7 @@ public final class AppController {
             if let survivingID = result.remainingSingleTabID {
                 // Transition 2->1 cleanly BEFORE tearing down the closed tab so its WKWebView
                 // is detached from FloatingMiniPlayerController before teardown() runs.
+                resetMultiviewSyncAndStallState()
                 multiviewTabIDs = []
                 multiviewAudioTabID = nil
                 soloMultiviewTabID = nil
@@ -642,6 +714,7 @@ public final class AppController {
                 syncOmniboxToSelectedTab()
                 applyConfigToAllTabs()
                 scheduleSessionSave()
+                coordinator?.refreshNotchMediaHUD()
                 return
             } else {
                 multiviewTabIDs = result.state.tabIDs
@@ -688,6 +761,7 @@ public final class AppController {
         if multiviewTabIDs.contains(id) {
             let result = MultiviewReducer.removeTile(id, from: multiviewState)
             if let survivingID = result.remainingSingleTabID {
+                resetMultiviewSyncAndStallState()
                 multiviewTabIDs = []
                 multiviewAudioTabID = nil
                 soloMultiviewTabID = nil
@@ -707,6 +781,7 @@ public final class AppController {
                 }
                 applyConfigToAllTabs()
                 scheduleSessionSave()
+                coordinator?.refreshNotchMediaHUD()
                 return
             } else {
                 multiviewTabIDs = result.state.tabIDs
@@ -835,6 +910,12 @@ public final class AppController {
            leaving.id != id,
            shouldAutoPopOut(tab: leaving) {
             popOutToMiniPlayer(tab: leaving, reason: .leftPage)
+        } else if settings.singleViewAutoPauseEnabled,
+                  let leaving = selectedTab,
+                  leaving.id != id,
+                  !isTabPoppedOut(leaving.id),
+                  leaving.mediaStatus.isPlaying {
+            leaving.pauseMedia()
         }
 
         selectedTabID = id
@@ -847,6 +928,7 @@ public final class AppController {
         }
         scheduleSessionSave()
         syncLivePulseStreamSignals()
+        coordinator?.refreshNotchMediaHUD()
     }
 
     public func selectNextTab() {
@@ -1410,6 +1492,8 @@ public final class AppController {
 
         showHUD(icon: "square.grid.2x2.fill", message: "Multiview · \(multiviewTabIDs.count) Streams")
         syncLivePulseStreamSignals()
+        reconcileMultiviewSyncWatchdog()
+        coordinator?.refreshNotchMediaHUD()
     }
 
     public func exitMultiview(focusTabID: UUID? = nil, showFeedback: Bool = true) {
@@ -1430,6 +1514,7 @@ public final class AppController {
         }
 
         let previousTileIDs = multiviewTabIDs
+        resetMultiviewSyncAndStallState()
         cancelAllMultiviewVolumeDispatchTasks()
         multiviewCustomVolumes.removeAll()
         multiviewTabIDs = []
@@ -1442,6 +1527,9 @@ public final class AppController {
         for id in previousTileIDs {
             guard let tab = tabs.first(where: { $0.id == id }) else { continue }
             tab.needsPostAttachResize = true
+            if abs(tab.mediaStatus.playbackRate - settings.defaultPlaybackRate) >= 0.02 {
+                tab.setPlaybackRate(settings.defaultPlaybackRate)
+            }
             if id == targetID {
                 ensureTabLoaded(tab)
                 if tab.mediaStatus.hasVideo {
@@ -1462,6 +1550,7 @@ public final class AppController {
             showHUD(icon: "rectangle.fill", message: "Single View")
         }
         syncLivePulseStreamSignals()
+        coordinator?.refreshNotchMediaHUD()
     }
 
     public func setMultiviewLayoutMode(_ mode: MultiviewLayoutMode, showFeedback: Bool = true) {
@@ -1666,6 +1755,7 @@ public final class AppController {
         if let survivingID = result.remainingSingleTabID {
             if wasFloatingGrid {
                 let prevReason = poppedOutReason ?? .manual
+                resetMultiviewSyncAndStallState()
                 cancelAllMultiviewVolumeDispatchTasks()
                 multiviewCustomVolumes.removeAll()
                 multiviewTabIDs = []
@@ -1689,6 +1779,7 @@ public final class AppController {
                     }
                     applyConfigToAllTabs()
                 }
+                coordinator?.refreshNotchMediaHUD()
                 return
             }
             exitMultiview(focusTabID: survivingID, showFeedback: true)
@@ -1788,7 +1879,260 @@ public final class AppController {
     public func jumpMultiviewTileToLive(id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         tab.seekToLiveEdge()
+        stalledMultiviewTabIDs.remove(id)
+        multiviewStallDetector.reset(id)
         showHUD(icon: "dot.radiowaves.left.and.right", message: "Jumped to Live Edge")
+    }
+
+    public func syncAllMultiviewTilesToLive() {
+        guard isMultiviewActive else { return }
+        let tiles = multiviewTabs
+        guard !tiles.isEmpty else { return }
+
+        let master = multiviewMasterTabID.flatMap { id in tiles.first(where: { $0.id == id }) }
+            ?? multiviewAudioTab
+            ?? tiles.first
+        let masterIsLive = master.map { Self.isTabLikelyLive($0) } ?? true
+
+        if masterIsLive {
+            for tab in tiles where !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen {
+                tab.seekToLiveEdge()
+                if abs(tab.mediaStatus.playbackRate - 1.0) >= 0.02 {
+                    tab.setPlaybackRate(1.0)
+                }
+            }
+            showHUD(icon: "dot.radiowaves.left.and.right", message: "Synced All Streams to Live Edge")
+        } else if let master {
+            let targetTime = master.timeline.currentTime
+            for tab in tiles where !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen {
+                if tab.id != master.id {
+                    tab.seekTo(seconds: targetTime)
+                }
+                if abs(tab.mediaStatus.playbackRate - 1.0) >= 0.02 {
+                    tab.setPlaybackRate(1.0)
+                }
+            }
+            showHUD(icon: "arrow.triangle.2.circlepath", message: "Synced All Tiles to \(MediaState.formatTime(targetTime))")
+        }
+
+        stalledMultiviewTabIDs.removeAll()
+        multiviewStallDetector.resetAll()
+    }
+
+    public func toggleMultiviewAutoSync() {
+        guard isMultiviewActive else {
+            isMultiviewAutoSyncEnabled = false
+            return
+        }
+        isMultiviewAutoSyncEnabled.toggle()
+        if isMultiviewAutoSyncEnabled {
+            if let currentMaster = multiviewMasterTabID, multiviewTabIDs.contains(currentMaster) {
+                // Keep existing valid master.
+            } else {
+                multiviewMasterTabID = multiviewAudioTabID ?? multiviewTabIDs.first
+            }
+            reconcileMultiviewSyncWatchdog()
+            showHUD(icon: "arrow.triangle.2.circlepath.circle.fill", message: "Multiview Auto-Sync On")
+        } else {
+            restoreMultiviewPlaybackRates()
+            reconcileMultiviewSyncWatchdog()
+            showHUD(icon: "arrow.triangle.2.circlepath", message: "Multiview Auto-Sync Off")
+        }
+    }
+
+    public func recoverStalledMultiviewTile(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard !tab.isInFullscreen, tab.webView.fullscreenState == .notInFullscreen else { return }
+        stalledMultiviewTabIDs.remove(id)
+        multiviewStallDetector.reset(id)
+        if Self.isTabLikelyLive(tab) {
+            tab.seekToLiveEdge()
+        } else {
+            tab.reloadOrStop()
+        }
+        showHUD(icon: "arrow.clockwise", message: "Recovering \(effectiveTitle(for: tab))")
+    }
+
+    @discardableResult
+    public func copyMultiviewShareLink() -> URL? {
+        let candidateURLs: [String]
+        if isMultiviewActive {
+            candidateURLs = multiviewTabs.map { ($0.pendingLazyURL ?? $0.url).absoluteString }
+        } else {
+            candidateURLs = tabs.prefix(MultiviewGridLayout.maxTiles).map { ($0.pendingLazyURL ?? $0.url).absoluteString }
+        }
+        guard let shareURL = MultiviewShareLinkCodec.encode(urlStrings: candidateURLs, layoutMode: multiviewLayoutMode) else {
+            showHUD(icon: "exclamationmark.triangle", message: "Open 2–4 Streams to Share Multiview")
+            return nil
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(shareURL.absoluteString, forType: .string)
+        showHUD(icon: "link", message: "Multiview Share Link Copied")
+        return shareURL
+    }
+
+    public func launchMultiviewSharePayload(_ payload: MultiviewSharePayload) {
+        guard !hasLiveFullscreenTab else { return }
+        var usedTabIDs = Set<UUID>()
+        var targetTabIDs: [UUID] = []
+        targetTabIDs.reserveCapacity(payload.urls.count)
+
+        for entryURL in payload.urls.prefix(MultiviewGridLayout.maxTiles) {
+            let mode = YouTubeURLRouter.preferredRoutingMode(for: entryURL)
+            if let existing = tabs.first(where: {
+                !usedTabIDs.contains($0.id)
+                    && $0.routingMode == mode
+                    && ($0.pendingLazyURL ?? $0.url).absoluteString == entryURL.absoluteString
+            }) {
+                usedTabIDs.insert(existing.id)
+                ensureTabLoaded(existing)
+                targetTabIDs.append(existing.id)
+            } else {
+                let pendingSync = initialThemeCookieSyncTask
+                let newTab = makeTab(url: entryURL, routingMode: mode, deferInitialLoad: pendingSync != nil)
+                tabs.append(newTab)
+                if let pendingSync {
+                    Task { @MainActor [weak newTab] in
+                        await pendingSync.value
+                        newTab?.load(entryURL)
+                    }
+                }
+                refreshSponsorSegmentsIfNeeded(for: newTab, url: entryURL)
+                refreshDeArrowTitleIfNeeded(for: newTab, url: entryURL)
+                usedTabIDs.insert(newTab.id)
+                targetTabIDs.append(newTab.id)
+            }
+        }
+
+        guard targetTabIDs.count >= 2 else { return }
+        multiviewLayoutMode = payload.layoutMode
+        soloMultiviewTabID = nil
+        enterMultiview(with: targetTabIDs)
+        scheduleSessionSave()
+    }
+
+    private func resetMultiviewSyncAndStallState() {
+        isMultiviewAutoSyncEnabled = false
+        multiviewMasterTabID = nil
+        stalledMultiviewTabIDs.removeAll()
+        multiviewStallDetector.resetAll()
+        lastObservedTileTimes.removeAll()
+        multiviewSyncWatchdogTask?.cancel()
+        multiviewSyncWatchdogTask = nil
+    }
+
+    private func reconcileMultiviewSyncWatchdog() {
+        guard isMultiviewActive, !isWindowTornDown else {
+            multiviewSyncWatchdogTask?.cancel()
+            multiviewSyncWatchdogTask = nil
+            return
+        }
+        guard multiviewSyncWatchdogTask == nil else { return }
+
+        multiviewSyncWatchdogTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(1800))
+                guard !Task.isCancelled, let self, !self.isWindowTornDown, self.isMultiviewActive else {
+                    break
+                }
+                self.runMultiviewSyncWatchdogPass()
+            }
+            self?.multiviewSyncWatchdogTask = nil
+        }
+    }
+
+    private func runMultiviewSyncWatchdogPass() {
+        let tiles = multiviewTabs
+        let activeIDs = Set(tiles.map(\.id))
+        stalledMultiviewTabIDs = stalledMultiviewTabIDs.intersection(activeIDs)
+        lastObservedTileTimes = lastObservedTileTimes.filter { activeIDs.contains($0.key) }
+
+        var samples: [MultiviewSyncSample] = []
+        var currentRates: [UUID: Double] = [:]
+        samples.reserveCapacity(tiles.count)
+
+        for tab in tiles {
+            guard !tab.isInFullscreen,
+                  tab.webView.fullscreenState == .notInFullscreen,
+                  !tab.isSleeping,
+                  tab.pendingLazyURL == nil,
+                  tab.mediaStatus.hasVideo else {
+                stalledMultiviewTabIDs.remove(tab.id)
+                continue
+            }
+
+            let t = tab.timeline.currentTime
+            if !tab.mediaStatus.isPlaying {
+                stalledMultiviewTabIDs.remove(tab.id)
+                lastObservedTileTimes.removeValue(forKey: tab.id)
+            } else if let prev = lastObservedTileTimes[tab.id], abs(t - prev) >= 0.05 {
+                stalledMultiviewTabIDs.remove(tab.id)
+            }
+            if tab.mediaStatus.isPlaying {
+                lastObservedTileTimes[tab.id] = t
+            }
+
+            currentRates[tab.id] = tab.mediaStatus.playbackRate
+            samples.append(
+                MultiviewSyncSample(
+                    tabID: tab.id,
+                    currentTime: t,
+                    duration: tab.timeline.duration,
+                    isPlaying: tab.mediaStatus.isPlaying,
+                    isLive: Self.isTabLikelyLive(tab)
+                )
+            )
+        }
+
+        let newlyStalled = multiviewStallDetector.evaluate(samples: samples, at: Date())
+        for stalledID in newlyStalled {
+            stalledMultiviewTabIDs.insert(stalledID)
+        }
+
+        if isMultiviewAutoSyncEnabled {
+            let masterID = (multiviewMasterTabID.flatMap { activeIDs.contains($0) ? $0 : nil })
+                ?? multiviewAudioTabID
+                ?? multiviewTabIDs.first
+            let adjustments = MultiviewSyncPlanner.computeRateAdjustments(
+                samples: samples,
+                masterTabID: masterID,
+                isAutoSyncEnabled: true,
+                currentRates: currentRates
+            )
+            for adj in adjustments {
+                guard let tab = tiles.first(where: { $0.id == adj.tabID }),
+                      !tab.isInFullscreen,
+                      tab.webView.fullscreenState == .notInFullscreen,
+                      abs(tab.mediaStatus.playbackRate - adj.targetRate) >= 0.02 else {
+                    continue
+                }
+                tab.setPlaybackRate(adj.targetRate)
+            }
+        }
+    }
+
+    private func restoreMultiviewPlaybackRates() {
+        for tab in multiviewTabs where !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen {
+            if abs(tab.mediaStatus.playbackRate - settings.defaultPlaybackRate) >= 0.02 {
+                tab.setPlaybackRate(settings.defaultPlaybackRate)
+            }
+        }
+    }
+
+    private static func isTabLikelyLive(_ tab: BrowserTab) -> Bool {
+        let url = tab.pendingLazyURL ?? tab.url
+        if YouTubeURLRouter.isYouTubeTVHost(url.host) {
+            return true
+        }
+        if let host = url.host?.lowercased(), host.contains("twitch.tv") {
+            return true
+        }
+        if url.path.lowercased().hasPrefix("/live/") {
+            return true
+        }
+        let duration = tab.timeline.duration
+        return !duration.isFinite || duration <= 0
     }
 
     // MARK: - Streaming Service Onboarding, Launcher & Per-Service Reset
@@ -2013,8 +2357,12 @@ public final class AppController {
     }
 
     private func handleTabDidFinishNavigation(tabID: UUID, url: URL) {
+        if let tab = tabs.first(where: { $0.id == tabID }) {
+            refreshDeArrowTitleIfNeeded(for: tab, url: url)
+        }
         scheduleSignInCompletionCheck(for: tabID, url: url, requireAuthFlowForNonPrime: false)
         syncLivePulseStreamSignals()
+        coordinator?.refreshNotchMediaHUD()
     }
 
     private func scheduleSignInCompletionCheck(for tabID: UUID, url: URL, requireAuthFlowForNonPrime: Bool) {
@@ -2356,6 +2704,7 @@ public final class AppController {
         } else if !hasLiveFullscreenTab {
             syncCompactHeaderModeFromSettings()
         }
+        coordinator?.refreshNotchMediaHUD()
         guard isInFullscreen,
               isMultiviewActive,
               multiviewTabIDs.contains(tabID),
@@ -2579,6 +2928,20 @@ public final class AppController {
     }
 
     @discardableResult
+    public func toggleMiniPlayerGhostMode() -> Bool {
+        guard isMiniPlayer else {
+            showHUD(icon: "rectangle.inset.bottomright.filled", message: "Open Mini-Player First")
+            return false
+        }
+        let enabled = floatingMiniPlayer.toggleGhostMode()
+        showHUD(
+            icon: enabled ? "eye.slash" : "eye",
+            message: enabled ? "Ghost Mode On · Hold ⌥ to Interact" : "Ghost Mode Off"
+        )
+        return enabled
+    }
+
+    @discardableResult
     public func popOutActiveContentToMiniPlayer(reason: PopOutReason) -> Bool {
         guard !hasLiveFullscreenTab else { return false }
         if isMultiviewActive {
@@ -2621,6 +2984,7 @@ public final class AppController {
         poppedOutReason = reason
         presentSingleFloatingMiniPlayer(for: tab)
         tab.applyConfig(configForTab(id: tab.id), force: true)
+        coordinator?.refreshNotchMediaHUD()
         return true
     }
 
@@ -2740,6 +3104,7 @@ public final class AppController {
             }
         )
         applyConfigToAllTabs()
+        coordinator?.refreshNotchMediaHUD()
         return true
     }
 
@@ -2817,6 +3182,7 @@ public final class AppController {
         if focusMain {
             focusMainWindow()
         }
+        coordinator?.refreshNotchMediaHUD()
     }
 
     public func closeMiniPlayerPopup() {
@@ -2848,6 +3214,7 @@ public final class AppController {
                 closeTab(id: tab.id)
             }
         }
+        coordinator?.refreshNotchMediaHUD()
     }
 
     /// Re-evaluates whether the main window is actually occluded behind another app or on another Space
@@ -3505,6 +3872,12 @@ public final class AppController {
 
     private func cancelAllBackgroundTasks() {
         cancelAllMultiviewVolumeDispatchTasks()
+        multiviewSyncWatchdogTask?.cancel()
+        multiviewSyncWatchdogTask = nil
+        transcriptFetchTask?.cancel()
+        transcriptFetchTask = nil
+        channelInboxTask?.cancel()
+        channelInboxTask = nil
         sleepTimerTask?.cancel()
         sleepTimerTask = nil
         findDebounceTask?.cancel()
@@ -3515,12 +3888,17 @@ public final class AppController {
         sessionSaveTask = nil
         toastDismissTask?.cancel()
         toastDismissTask = nil
+        activeToastActionHandler = nil
         resignActiveTask?.cancel()
         resignActiveTask = nil
         for (_, task) in sponsorFetchTasks {
             task.cancel()
         }
         sponsorFetchTasks.removeAll()
+        for (_, task) in deArrowFetchTasks {
+            task.cancel()
+        }
+        deArrowFetchTasks.removeAll()
         cancelSignInCheckTasks()
     }
 
@@ -3593,7 +3971,7 @@ public final class AppController {
                 : (tab.mediaStatus.isPlaying && !tab.mediaStatus.isMuted)
             return CommandPaletteTabSnapshot(
                 id: tab.id,
-                title: tab.displayTitle,
+                title: effectiveTitle(for: tab),
                 subtitle: subtitle,
                 multiviewSlot: multiviewSlotNumber(for: tab.id),
                 isActiveAudio: isAudio,
@@ -3822,6 +4200,75 @@ public final class AppController {
                 isFeaturedWhenEmpty: false
             )
         )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleMiniPlayerGhostMode,
+                title: floatingMiniPlayer.isGhostMode ? "Disable Mini-Player Ghost Mode" : "Enable Mini-Player Ghost Mode",
+                keywords: "ghost mode click through transparent mini player option peek",
+                systemImage: floatingMiniPlayer.isGhostMode ? "eye" : "eye.slash",
+                shortcutHint: "⌘⌥O",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        if isMultiviewActive {
+            actions.append(
+                CommandPaletteActionDescriptor(
+                    action: .syncMultiviewStreams,
+                    title: "Sync All Multiview Streams",
+                    keywords: "sync live edge multiview catch up sports",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    isFeaturedWhenEmpty: false
+                )
+            )
+        }
+        if isMultiviewActive || tabs.count >= 2 {
+            actions.append(
+                CommandPaletteActionDescriptor(
+                    action: .copyMultiviewShareLink,
+                    title: "Copy Shareable Multiview Link",
+                    keywords: "share multiview url deep link glassgridyou",
+                    systemImage: "link",
+                    isFeaturedWhenEmpty: false
+                )
+            )
+        }
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .addBookmark,
+                title: "Bookmark Current Timestamp",
+                keywords: "bookmark timestamp save jump mark",
+                systemImage: "bookmark.fill",
+                shortcutHint: "⌘⇧K",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .openBookmarks,
+                title: "Show Saved Timestamps & Bookmarks",
+                keywords: "bookmarks timestamps list jump",
+                systemImage: "bookmark",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .openTranscript,
+                title: "Open Video Transcript",
+                keywords: "transcript captions subtitles text search",
+                systemImage: "captions.bubble",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleGlobalHotkeys,
+                title: settings.globalHotkeysEnabled ? "Disable Global Hotkeys" : "Enable Global Hotkeys",
+                keywords: "global hotkeys carbon shortcuts background",
+                systemImage: "keyboard",
+                isFeaturedWhenEmpty: false
+            )
+        )
 
         return CommandPaletteEngine.rank(
             query: commandPaletteQuery,
@@ -3832,6 +4279,7 @@ public final class AppController {
             pinnedItems: settings.pinnedItems,
             pinnedFolders: settings.pinnedFolders,
             watchedChannels: settings.watchedChannels,
+            bookmarks: settings.videoBookmarks,
             enabledServices: settings.enabledStreamingServices,
             isMultiviewActive: isMultiviewActive,
             canAddMultiviewTile: canAddMultiviewTile,
@@ -3909,6 +4357,8 @@ public final class AppController {
                 openYouTubeTVInMultiview()
             case .toggleMiniPlayer:
                 toggleMiniPlayer()
+            case .toggleMiniPlayerGhostMode:
+                _ = toggleMiniPlayerGhostMode()
             case .togglePictureInPicture:
                 togglePictureInPicture()
             case .toggleFocusMode:
@@ -3957,6 +4407,27 @@ public final class AppController {
                 toggleHolidayEffects()
             case .cycleHolidayTheme:
                 cycleHolidayTheme()
+            case .syncMultiviewStreams:
+                syncAllMultiviewTilesToLive()
+            case .copyMultiviewShareLink:
+                _ = copyMultiviewShareLink()
+            case .addBookmark:
+                _ = addCurrentTimestampBookmark()
+            case .openBookmarks:
+                isBookmarksPopoverPresented = true
+                return
+            case .openTranscript:
+                isTranscriptPopoverPresented = true
+                Task { @MainActor [weak self] in
+                    _ = await self?.fetchCurrentTabTranscript()
+                }
+                return
+            case .toggleGlobalHotkeys:
+                settings.globalHotkeysEnabled.toggle()
+                showHUD(
+                    icon: "keyboard",
+                    message: settings.globalHotkeysEnabled ? "Global Hotkeys Enabled" : "Global Hotkeys Disabled"
+                )
             }
             focusActiveWebView()
         }
@@ -4339,7 +4810,7 @@ public final class AppController {
         let nextTitle = WindowTitleFormatter.title(
             isMultiview: isMultiviewActive,
             multiviewCount: multiviewTabs.count,
-            tabTitle: selectedTab?.displayTitle ?? "",
+            tabTitle: selectedTab.map { effectiveTitle(for: $0) } ?? "",
             isHome: isHome
         )
         if window.title != nextTitle {
@@ -4660,6 +5131,15 @@ public final class AppController {
     }
 
     public func handleIncomingURL(_ url: URL) {
+        if MultiviewShareLinkCodec.isMultiviewShareURL(url) {
+            if let payload = MultiviewShareLinkCodec.decode(url, tier: .playbackAndNavigation) {
+                launchMultiviewSharePayload(payload)
+                focusMainWindow()
+            } else {
+                showHUD(icon: "exclamationmark.triangle", message: "Invalid Multiview Share Link")
+            }
+            return
+        }
         if AgentURLActionParser.isActionURL(url) {
             coordinator?.agentBridge.handleActionURL(url)
             return
@@ -4743,8 +5223,9 @@ public final class AppController {
         }
 
         let client = sponsorBlockClient
+        let categories = settings.sponsorBlockCategories
         sponsorFetchTasks[tabID] = Task { [weak self, weak tab] in
-            let segments = await client.fetchSponsorSegments(for: videoID)
+            let segments = await client.fetchSponsorSegments(for: videoID, categories: categories)
             guard !Task.isCancelled,
                   let self,
                   let tab,
@@ -4754,6 +5235,194 @@ public final class AppController {
             }
             tab.applySponsorSegments(videoID: videoID, segments: segments)
         }
+    }
+
+    // MARK: - DeArrow Clickbait Removal (Strictly Opt-In)
+
+    public func effectiveTitle(for tab: BrowserTab) -> String {
+        if settings.deArrowEnabled,
+           YouTubeURLRouter.isStandardYouTubeHost(tab.url.host),
+           let videoID = YouTubeURLRouter.extractVideoID(from: tab.url),
+           let clean = deArrowTitlesByVideoID[videoID],
+           !clean.isEmpty {
+            return clean
+        }
+        return tab.displayTitle
+    }
+
+    func handleDeArrowSettingChanged(enabled: Bool) {
+        if enabled {
+            for tab in tabs {
+                refreshDeArrowTitleIfNeeded(for: tab, url: tab.url)
+            }
+        } else {
+            for (_, task) in deArrowFetchTasks {
+                task.cancel()
+            }
+            deArrowFetchTasks.removeAll()
+            attemptedDeArrowVideoIDs.removeAll()
+            deArrowTitlesByVideoID.removeAll()
+            syncWindowTitle()
+        }
+    }
+
+    private func refreshDeArrowTitleIfNeeded(for tab: BrowserTab, url: URL) {
+        guard settings.deArrowEnabled,
+              !isWindowTornDown,
+              !tab.isSleeping,
+              tab.pendingLazyURL == nil,
+              YouTubeURLRouter.isStandardYouTubeHost(url.host),
+              let videoID = YouTubeURLRouter.extractVideoID(from: url),
+              deArrowTitlesByVideoID[videoID] == nil,
+              !attemptedDeArrowVideoIDs.contains(videoID),
+              deArrowFetchTasks[videoID] == nil else {
+            return
+        }
+
+        attemptedDeArrowVideoIDs.insert(videoID)
+        let client = deArrowClient
+        deArrowFetchTasks[videoID] = Task { @MainActor [weak self] in
+            let cleanTitle = await client.fetchCleanTitle(for: videoID)
+            guard let self else { return }
+            self.deArrowFetchTasks.removeValue(forKey: videoID)
+            guard !Task.isCancelled,
+                  !self.isWindowTornDown,
+                  self.settings.deArrowEnabled,
+                  let cleanTitle,
+                  !cleanTitle.isEmpty else {
+                return
+            }
+            self.deArrowTitlesByVideoID[videoID] = cleanTitle
+            if let selected = self.selectedTab,
+               YouTubeURLRouter.extractVideoID(from: selected.url) == videoID {
+                self.syncWindowTitle()
+            }
+        }
+    }
+
+    // MARK: - Timestamp Bookmarks, On-Demand Transcript & Channel Inbox
+
+    @discardableResult
+    public func addCurrentTimestampBookmark(note: String = "") -> VideoBookmark? {
+        guard let tab = activeMediaTab ?? selectedTab else { return nil }
+        let targetURL = tab.pendingLazyURL ?? tab.url
+        let rawTitle = tab.mediaStatus.title.isEmpty ? effectiveTitle(for: tab) : tab.mediaStatus.title
+        let cleanTitle = AgentSecurity.sanitizeWebText(rawTitle, maxLength: AgentSecurity.maxWebTitleLength).text
+        let cleanChannel = AgentSecurity.sanitizeWebText(tab.mediaStatus.channel, maxLength: AgentSecurity.maxChannelNameLength).text
+        let cleanNote = AgentSecurity.sanitizeWebText(note, maxLength: 240).text
+        let currentSeconds = tab.mediaStatus.hasVideo ? max(0, tab.timeline.currentTime) : 0
+        let videoID = YouTubeURLRouter.extractVideoID(from: targetURL)
+
+        let bookmark = VideoBookmark(
+            videoID: videoID,
+            urlString: targetURL.absoluteString,
+            title: cleanTitle.isEmpty ? "YouTube" : cleanTitle,
+            channel: cleanChannel,
+            note: cleanNote,
+            timestampSeconds: currentSeconds
+        )
+        settings.videoBookmarks.insert(bookmark, at: 0)
+        if settings.videoBookmarks.count > 200 {
+            settings.videoBookmarks = Array(settings.videoBookmarks.prefix(200))
+        }
+        let timeLabel = bookmark.timestampSeconds >= 1 ? " at \(bookmark.formattedTimestamp)" : ""
+        showHUD(icon: "bookmark.fill", message: "Bookmarked\(timeLabel)")
+        return bookmark
+    }
+
+    public func removeVideoBookmark(id: UUID) {
+        settings.videoBookmarks.removeAll { $0.id == id }
+    }
+
+    public func jumpToBookmark(_ bookmark: VideoBookmark) {
+        guard let targetURL = bookmark.url else { return }
+        if let existing = tabs.first(where: {
+            let tabURL = $0.pendingLazyURL ?? $0.url
+            if let bmID = bookmark.videoID,
+               !bmID.isEmpty,
+               YouTubeURLRouter.extractVideoID(from: tabURL) == bmID {
+                return true
+            }
+            return tabURL.absoluteString == bookmark.urlString
+        }) {
+            selectTab(id: existing.id)
+            if bookmark.timestampSeconds >= 1 && existing.mediaStatus.hasVideo {
+                existing.seekTo(seconds: bookmark.timestampSeconds)
+            } else {
+                existing.load(targetURL)
+            }
+        } else {
+            navigateSelectedTab(to: targetURL)
+        }
+        focusMainWindow()
+        let timeSuffix = bookmark.timestampSeconds >= 1 ? " · \(bookmark.formattedTimestamp)" : ""
+        showHUD(icon: "bookmark.fill", message: "Jumped to Bookmark\(timeSuffix)")
+    }
+
+    @discardableResult
+    public func fetchCurrentTabTranscript() async -> YouTubeTranscript? {
+        guard let tab = activeMediaTab ?? selectedTab else {
+            currentTranscript = nil
+            isFetchingTranscript = false
+            return nil
+        }
+        transcriptFetchTask?.cancel()
+        isFetchingTranscript = true
+        let task = Task<YouTubeTranscript?, Never> { @MainActor [weak tab] in
+            await tab?.fetchOnDemandTranscript()
+        }
+        transcriptFetchTask = task
+        let transcript = await task.value
+        guard !Task.isCancelled, !isWindowTornDown else {
+            isFetchingTranscript = false
+            return nil
+        }
+        transcriptFetchTask = nil
+        isFetchingTranscript = false
+        currentTranscript = transcript
+        return transcript
+    }
+
+    public func refreshChannelInbox() async {
+        guard !isWindowTornDown else { return }
+        channelInboxTask?.cancel()
+
+        var channelIDs: [String] = []
+        var seen: Set<String> = []
+        for item in settings.pinnedItems {
+            if let cid = ChannelInboxClient.extractChannelID(from: item.urlString),
+               seen.insert(cid).inserted {
+                channelIDs.append(cid)
+            }
+        }
+        for stat in settings.watchedChannels {
+            if let raw = stat.channelURLString,
+               let cid = ChannelInboxClient.extractChannelID(from: raw),
+               seen.insert(cid).inserted {
+                channelIDs.append(cid)
+            }
+        }
+
+        guard !channelIDs.isEmpty else {
+            channelInboxEntries = []
+            isLoadingChannelInbox = false
+            return
+        }
+
+        isLoadingChannelInbox = true
+        let client = channelInboxClient
+        let filterConfig = settings.contentFilterConfig
+        let task = Task<Void, Never> { @MainActor [weak self] in
+            let entries = await client.fetchMergedInbox(channelIDs: channelIDs)
+            guard !Task.isCancelled, let self, !self.isWindowTornDown else { return }
+            self.channelInboxEntries = entries.filter {
+                !filterConfig.matches(title: $0.title, channel: $0.channelName)
+            }
+            self.isLoadingChannelInbox = false
+            self.channelInboxTask = nil
+        }
+        channelInboxTask = task
+        await task.value
     }
 
     // MARK: - Helpers
@@ -4862,8 +5531,19 @@ public final class AppController {
         tab.onVideoEnded = { [weak self] endedTabID in
             self?.handleTabVideoEnded(tabID: endedTabID)
         }
-        tab.onSponsorSkipped = { [weak self] _ in
-            self?.showHUD(icon: "forward.end.fill", message: "Skipped Sponsor")
+        tab.onSponsorSegmentSkipped = { [weak self, weak tab] segment in
+            guard let self, let tab else { return }
+            self.showHUD(
+                icon: "forward.end.fill",
+                message: "Skipped \(segment.categoryDisplayName)",
+                actionTitle: "Un-skip"
+            ) { [weak tab] in
+                tab?.unskipSponsorSegment(segment)
+            }
+        }
+        tab.onMediaStatusChanged = { [weak self] _ in
+            guard let self, self.coordinator?.settings.notchMediaHUDEnabled == true else { return }
+            self.coordinator?.refreshNotchMediaHUD()
         }
         tab.onWatchProgress = { [weak self] videoID, title, channel, channelURL, currentTime, duration, isNewChannelRecord in
             guard let self else { return }
@@ -4926,9 +5606,15 @@ public final class AppController {
             return
         }
 
-        // Single-audio enforcement: pause any other playing tabs.
-        for other in tabs where other.id != startedTabID && other.mediaStatus.isPlaying {
-            other.pauseMedia()
+        // Single-View Auto-Pause & single-audio enforcement: never pause during Multiview.
+        if settings.singleViewAutoPauseEnabled {
+            for other in tabs where other.id != startedTabID && !isTabPoppedOut(other.id) && other.mediaStatus.isPlaying {
+                other.pauseMedia()
+            }
+        } else {
+            for other in tabs where other.id != startedTabID && other.mediaStatus.isPlaying {
+                other.pauseMedia()
+            }
         }
 
         // If a different docked tab started playing while an auto-popped mini-player was floating, dock the stale panel cleanly.
@@ -4941,6 +5627,7 @@ public final class AppController {
             }
         }
         syncLivePulseStreamSignals()
+        coordinator?.refreshNotchMediaHUD()
     }
 
     private func handleTabURLDidChange(tabID: UUID, newURL: URL) {
@@ -4955,6 +5642,7 @@ public final class AppController {
         }
         if let tab = tabs.first(where: { $0.id == tabID }) {
             refreshSponsorSegmentsIfNeeded(for: tab, url: newURL)
+            refreshDeArrowTitleIfNeeded(for: tab, url: newURL)
             if tab.authFlowServiceID != nil && !StreamingServiceCatalog.isTransientAuthURL(newURL) {
                 scheduleSignInCompletionCheck(for: tabID, url: newURL, requireAuthFlowForNonPrime: true)
             }
@@ -4967,6 +5655,7 @@ public final class AppController {
         }
         scheduleSessionSave()
         syncLivePulseStreamSignals()
+        coordinator?.refreshNotchMediaHUD()
     }
 
     func applyConfigToAllTabs() {

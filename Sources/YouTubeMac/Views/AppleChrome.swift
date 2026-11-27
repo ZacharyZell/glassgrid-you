@@ -61,19 +61,6 @@ final class ThemeRuntime {
     }
 }
 
-/// Lightweight non-blocking HUD toast payload for keyboard shortcuts and automated playback actions.
-public struct HUDToast: Equatable, Sendable {
-    public let id: UUID
-    public let icon: String
-    public let message: String
-
-    public init(id: UUID = UUID(), icon: String, message: String) {
-        self.id = id
-        self.icon = icon
-        self.message = message
-    }
-}
-
 /// Shared Apple-inspired palette and native AppKit / Liquid Glass chrome primitives.
 /// All Day/Night palette values derive from `DesignSystemMetrics` / `HolidayThemeCatalog` so WCAG 2.1 AA contrast (`>= 4.5:1`)
 /// is enforced identically in runtime SwiftUI/AppKit and offline `DesignSystemTests`.
@@ -340,6 +327,7 @@ struct VisualEffectBackground: NSViewRepresentable {
 final class WindowDragNSView: NSView {
     var onDoubleClick: (() -> Void)?
     var onDragEnded: (() -> Void)?
+    var onScrollWheelOpacityDelta: ((CGFloat) -> Void)?
     var edgeResizeInset: CGFloat = 0
 
     override var mouseDownCanMoveWindow: Bool { true }
@@ -374,18 +362,35 @@ final class WindowDragNSView: NSView {
         window?.performDrag(with: event)
         onDragEnded?()
     }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let onScrollWheelOpacityDelta else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let dy = event.scrollingDeltaY
+        let dx = event.scrollingDeltaX
+        guard dy != 0, abs(dy) > abs(dx) else {
+            super.scrollWheel(with: event)
+            return
+        }
+        let delta = dy * (event.hasPreciseScrollingDeltas ? 0.004 : 0.025)
+        onScrollWheelOpacityDelta(delta)
+    }
 }
 
 struct WindowDragArea: NSViewRepresentable {
     var edgeResizeInset: CGFloat = 0
     var onDoubleClick: (() -> Void)? = nil
     var onDragEnded: (() -> Void)? = nil
+    var onScrollWheelOpacityDelta: ((CGFloat) -> Void)? = nil
 
     func makeNSView(context: Context) -> WindowDragNSView {
         let view = WindowDragNSView(frame: .zero)
         view.edgeResizeInset = edgeResizeInset
         view.onDoubleClick = onDoubleClick
         view.onDragEnded = onDragEnded
+        view.onScrollWheelOpacityDelta = onScrollWheelOpacityDelta
         return view
     }
 
@@ -393,6 +398,7 @@ struct WindowDragArea: NSViewRepresentable {
         nsView.edgeResizeInset = edgeResizeInset
         nsView.onDoubleClick = onDoubleClick
         nsView.onDragEnded = onDragEnded
+        nsView.onScrollWheelOpacityDelta = onScrollWheelOpacityDelta
     }
 }
 
@@ -495,9 +501,10 @@ struct AppleSpeedBadge: View {
     }
 }
 
-/// Subtle non-blocking macOS Liquid Glass HUD toast overlay.
+/// Subtle non-blocking macOS Liquid Glass HUD toast overlay with optional clickable action pill.
 struct AppleHUDToast: View {
     let toast: HUDToast
+    var onAction: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: AppSpacing.md) {
@@ -507,12 +514,25 @@ struct AppleHUDToast: View {
             Text(toast.message)
                 .font(AppFont.callout(weight: .medium))
                 .foregroundStyle(.primary)
+
+            if let actionTitle = toast.actionTitle, let onAction {
+                Button(action: onAction) {
+                    Text(actionTitle)
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, AppSpacing.md)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                        .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .padding(.horizontal, AppSpacing.xl)
-        .padding(.vertical, AppSpacing.md)
-        .appleGlass(in: Capsule(style: .continuous))
+        .padding(.leading, AppSpacing.xl)
+        .padding(.trailing, toast.actionTitle != nil ? AppSpacing.md : AppSpacing.xl)
+        .padding(.vertical, toast.actionTitle != nil ? AppSpacing.sm : AppSpacing.md)
+        .appleGlass(in: Capsule(style: .continuous), interactive: toast.actionTitle != nil)
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
-        .allowsHitTesting(false)
+        .allowsHitTesting(toast.actionTitle != nil)
     }
 }
 

@@ -64,6 +64,10 @@ final class CleanBoxDOMFixtureTests: XCTestCase {
             try await webView.evaluateJavaScript(script)
         }
 
+        func callAsync(_ script: String) async throws -> Any? {
+            try await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
+        }
+
         func teardown() {
             if captureBridgeMessages {
                 webView.configuration.userContentController.removeScriptMessageHandler(forName: "ytmacBridge")
@@ -644,5 +648,135 @@ final class CleanBoxDOMFixtureTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(40))
         XCTAssertEqual(host.bridgeMessages.last?["volumePercent"] as? Int, 45)
         XCTAssertEqual(host.bridgeMessages.last?["isMuted"] as? Bool, false)
+    }
+
+    func testV140TranscriptExtractionDOMAndTextTracksAndContentFilterRules() async throws {
+        // 1. Static script invariant check for v1.4.0 scripts
+        let filterConfig = DistractionFreeConfig(
+            contentFilterKeywords: ["clickbait", "spoiler"],
+            contentFilterChannels: ["NoiseChannel"]
+        )
+        let filterBootstrap = EnhancementScript.bootstrapScript(config: filterConfig)
+        let suppressScript = EnhancementScript.suppressSponsorTimeScript(fromTime: 42.0, seekBack: true)
+        for snippet in [
+            filterBootstrap,
+            EnhancementScript.extractTranscriptScript,
+            suppressScript
+        ] {
+            XCTAssertFalse(snippet.contains(":has("))
+            XCTAssertFalse(snippet.contains("MutationObserver"))
+            XCTAssertFalse(snippet.contains("AudioContext"))
+            XCTAssertFalse(snippet.contains("ytInitialPlayerResponse"))
+        }
+
+        // 2. Active DOM ytd-transcript-segment-renderer extraction + Content Filter rules on watch/home fixture
+        let host = OfflineFixtureHost(size: NSSize(width: 960, height: 640), config: filterConfig)
+        defer { host.teardown() }
+
+        let domTranscriptHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head><title>GlassGrid Architecture - YouTube</title></head>
+        <body>
+          <ytd-watch-metadata><h1><yt-formatted-string>GlassGrid Architecture</yt-formatted-string></h1></ytd-watch-metadata>
+          <ytd-transcript-segment-renderer>
+            <div class="segment-timestamp">0:05</div>
+            <div class="segment-text">Welcome to the native macOS player.</div>
+          </ytd-transcript-segment-renderer>
+          <ytd-transcript-segment-renderer>
+            <div class="segment-timestamp">1:02:15</div>
+            <div class="segment-text">Liquid Glass chrome alignment.</div>
+          </ytd-transcript-segment-renderer>
+          <div id="cards">
+            <ytd-rich-item-renderer id="card-keyword">
+              <a id="video-title">Huge SPOILER Warning</a>
+              <ytd-channel-name><a>Clean Tech</a></ytd-channel-name>
+            </ytd-rich-item-renderer>
+            <ytd-rich-item-renderer id="card-channel">
+              <a id="video-title">Normal Review</a>
+              <ytd-channel-name><a>NoiseChannel Official</a></ytd-channel-name>
+            </ytd-rich-item-renderer>
+            <ytd-rich-item-renderer id="card-keep">
+              <a id="video-title">Swift 6 Concurrency Talk</a>
+              <ytd-channel-name><a>Apple Developer</a></ytd-channel-name>
+            </ytd-rich-item-renderer>
+          </div>
+        </body>
+        </html>
+        """
+
+        try await host.loadFixture(
+            html: domTranscriptHTML,
+            baseURL: URL(string: "https://www.youtube.com/watch?v=testVid1234")!
+        )
+
+        let domResult = try await host.callAsync(EnhancementScript.extractTranscriptScript) as? [String: Any]
+        XCTAssertEqual(domResult?["status"] as? String, "ok")
+        XCTAssertEqual(domResult?["source"] as? String, "dom")
+        XCTAssertEqual(domResult?["videoId"] as? String, "testVid1234")
+        XCTAssertEqual(domResult?["title"] as? String, "GlassGrid Architecture")
+        let domSegs = try XCTUnwrap(domResult?["segments"] as? [[String: Any]])
+        XCTAssertEqual(domSegs.count, 2)
+        XCTAssertEqual((domSegs[0]["startSeconds"] as? NSNumber)?.doubleValue, 5.0)
+        XCTAssertEqual(domSegs[0]["text"] as? String, "Welcome to the native macOS player.")
+        XCTAssertEqual((domSegs[1]["startSeconds"] as? NSNumber)?.doubleValue, 3735.0)
+
+        // Verify content filter hid keyword + channel cards and kept non-matching card visible
+        let filterState = try await host.eval("""
+        (() => ({
+            keywordHidden: document.getElementById('card-keyword').classList.contains('ytmac-filtered-hidden'),
+            channelHidden: document.getElementById('card-channel').classList.contains('ytmac-filtered-hidden'),
+            keepHidden: document.getElementById('card-keep').classList.contains('ytmac-filtered-hidden'),
+            keywordDisplay: getComputedStyle(document.getElementById('card-keyword')).display,
+            keepDisplay: getComputedStyle(document.getElementById('card-keep')).display
+        }))()
+        """) as? [String: Any]
+        XCTAssertEqual(filterState?["keywordHidden"] as? Bool, true)
+        XCTAssertEqual(filterState?["channelHidden"] as? Bool, true)
+        XCTAssertEqual(filterState?["keepHidden"] as? Bool, false)
+        XCTAssertEqual(filterState?["keywordDisplay"] as? String, "none")
+        XCTAssertNotEqual(filterState?["keepDisplay"] as? String, "none")
+
+        // Clearing filter rules removes .ytmac-filtered-hidden
+        _ = try await host.eval(EnhancementScript.applyConfigScript(DistractionFreeConfig(), triggerResize: false))
+        let remainingHidden = try await host.eval("document.querySelectorAll('.ytmac-filtered-hidden').length") as? NSNumber
+        XCTAssertEqual(remainingHidden?.intValue, 0)
+
+        // 3. Fallback to <track> / video.textTracks cues when no transcript panel DOM is open
+        let trackHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head><title>Caption Track Video - YouTube</title></head>
+        <body>
+          <div id="movie_player">
+            <video class="html5-main-video" id="yt-v"></video>
+          </div>
+          <script>
+            const v = document.getElementById('yt-v');
+            const t = v.addTextTrack('captions', 'English', 'en');
+            t.mode = 'showing';
+            t.addCue(new VTTCue(2.0, 5.5, 'First textTrack cue'));
+            t.addCue(new VTTCue(6.0, 9.0, 'Second textTrack cue'));
+          </script>
+        </body>
+        </html>
+        """
+
+        try await host.loadFixture(
+            html: trackHTML,
+            baseURL: URL(string: "https://www.youtube.com/watch?v=trackVid999")!
+        )
+
+        let trackResult = try await host.callAsync(EnhancementScript.extractTranscriptScript) as? [String: Any]
+        XCTAssertEqual(trackResult?["status"] as? String, "ok")
+        XCTAssertEqual(trackResult?["source"] as? String, "textTracks")
+        XCTAssertEqual(trackResult?["videoId"] as? String, "trackVid999")
+        XCTAssertEqual(trackResult?["languageCode"] as? String, "en")
+        let trackSegs = try XCTUnwrap(trackResult?["segments"] as? [[String: Any]])
+        XCTAssertEqual(trackSegs.count, 2)
+        XCTAssertEqual((trackSegs[0]["startSeconds"] as? NSNumber)?.doubleValue, 2.0)
+        XCTAssertEqual((trackSegs[0]["durationSeconds"] as? NSNumber)?.doubleValue, 3.5)
+        XCTAssertEqual(trackSegs[0]["text"] as? String, "First textTrack cue")
+        XCTAssertEqual(trackSegs[1]["text"] as? String, "Second textTrack cue")
     }
 }

@@ -319,7 +319,7 @@ public enum GlassGridSleepTimerEnum: String, AppEnum, Sendable {
     ]
 }
 
-// MARK: - 12 Focused Single-Purpose AppIntents
+// MARK: - 14 Focused Single-Purpose AppIntents
 
 public struct GetNowPlayingIntent: AppIntent {
     public static let title: LocalizedStringResource = "Get Now Playing"
@@ -606,6 +606,53 @@ public struct SetSleepTimerIntent: AppIntent {
     }
 }
 
+public struct ToggleMiniPlayerGhostModeIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Toggle Mini-Player Ghost Mode"
+    public static let description = IntentDescription("Enable, disable, or toggle click-through Ghost Mode on the Floating Mini-Player.")
+
+    @Parameter(title: "Enabled")
+    public var enabled: Bool?
+
+    @Dependency(key: "GlassGridAgentBridge")
+    private var agentBridge: AgentBridgeController
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        var args: [String: JSONValue] = [:]
+        if let enabled {
+            args["enabled"] = .bool(enabled)
+        }
+        let outcome = try await executeBridgeCommand(
+            agentBridge,
+            toolName: "toggle_ghost_mode",
+            arguments: args
+        )
+        return .result(dialog: "\(outcome.message)")
+    }
+}
+
+public struct SyncMultiviewStreamsIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Sync Multiview Streams"
+    public static let description = IntentDescription("Synchronize all active Multiview streams to live edge or the primary stream timestamp.")
+
+    @Dependency(key: "GlassGridAgentBridge")
+    private var agentBridge: AgentBridgeController
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        let outcome = try await executeBridgeCommand(
+            agentBridge,
+            toolName: "sync_multiview_all",
+            arguments: [:]
+        )
+        return .result(dialog: "\(outcome.message)")
+    }
+}
+
 // MARK: - AppShortcutsProvider (Max 10 entries; every phrase includes \(.applicationName))
 
 public struct GlassGridShortcutsProvider: AppShortcutsProvider {
@@ -678,6 +725,22 @@ public struct GlassGridShortcutsProvider: AppShortcutsProvider {
             ],
             shortTitle: "Set Sleep Timer",
             systemImageName: "moon.zzz.fill"
+        )
+        AppShortcut(
+            intent: ToggleMiniPlayerGhostModeIntent(),
+            phrases: [
+                "Toggle Ghost Mode in \(.applicationName)"
+            ],
+            shortTitle: "Toggle Ghost Mode",
+            systemImageName: "rectangle.dashed"
+        )
+        AppShortcut(
+            intent: SyncMultiviewStreamsIntent(),
+            phrases: [
+                "Sync Multiview streams in \(.applicationName)"
+            ],
+            shortTitle: "Sync Multiview",
+            systemImageName: "arrow.triangle.2.circlepath"
         )
     }
 }

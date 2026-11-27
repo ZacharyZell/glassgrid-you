@@ -24,6 +24,13 @@ public final class AppSettings {
         static let preferredQuality = "ytmac.preferredQuality"
         static let defaultPlaybackRate = "ytmac.defaultPlaybackRate"
         static let sponsorBlockEnabled = "ytmac.sponsorBlockEnabled"
+        static let sponsorBlockCategories = "ytmac.sponsorBlockCategories"
+        static let deArrowEnabled = "ytmac.deArrowEnabled"
+        static let singleViewAutoPauseEnabled = "ytmac.singleViewAutoPauseEnabled"
+        static let contentFilterConfig = "ytmac.contentFilterConfig"
+        static let videoBookmarks = "ytmac.videoBookmarks"
+        static let globalHotkeysEnabled = "ytmac.globalHotkeysEnabled"
+        static let notchMediaHUDEnabled = "ytmac.notchMediaHUDEnabled"
         static let openExternalLinksInBrowser = "ytmac.openExternalLinksInBrowser"
         static let alwaysShowTabBar = "ytmac.alwaysShowTabBar"
         static let miniPlayerAllSpaces = "ytmac.miniPlayerAllSpaces"
@@ -72,6 +79,8 @@ public final class AppSettings {
         static let livePulseShowMarkets = "ytmac.livePulse.showMarkets"
         static let livePulseSleeperUsername = "ytmac.livePulse.sleeperUsername"
         static let livePulseFantasyLeagues = "ytmac.livePulse.fantasyLeagues"
+        static let livePulseMenuBarPin = "ytmac.livePulse.menuBarPin"
+        static let livePulseScoringFlashes = "ytmac.livePulse.scoringFlashes"
     }
 
     @ObservationIgnored
@@ -91,6 +100,18 @@ public final class AppSettings {
 
     @ObservationIgnored
     var onSponsorBlockSettingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
+    var onSponsorBlockCategoriesDidChange: (() -> Void)?
+
+    @ObservationIgnored
+    var onDeArrowSettingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
+    var onGlobalHotkeysSettingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
+    var onNotchMediaHUDSettingDidChange: ((Bool) -> Void)?
 
     @ObservationIgnored
     var onSystemPlaybackGuardSettingDidChange: ((Bool) -> Void)?
@@ -239,6 +260,81 @@ public final class AppSettings {
             defaults.set(sponsorBlockEnabled, forKey: Keys.sponsorBlockEnabled)
             onWebConfigDidChange?()
             onSponsorBlockSettingDidChange?(sponsorBlockEnabled)
+        }
+    }
+
+    public var sponsorBlockCategories: Set<String> {
+        didSet {
+            let validSet = Set(SponsorSegmentCategory.allCases.map(\.rawValue))
+            let normalized = Set(
+                sponsorBlockCategories
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                    .filter { validSet.contains($0) }
+            )
+            let resolved = normalized.isEmpty ? SponsorSegmentCategory.defaultCategorySet : normalized
+            if sponsorBlockCategories != resolved {
+                sponsorBlockCategories = resolved
+                return
+            }
+            guard sponsorBlockCategories != oldValue else { return }
+            defaults.set(resolved.sorted(), forKey: Keys.sponsorBlockCategories)
+            onSponsorBlockCategoriesDidChange?()
+        }
+    }
+
+    public var sponsorBlockCategoryEnums: [SponsorSegmentCategory] {
+        get {
+            SponsorSegmentCategory.allCases.filter { sponsorBlockCategories.contains($0.rawValue) }
+        }
+        set {
+            let next = Set(newValue.map(\.rawValue))
+            sponsorBlockCategories = next.isEmpty ? SponsorSegmentCategory.defaultCategorySet : next
+        }
+    }
+
+    public var deArrowEnabled: Bool {
+        didSet {
+            guard deArrowEnabled != oldValue else { return }
+            defaults.set(deArrowEnabled, forKey: Keys.deArrowEnabled)
+            onDeArrowSettingDidChange?(deArrowEnabled)
+        }
+    }
+
+    public var singleViewAutoPauseEnabled: Bool {
+        didSet {
+            guard singleViewAutoPauseEnabled != oldValue else { return }
+            defaults.set(singleViewAutoPauseEnabled, forKey: Keys.singleViewAutoPauseEnabled)
+        }
+    }
+
+    public var contentFilterConfig: ContentFilterConfig {
+        didSet {
+            guard contentFilterConfig != oldValue else { return }
+            saveContentFilterConfig()
+            onWebConfigDidChange?()
+        }
+    }
+
+    public var videoBookmarks: [VideoBookmark] {
+        didSet {
+            guard videoBookmarks != oldValue else { return }
+            saveVideoBookmarks()
+        }
+    }
+
+    public var globalHotkeysEnabled: Bool {
+        didSet {
+            guard globalHotkeysEnabled != oldValue else { return }
+            defaults.set(globalHotkeysEnabled, forKey: Keys.globalHotkeysEnabled)
+            onGlobalHotkeysSettingDidChange?(globalHotkeysEnabled)
+        }
+    }
+
+    public var notchMediaHUDEnabled: Bool {
+        didSet {
+            guard notchMediaHUDEnabled != oldValue else { return }
+            defaults.set(notchMediaHUDEnabled, forKey: Keys.notchMediaHUDEnabled)
+            onNotchMediaHUDSettingDidChange?(notchMediaHUDEnabled)
         }
     }
 
@@ -623,6 +719,22 @@ public final class AppSettings {
         }
     }
 
+    public var livePulseMenuBarPin: Bool {
+        didSet {
+            guard livePulseMenuBarPin != oldValue else { return }
+            defaults.set(livePulseMenuBarPin, forKey: Keys.livePulseMenuBarPin)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var livePulseScoringFlashes: Bool {
+        didSet {
+            guard livePulseScoringFlashes != oldValue else { return }
+            defaults.set(livePulseScoringFlashes, forKey: Keys.livePulseScoringFlashes)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
     public var enabledStreamingServices: [StreamingService] {
         StreamingServiceCatalog.resolvedEnabledServices(from: enabledStreamingServiceIDs)
     }
@@ -735,6 +847,29 @@ public final class AppSettings {
         self.autoDismissContinueWatching = defaults.object(forKey: Keys.autoDismissContinueWatching) as? Bool ?? true
         self.preferOriginalAudio = defaults.object(forKey: Keys.preferOriginalAudio) as? Bool ?? true
         self.sponsorBlockEnabled = defaults.object(forKey: Keys.sponsorBlockEnabled) as? Bool ?? false
+        if let rawCategories = defaults.stringArray(forKey: Keys.sponsorBlockCategories) {
+            let validSet = Set(SponsorSegmentCategory.allCases.map(\.rawValue))
+            let filtered = Set(rawCategories.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { validSet.contains($0) })
+            self.sponsorBlockCategories = filtered.isEmpty ? SponsorSegmentCategory.defaultCategorySet : filtered
+        } else {
+            self.sponsorBlockCategories = SponsorSegmentCategory.defaultCategorySet
+        }
+        self.deArrowEnabled = defaults.object(forKey: Keys.deArrowEnabled) as? Bool ?? false
+        self.singleViewAutoPauseEnabled = defaults.object(forKey: Keys.singleViewAutoPauseEnabled) as? Bool ?? false
+        if let filterData = defaults.data(forKey: Keys.contentFilterConfig),
+           let decodedFilter = try? JSONDecoder().decode(ContentFilterConfig.self, from: filterData) {
+            self.contentFilterConfig = decodedFilter
+        } else {
+            self.contentFilterConfig = ContentFilterConfig()
+        }
+        if let bookmarksData = defaults.data(forKey: Keys.videoBookmarks),
+           let decodedBookmarks = try? JSONDecoder().decode([VideoBookmark].self, from: bookmarksData) {
+            self.videoBookmarks = decodedBookmarks
+        } else {
+            self.videoBookmarks = []
+        }
+        self.globalHotkeysEnabled = defaults.object(forKey: Keys.globalHotkeysEnabled) as? Bool ?? false
+        self.notchMediaHUDEnabled = defaults.object(forKey: Keys.notchMediaHUDEnabled) as? Bool ?? false
         self.openExternalLinksInBrowser = defaults.object(forKey: Keys.openExternalLinksInBrowser) as? Bool ?? true
         self.alwaysShowTabBar = defaults.object(forKey: Keys.alwaysShowTabBar) as? Bool ?? false
         self.miniPlayerAllSpaces = defaults.object(forKey: Keys.miniPlayerAllSpaces) as? Bool ?? true
@@ -890,7 +1025,7 @@ public final class AppSettings {
         if let rawLeagues = defaults.stringArray(forKey: Keys.livePulseEnabledLeagues) {
             self.livePulseEnabledLeagues = rawLeagues.compactMap(SportsLeague.init(rawValue:))
         } else {
-            self.livePulseEnabledLeagues = SportsLeague.allCases
+            self.livePulseEnabledLeagues = SportsLeague.defaultEnabledLeagues
         }
 
         if let rawPriority = defaults.stringArray(forKey: Keys.livePulseLeaguePriority) {
@@ -910,6 +1045,9 @@ public final class AppSettings {
         } else {
             self.livePulseFantasyLeagues = []
         }
+
+        self.livePulseMenuBarPin = defaults.object(forKey: Keys.livePulseMenuBarPin) as? Bool ?? false
+        self.livePulseScoringFlashes = defaults.object(forKey: Keys.livePulseScoringFlashes) as? Bool ?? false
     }
 
     public var preferredColorScheme: ColorScheme? {
@@ -989,7 +1127,9 @@ public final class AppSettings {
             miniPlayerActive: miniPlayer,
             multiviewTileActive: multiviewTile,
             cleanBoxStreamingPlayers: cleanBoxStreamingPlayers,
-            cleanBoxBypassed: cleanBoxBypassed
+            cleanBoxBypassed: cleanBoxBypassed,
+            contentFilterKeywords: contentFilterConfig.effectiveBlockedKeywords,
+            contentFilterChannels: contentFilterConfig.effectiveBlockedChannels
         )
     }
 
@@ -1032,6 +1172,18 @@ public final class AppSettings {
     private func saveLivePulseFantasyLeagues() {
         if let data = try? JSONEncoder().encode(livePulseFantasyLeagues) {
             defaults.set(data, forKey: Keys.livePulseFantasyLeagues)
+        }
+    }
+
+    private func saveContentFilterConfig() {
+        if let data = try? JSONEncoder().encode(contentFilterConfig) {
+            defaults.set(data, forKey: Keys.contentFilterConfig)
+        }
+    }
+
+    private func saveVideoBookmarks() {
+        if let data = try? JSONEncoder().encode(videoBookmarks) {
+            defaults.set(data, forKey: Keys.videoBookmarks)
         }
     }
 }

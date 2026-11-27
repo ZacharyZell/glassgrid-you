@@ -862,3 +862,260 @@ public enum MultiviewAudioMixer {
         return result
     }
 }
+
+/// Playback sample for a single active Multiview tile used by `MultiviewSyncPlanner` and `MultiviewStallDetector`.
+public struct MultiviewSyncSample: Equatable, Sendable {
+    public let tabID: UUID
+    public let currentTime: Double
+    public let duration: Double
+    public let isPlaying: Bool
+    public let isLive: Bool
+
+    public init(
+        tabID: UUID,
+        currentTime: Double,
+        duration: Double,
+        isPlaying: Bool,
+        isLive: Bool = false
+    ) {
+        self.tabID = tabID
+        self.currentTime = currentTime
+        self.duration = duration
+        self.isPlaying = isPlaying
+        self.isLive = isLive
+    }
+}
+
+/// Soft playback-rate adjustment computed for a Multiview tile relative to the master tile.
+public struct MultiviewRateAdjustment: Equatable, Sendable {
+    public let tabID: UUID
+    public let targetRate: Double
+    public let driftSeconds: Double
+
+    public init(tabID: UUID, targetRate: Double, driftSeconds: Double) {
+        self.tabID = tabID
+        self.targetRate = targetRate
+        self.driftSeconds = driftSeconds
+    }
+}
+
+/// Pure soft-sync drift planner applying `0.92×`/`1.08×` catch-up when drift exceeds `0.6s`
+/// and restoring `1.0×` once synchronized within `0.15s`.
+public enum MultiviewSyncPlanner {
+    public static let triggerDriftSeconds: Double = 0.6
+    public static let restoreDriftSeconds: Double = 0.15
+    public static let slowCatchupRate: Double = 0.92
+    public static let fastCatchupRate: Double = 1.08
+    public static let maxVODCatchupWindowSeconds: Double = 15.0
+
+    public static func computeRateAdjustments(
+        samples: [MultiviewSyncSample],
+        masterTabID: UUID?,
+        isAutoSyncEnabled: Bool,
+        currentRates: [UUID: Double] = [:]
+    ) -> [MultiviewRateAdjustment] {
+        guard isAutoSyncEnabled, samples.count >= 2 else { return [] }
+        let master = masterTabID.flatMap { id in samples.first(where: { $0.tabID == id }) } ?? samples[0]
+        guard master.isPlaying, master.currentTime.isFinite, master.currentTime >= 0 else {
+            return []
+        }
+
+        var adjustments: [MultiviewRateAdjustment] = []
+        for sample in samples where sample.tabID != master.tabID {
+            guard sample.isPlaying, sample.currentTime.isFinite, sample.currentTime >= 0 else {
+                continue
+            }
+            let drift = sample.currentTime - master.currentTime
+            let absDrift = abs(drift)
+
+            if !sample.isLive && !master.isLive && absDrift > maxVODCatchupWindowSeconds {
+                continue
+            }
+
+            let targetRate: Double
+            if absDrift <= restoreDriftSeconds {
+                targetRate = 1.0
+            } else if absDrift > triggerDriftSeconds {
+                targetRate = drift > 0 ? slowCatchupRate : fastCatchupRate
+            } else if let existing = currentRates[sample.tabID], abs(existing - 1.0) >= 0.02 {
+                targetRate = existing
+            } else {
+                targetRate = 1.0
+            }
+
+            adjustments.append(
+                MultiviewRateAdjustment(
+                    tabID: sample.tabID,
+                    targetRate: targetRate,
+                    driftSeconds: drift
+                )
+            )
+        }
+        return adjustments
+    }
+}
+
+/// Pure stalled-tile watchdog detecting playing Multiview tiles whose `currentTime` has not advanced
+/// for longer than `stallThresholdSeconds` (`15s` default), with cooldown and bounded recovery count.
+public struct MultiviewStallDetector: Sendable {
+    private struct TrackedState: Sendable {
+        var lastTime: Double
+        var lastAdvancedAt: Date
+        var lastRecoveryAt: Date?
+        var recoveryCount: Int
+    }
+
+    public let stallThresholdSeconds: TimeInterval
+    public let cooldownSeconds: TimeInterval
+    public let maxAutoRecoveries: Int
+    private var states: [UUID: TrackedState] = [:]
+
+    public init(
+        stallThresholdSeconds: TimeInterval = 15.0,
+        cooldownSeconds: TimeInterval = 20.0,
+        maxAutoRecoveries: Int = 2
+    ) {
+        self.stallThresholdSeconds = max(1.0, stallThresholdSeconds)
+        self.cooldownSeconds = max(1.0, cooldownSeconds)
+        self.maxAutoRecoveries = max(1, maxAutoRecoveries)
+    }
+
+    public mutating func evaluate(samples: [MultiviewSyncSample], at now: Date = Date()) -> [UUID] {
+        let activeIDs = Set(samples.map(\.tabID))
+        states = states.filter { activeIDs.contains($0.key) }
+
+        var stalled: [UUID] = []
+        for sample in samples {
+            guard sample.isPlaying, sample.currentTime.isFinite, sample.currentTime >= 0 else {
+                states.removeValue(forKey: sample.tabID)
+                continue
+            }
+
+            guard var state = states[sample.tabID] else {
+                states[sample.tabID] = TrackedState(
+                    lastTime: sample.currentTime,
+                    lastAdvancedAt: now,
+                    lastRecoveryAt: nil,
+                    recoveryCount: 0
+                )
+                continue
+            }
+
+            if abs(sample.currentTime - state.lastTime) >= 0.05 {
+                state.lastTime = sample.currentTime
+                state.lastAdvancedAt = now
+                state.recoveryCount = 0
+                states[sample.tabID] = state
+                continue
+            }
+
+            let stalledDuration = now.timeIntervalSince(state.lastAdvancedAt)
+            let cooldownElapsed = state.lastRecoveryAt.map { now.timeIntervalSince($0) >= cooldownSeconds } ?? true
+            if stalledDuration > stallThresholdSeconds,
+               cooldownElapsed,
+               state.recoveryCount < maxAutoRecoveries {
+                stalled.append(sample.tabID)
+                state.lastRecoveryAt = now
+                state.recoveryCount += 1
+                states[sample.tabID] = state
+            }
+        }
+        return stalled
+    }
+
+    public mutating func reset(_ tabID: UUID) {
+        states.removeValue(forKey: tabID)
+    }
+
+    public mutating func resetAll() {
+        states.removeAll()
+    }
+}
+
+/// Decoded payload for a shareable `glassgridyou://multiview?layout=...&url=...` link.
+public struct MultiviewSharePayload: Equatable, Sendable {
+    public let layoutMode: MultiviewLayoutMode
+    public let urls: [URL]
+
+    public init(layoutMode: MultiviewLayoutMode, urls: [URL]) {
+        self.layoutMode = layoutMode
+        self.urls = urls
+    }
+}
+
+/// Pure encoder/decoder for shareable `glassgridyou://multiview?layout=...&url=...` links,
+/// strictly validating every stream URL through `AgentSecurity.validateURL` (HTTPS-only, zero SSRF/auth).
+public enum MultiviewShareLinkCodec {
+    public static func isMultiviewShareURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "glassgridyou" || scheme == "youtubemac" else {
+            return false
+        }
+        return url.host?.lowercased() == "multiview"
+    }
+
+    public static func encode(
+        urlStrings: [String],
+        layoutMode: MultiviewLayoutMode = .auto
+    ) -> URL? {
+        let validURLs: [URL] = urlStrings.prefix(MultiviewGridLayout.maxTiles).compactMap { raw in
+            if case .success(let validated) = AgentSecurity.validateURL(raw, tier: .fullControl) {
+                return validated
+            }
+            return nil
+        }
+        guard (2...MultiviewGridLayout.maxTiles).contains(validURLs.count) else {
+            return nil
+        }
+
+        var components = URLComponents()
+        components.scheme = "glassgridyou"
+        components.host = "multiview"
+        var items = [URLQueryItem(name: "layout", value: layoutMode.rawValue)]
+        for url in validURLs {
+            items.append(URLQueryItem(name: "url", value: url.absoluteString))
+        }
+        components.queryItems = items
+        return components.url
+    }
+
+    public static func decode(
+        _ url: URL,
+        tier: AgentPermissionLevel = .fullControl
+    ) -> MultiviewSharePayload? {
+        guard isMultiviewShareURL(url),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems else {
+            return nil
+        }
+
+        let rawLayout = queryItems.first(where: { $0.name.lowercased() == "layout" })?.value?.lowercased() ?? "auto"
+        let layoutMode = MultiviewLayoutMode(rawValue: rawLayout) ?? .auto
+
+        var rawCandidates: [String] = []
+        for item in queryItems {
+            let name = item.name.lowercased()
+            guard let val = item.value?.trimmingCharacters(in: .whitespacesAndNewlines), !val.isEmpty else {
+                continue
+            }
+            if name == "url" || name == "stream" {
+                rawCandidates.append(val)
+            } else if name == "urls" || name == "streams" {
+                rawCandidates.append(contentsOf: val.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) })
+            }
+        }
+
+        var validatedURLs: [URL] = []
+        for raw in rawCandidates.prefix(MultiviewGridLayout.maxTiles) {
+            guard case .success(let valid) = AgentSecurity.validateURL(raw, tier: tier) else {
+                return nil
+            }
+            validatedURLs.append(valid)
+        }
+
+        guard (2...MultiviewGridLayout.maxTiles).contains(validatedURLs.count) else {
+            return nil
+        }
+        return MultiviewSharePayload(layoutMode: layoutMode, urls: validatedURLs)
+    }
+}

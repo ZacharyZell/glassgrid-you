@@ -1188,28 +1188,80 @@ public enum EnhancementScript {
             function markShortsElements() {
                 if (!isStandardYouTubeHost()) return;
                 const cfg = window.__ytmacConfig;
-                if (!cfg || !cfg.hideShorts) return;
-                const links = document.querySelectorAll('a[href^="/shorts/"]:not([data-ytmac-checked])');
-                for (let i = 0; i < links.length; i += 1) {
-                    const link = links[i];
-                    link.setAttribute('data-ytmac-checked', '1');
+                if (cfg && cfg.hideShorts) {
+                    const links = document.querySelectorAll('a[href^="/shorts/"]:not([data-ytmac-checked])');
+                    for (let i = 0; i < links.length; i += 1) {
+                        const link = links[i];
+                        link.setAttribute('data-ytmac-checked', '1');
 
-                    // Only hide whole Home shelf containers when they are PURE Shorts shelves
-                    // (never hide mixed shelves containing normal /watch videos).
-                    const shelf = link.closest(SHORTS_SHELF_SELECTOR);
-                    if (shelf && !shelf.classList.contains('ytmac-shorts-hidden')) {
-                        const isPureShortsShelf = shelf.hasAttribute('is-shorts')
-                            || Boolean(shelf.querySelector('ytd-reel-shelf-renderer'))
-                            || !shelf.querySelector('a[href^="/watch"]');
-                        if (isPureShortsShelf) {
-                            shelf.classList.add('ytmac-shorts-hidden');
-                            continue;
+                        // Only hide whole Home shelf containers when they are PURE Shorts shelves
+                        // (never hide mixed shelves containing normal /watch videos).
+                        const shelf = link.closest(SHORTS_SHELF_SELECTOR);
+                        if (shelf && !shelf.classList.contains('ytmac-shorts-hidden')) {
+                            const isPureShortsShelf = shelf.hasAttribute('is-shorts')
+                                || Boolean(shelf.querySelector('ytd-reel-shelf-renderer'))
+                                || !shelf.querySelector('a[href^="/watch"]');
+                            if (isPureShortsShelf) {
+                                shelf.classList.add('ytmac-shorts-hidden');
+                                continue;
+                            }
+                        }
+
+                        const card = link.closest(SHORTS_CARD_SELECTOR);
+                        if (card && !card.classList.contains('ytmac-shorts-hidden')) {
+                            card.classList.add('ytmac-shorts-hidden');
                         }
                     }
+                }
+                applyContentFilterRules();
+            }
 
-                    const card = link.closest(SHORTS_CARD_SELECTOR);
-                    if (card && !card.classList.contains('ytmac-shorts-hidden')) {
-                        card.classList.add('ytmac-shorts-hidden');
+            function applyContentFilterRules() {
+                if (!isStandardYouTubeHost()) return;
+                const cfg = window.__ytmacConfig;
+                const rawKeywords = (cfg && Array.isArray(cfg.contentFilterKeywords)) ? cfg.contentFilterKeywords : [];
+                const rawChannels = (cfg && Array.isArray(cfg.contentFilterChannels)) ? cfg.contentFilterChannels : [];
+                const keywords = rawKeywords.map((k) => String(k || '').trim().toLowerCase()).filter(Boolean);
+                const channels = rawChannels.map((c) => String(c || '').trim().toLowerCase()).filter(Boolean);
+
+                if (keywords.length === 0 && channels.length === 0) {
+                    const existing = document.querySelectorAll('.ytmac-filtered-hidden');
+                    for (let i = 0; i < existing.length; i += 1) {
+                        existing[i].classList.remove('ytmac-filtered-hidden');
+                    }
+                    return;
+                }
+
+                const cards = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer');
+                for (let i = 0; i < cards.length; i += 1) {
+                    const card = cards[i];
+                    if (!card) continue;
+                    const titleNode = card.querySelector('#video-title, a#video-title-link, h3 a');
+                    const channelNode = card.querySelector('ytd-channel-name a, ytd-channel-name #text, #channel-name a, .ytd-channel-name');
+                    const titleText = (titleNode && titleNode.textContent ? titleNode.textContent : '').trim().toLowerCase();
+                    const channelText = (channelNode && channelNode.textContent ? channelNode.textContent : '').trim().toLowerCase();
+
+                    let matched = false;
+                    if (channelText) {
+                        for (let c = 0; c < channels.length; c += 1) {
+                            if (channelText === channels[c] || channelText.includes(channels[c])) {
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!matched && titleText) {
+                        for (let k = 0; k < keywords.length; k += 1) {
+                            if (titleText.includes(keywords[k])) {
+                                matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (matched) {
+                        card.classList.add('ytmac-filtered-hidden');
+                    } else if (card.classList.contains('ytmac-filtered-hidden')) {
+                        card.classList.remove('ytmac-filtered-hidden');
                     }
                 }
             }
@@ -1626,7 +1678,16 @@ public enum EnhancementScript {
             }
 
             // --- SponsorBlock Segment Skipping (passive timeupdate, skip each segment once) ---
-            let sponsorState = { videoId: '', segments: [], skippedIndices: new Set() };
+            let sponsorState = { videoId: '', segments: [], skippedIndices: new Set(), suppressedFromTimes: [] };
+
+            function isSponsorTimeSuppressed(fromTime) {
+                for (let i = 0; i < sponsorState.suppressedFromTimes.length; i += 1) {
+                    if (Math.abs(sponsorState.suppressedFromTimes[i] - fromTime) < 0.75) {
+                        return true;
+                    }
+                }
+                return false;
+            }
 
             function checkSponsorSkip(video) {
                 if (!isStandardYouTubeHost()) return;
@@ -1642,6 +1703,10 @@ public enum EnhancementScript {
                 for (let i = 0; i < sponsorState.segments.length; i += 1) {
                     if (sponsorState.skippedIndices.has(i)) continue;
                     const seg = sponsorState.segments[i];
+                    if (isSponsorTimeSuppressed(seg[0])) {
+                        sponsorState.skippedIndices.add(i);
+                        continue;
+                    }
                     if (t >= seg[0] && t < seg[1] - 0.35) {
                         sponsorState.skippedIndices.add(i);
                         const target = Number.isFinite(video.duration) ? Math.min(video.duration, seg[1]) : seg[1];
@@ -1651,7 +1716,9 @@ public enum EnhancementScript {
                             handler.postMessage({
                                 event: 'sponsorSkipped',
                                 videoId: activeId,
-                                category: seg[2] || 'sponsor'
+                                category: seg[2] || 'sponsor',
+                                fromTime: seg[0],
+                                toTime: target
                             });
                         }
                         break;
@@ -1660,15 +1727,34 @@ public enum EnhancementScript {
             }
 
             window.__ytmacSetSponsorSegments = (videoId, segments) => {
+                const nextVideoId = String(videoId || '');
+                const preservedSuppressed = sponsorState.videoId === nextVideoId ? sponsorState.suppressedFromTimes : [];
                 sponsorState = {
-                    videoId: String(videoId || ''),
+                    videoId: nextVideoId,
                     segments: Array.isArray(segments) ? segments : [],
-                    skippedIndices: new Set()
+                    skippedIndices: new Set(),
+                    suppressedFromTimes: preservedSuppressed
                 };
                 const video = getMainVideo();
                 if (video) {
                     checkSponsorSkip(video);
                 }
+            };
+
+            window.__ytmacSuppressSponsorTime = (fromTime, seekBack) => {
+                const t = Number(fromTime);
+                if (!Number.isFinite(t) || t < 0) return false;
+                if (!isSponsorTimeSuppressed(t)) {
+                    sponsorState.suppressedFromTimes.push(t);
+                }
+                if (seekBack) {
+                    const video = getMainVideo();
+                    if (video) {
+                        video.currentTime = t;
+                        if (typeof window.__ytmacEmitStateNow === 'function') window.__ytmacEmitStateNow();
+                    }
+                }
+                return true;
             };
 
             function cleanTitle(raw) {
@@ -2122,6 +2208,8 @@ public enum EnhancementScript {
                 }
                 if (cfg.hideShorts && isStandardYouTubeHost()) {
                     markShortsElements();
+                } else if (isStandardYouTubeHost()) {
+                    applyContentFilterRules();
                 }
                 if (cfg.preferredQuality !== prevConfigQuality) {
                     const oldQuality = prevConfigQuality;
@@ -2187,7 +2275,7 @@ public enum EnhancementScript {
                         lastKnownMuted = null;
                         lastMutedVideoId = '';
                         if (sponsorState.videoId !== nextVideoId) {
-                            sponsorState = { videoId: '', segments: [], skippedIndices: new Set() };
+                            sponsorState = { videoId: '', segments: [], skippedIndices: new Set(), suppressedFromTimes: [] };
                         }
                         if (isWebCompanionHost()) {
                             window.__ytmacSubframeMediaActive = false;
@@ -2307,7 +2395,8 @@ public enum EnhancementScript {
                 window.addEventListener('scroll', () => {
                     if (!isStandardYouTubeHost()) return;
                     const cfg = window.__ytmacConfig;
-                    if (!cfg || !cfg.hideShorts) return;
+                    const hasFilters = Boolean(cfg && ((Array.isArray(cfg.contentFilterKeywords) && cfg.contentFilterKeywords.length > 0) || (Array.isArray(cfg.contentFilterChannels) && cfg.contentFilterChannels.length > 0)));
+                    if (!cfg || (!cfg.hideShorts && !hasFilters)) return;
                     const now = Date.now();
                     if (now - lastScrollScan < 500) return;
                     lastScrollScan = now;
@@ -2379,6 +2468,223 @@ public enum EnhancementScript {
         })();
         """
     }
+
+    /// Suppresses re-skipping a SponsorBlock segment starting near `fromTime` and optionally seeks back to it (for Undo Toast).
+    public static func suppressSponsorTimeScript(fromTime: Double, seekBack: Bool = true) -> String {
+        let safeTime = (fromTime.isFinite && fromTime >= 0) ? fromTime : 0
+        let seekFlag = seekBack ? "true" : "false"
+        return """
+        (() => {
+            if (typeof window.__ytmacSuppressSponsorTime === 'function') {
+                return Boolean(window.__ytmacSuppressSponsorTime(\(safeTime), \(seekFlag)));
+            }
+            return false;
+        })();
+        """
+    }
+
+    /// Strictly on-demand YouTube transcript reader designed for `WKWebView.callAsyncJavaScript`.
+    /// Checks `ytd-transcript-segment-renderer` DOM nodes, active `video.textTracks` cues, and same-origin
+    /// `player.getPlayerResponse()?.captions?.playerCaptionsTracklistRenderer?.captionTracks` `baseUrl`
+    /// (verified strictly as `https://` `youtube.com` / `www.youtube.com` before `fetch(...&fmt=json3)` with 4s timeout
+    /// and `<= 64 KB` / `<= 1000` segment cap). Zero polling, zero observers, zero background network activity.
+    public static let extractTranscriptScript = """
+    return await (async () => {
+        const host = (location.hostname || '').toLowerCase();
+        const isYT = host === 'www.youtube.com' || host === 'youtube.com' || host === 'm.youtube.com';
+        if (!isYT) {
+            return { status: 'unsupported_host' };
+        }
+        const MAX_SEGMENTS = 1000;
+        const MAX_BYTES = 65536;
+        const qv = new URLSearchParams(location.search).get('v') || '';
+        const liveMatch = location.pathname.match(/^\\/live\\/([^/?#]+)/);
+        const videoId = qv || (liveMatch && liveMatch[1] ? liveMatch[1] : '');
+        const titleNode = document.querySelector('ytd-watch-metadata h1 yt-formatted-string, ytd-watch-metadata h1, h1.ytd-video-primary-info-renderer');
+        const title = String(titleNode ? titleNode.textContent : document.title || '').replace(/\\s+-\\s+YouTube$/i, '').trim();
+
+        const capSegments = (rawList) => {
+            const out = [];
+            let bytes = 0;
+            for (let i = 0; i < rawList.length && out.length < MAX_SEGMENTS; i += 1) {
+                const item = rawList[i];
+                if (!item) continue;
+                const cleanText = String(item.text || '').replace(/\\s+/g, ' ').trim();
+                if (!cleanText) continue;
+                const nextBytes = cleanText.length + 24;
+                if (bytes + nextBytes > MAX_BYTES) break;
+                bytes += nextBytes;
+                out.push({
+                    startSeconds: Number.isFinite(item.startSeconds) && item.startSeconds >= 0 ? item.startSeconds : 0,
+                    durationSeconds: Number.isFinite(item.durationSeconds) && item.durationSeconds >= 0 ? item.durationSeconds : 0,
+                    text: cleanText.slice(0, 400)
+                });
+            }
+            return out;
+        };
+
+        const parseTimestamp = (raw) => {
+            const parts = String(raw || '').trim().split(':').map((n) => Number(n));
+            if (parts.some((n) => !Number.isFinite(n) || n < 0)) return 0;
+            if (parts.length === 2) return parts[0] * 60 + parts[1];
+            if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            return 0;
+        };
+
+        // 1. Open YouTube Transcript Panel DOM (`ytd-transcript-segment-renderer`)
+        const domNodes = document.querySelectorAll('ytd-transcript-segment-renderer');
+        if (domNodes && domNodes.length > 0) {
+            const domRaw = [];
+            for (let i = 0; i < domNodes.length && domRaw.length < MAX_SEGMENTS; i += 1) {
+                const node = domNodes[i];
+                const tsNode = node.querySelector('.segment-timestamp');
+                const txtNode = node.querySelector('.segment-text');
+                const text = txtNode ? txtNode.textContent : '';
+                if (text && text.trim()) {
+                    domRaw.push({
+                        startSeconds: parseTimestamp(tsNode ? tsNode.textContent : '0:00'),
+                        durationSeconds: 0,
+                        text
+                    });
+                }
+            }
+            const segs = capSegments(domRaw);
+            if (segs.length > 0) {
+                return { status: 'ok', videoId, title, languageCode: '', source: 'dom', segments: segs };
+            }
+        }
+
+        // 2. Active HTML5 video.textTracks cues
+        const player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+        const video = (player && (player.querySelector('video.html5-main-video') || player.querySelector('video')))
+            || document.querySelector('video.html5-main-video')
+            || document.querySelector('video');
+        if (video && video.textTracks && video.textTracks.length > 0) {
+            for (let t = 0; t < video.textTracks.length; t += 1) {
+                const track = video.textTracks[t];
+                const cues = (track && track.cues && track.cues.length > 0) ? track.cues : (track && track.activeCues ? track.activeCues : null);
+                if (!cues || cues.length === 0) continue;
+                const trackRaw = [];
+                for (let c = 0; c < cues.length && trackRaw.length < MAX_SEGMENTS; c += 1) {
+                    const cue = cues[c];
+                    const txt = cue && typeof cue.text === 'string' ? cue.text : '';
+                    if (txt.trim()) {
+                        const start = Number(cue.startTime) || 0;
+                        const end = Number(cue.endTime) || start;
+                        trackRaw.push({
+                            startSeconds: start,
+                            durationSeconds: Math.max(0, end - start),
+                            text: txt
+                        });
+                    }
+                }
+                const segs = capSegments(trackRaw);
+                if (segs.length > 0) {
+                    return {
+                        status: 'ok',
+                        videoId,
+                        title,
+                        languageCode: String(track.language || ''),
+                        source: 'textTracks',
+                        segments: segs
+                    };
+                }
+            }
+        }
+
+        // 3. Same-origin captionTracks baseUrl via live player.getPlayerResponse()
+        let trackURL = '';
+        let langCode = '';
+        try {
+            const resp = (player && typeof player.getPlayerResponse === 'function') ? player.getPlayerResponse() : null;
+            const tracks = resp && resp.captions && resp.captions.playerCaptionsTracklistRenderer && resp.captions.playerCaptionsTracklistRenderer.captionTracks;
+            if (Array.isArray(tracks) && tracks.length > 0) {
+                const chosen = tracks.find((tr) => tr && tr.languageCode === 'en' && tr.kind !== 'asr')
+                    || tracks.find((tr) => tr && tr.languageCode && tr.languageCode.startsWith('en'))
+                    || tracks.find((tr) => tr && tr.kind !== 'asr')
+                    || tracks[0];
+                if (chosen && typeof chosen.baseUrl === 'string') {
+                    trackURL = chosen.baseUrl;
+                    langCode = String(chosen.languageCode || '');
+                }
+            }
+        } catch (_) {}
+
+        if (!trackURL && typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function') {
+            try {
+                const res = performance.getEntriesByType('resource') || [];
+                for (let i = res.length - 1; i >= 0; i -= 1) {
+                    const name = String((res[i] && res[i].name) || '');
+                    if (name.includes('/api/timedtext')) {
+                        trackURL = name;
+                        break;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        if (!trackURL) {
+            return { status: 'no_captions', videoId, title };
+        }
+
+        let validatedURL = null;
+        try {
+            const parsed = new URL(trackURL, location.href);
+            const h = (parsed.hostname || '').toLowerCase();
+            if (parsed.protocol === 'https:' && (h === 'www.youtube.com' || h === 'youtube.com')) {
+                parsed.searchParams.set('fmt', 'json3');
+                validatedURL = parsed.toString();
+            }
+        } catch (_) {}
+
+        if (!validatedURL) {
+            return { status: 'invalid_caption_origin', videoId, title };
+        }
+
+        const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 4000) : null;
+        try {
+            const fetchResp = await fetch(validatedURL, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                signal: ctrl ? ctrl.signal : undefined
+            });
+            if (timer) clearTimeout(timer);
+            if (!fetchResp || !fetchResp.ok) {
+                return { status: 'fetch_failed', videoId, title };
+            }
+            const rawText = await fetchResp.text();
+            if (!rawText || rawText.length > 524288) {
+                return { status: 'empty_or_oversized', videoId, title };
+            }
+            const parsedJSON = JSON.parse(rawText);
+            const events = parsedJSON && Array.isArray(parsedJSON.events) ? parsedJSON.events : [];
+            const rawSegs = [];
+            for (let i = 0; i < events.length && rawSegs.length < MAX_SEGMENTS; i += 1) {
+                const ev = events[i];
+                if (!ev || !Array.isArray(ev.segs)) continue;
+                const txt = ev.segs.map((s) => (s && typeof s.utf8 === 'string' ? s.utf8 : '')).join('');
+                if (txt.trim()) {
+                    const startMs = Number(ev.tStartMs);
+                    const durMs = Number(ev.dDurationMs);
+                    rawSegs.push({
+                        startSeconds: Number.isFinite(startMs) && startMs >= 0 ? startMs / 1000 : 0,
+                        durationSeconds: Number.isFinite(durMs) && durMs >= 0 ? durMs / 1000 : 0,
+                        text: txt
+                    });
+                }
+            }
+            const segs = capSegments(rawSegs);
+            if (segs.length === 0) {
+                return { status: 'no_cues', videoId, title };
+            }
+            return { status: 'ok', videoId, title, languageCode: langCode, source: 'timedtext', segments: segs };
+        } catch (_) {
+            if (timer) clearTimeout(timer);
+            return { status: 'fetch_error', videoId, title };
+        }
+    })();
+    """
 
     private static let resolveMainVideoSnippet = """
     const hostLower = location.hostname.toLowerCase();
@@ -3050,6 +3356,8 @@ public enum EnhancementScript {
         let safeQuality = escapeJSString(config.preferredQuality.youtubeQualityLevel)
         let safeAppearance = escapeJSString(config.appearance.rawValue)
         let speedString = String(format: "%.2f", config.defaultPlaybackRate)
+        let filterKeywordsJSON = config.contentFilterKeywords.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
+        let filterChannelsJSON = config.contentFilterChannels.map { "\"\(escapeJSString($0))\"" }.joined(separator: ",")
         return """
         {
           "hideShorts": \(boolString(config.hideShorts)),
@@ -3072,7 +3380,9 @@ public enum EnhancementScript {
           "miniPlayerActive": \(boolString(config.miniPlayerActive)),
           "multiviewTileActive": \(boolString(config.multiviewTileActive)),
           "cleanBoxStreamingPlayers": \(boolString(config.cleanBoxStreamingPlayers)),
-          "cleanBoxBypassed": \(boolString(config.cleanBoxBypassed))
+          "cleanBoxBypassed": \(boolString(config.cleanBoxBypassed)),
+          "contentFilterKeywords": [\(filterKeywordsJSON)],
+          "contentFilterChannels": [\(filterChannelsJSON)]
         }
         """
     }
@@ -3246,12 +3556,13 @@ public enum EnhancementScript {
         display: none !important;
     }
 
-    /* Hide Shorts via O(1) direct element & marked-container selectors */
+    /* Hide Shorts & Opt-In Content Filter matches via O(1) marked-container selectors */
     html[data-ytmac-hide-shorts="true"] ytd-reel-shelf-renderer,
     html[data-ytmac-hide-shorts="true"] ytd-rich-shelf-renderer[is-shorts],
     html[data-ytmac-hide-shorts="true"] ytd-mini-guide-entry-renderer[aria-label="Shorts"],
     html[data-ytmac-hide-shorts="true"] yt-tab-shape[tab-title="Shorts"],
-    html[data-ytmac-hide-shorts="true"] .ytmac-shorts-hidden {
+    html[data-ytmac-hide-shorts="true"] .ytmac-shorts-hidden,
+    .ytmac-filtered-hidden {
         display: none !important;
     }
 

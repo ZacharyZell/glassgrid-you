@@ -16,6 +16,8 @@ private final class MiniPlayerHoverState {
     var currentSizePreset: MiniPlayerSizePreset = .standard
     var currentGridSizePreset: MiniPlayerGridSizePreset = .standard
     var opacity: Double = 1.0
+    var isGhostMode: Bool = false
+    var isOptionPeekActive: Bool = false
     var hostedTabs: [BrowserTab] = []
     var audioTabID: UUID?
     var layoutMode: MultiviewLayoutMode = .auto
@@ -24,7 +26,7 @@ private final class MiniPlayerHoverState {
     var hasCustomMix: Bool = false
 
     var isHeaderVisible: Bool {
-        isHovered || isPopoverPresented
+        isHovered || isPopoverPresented || isOptionPeekActive
     }
 
     func effectiveVolume(for tab: BrowserTab) -> Int {
@@ -517,6 +519,8 @@ private struct FloatingMiniPlayerOverlayView: View {
     let onAirPlayResult: (AirPlayPickerResult) -> Void
     let onOpenDisplaysSettings: () -> Void
     let onPopoverVisibilityChanged: (Bool) -> Void
+    let onToggleGhostMode: () -> Void
+    let onScrollWheelOpacityDelta: (CGFloat) -> Void
     let onDragEnded: () -> Void
     let onDock: () -> Void
     let onClose: () -> Void
@@ -532,8 +536,13 @@ private struct FloatingMiniPlayerOverlayView: View {
         let showAirPlayButton = panelW >= 340
 
         ZStack(alignment: .top) {
-            WindowDragArea(edgeResizeInset: 10, onDoubleClick: onDock, onDragEnded: onDragEnded)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            WindowDragArea(
+                edgeResizeInset: 10,
+                onDoubleClick: onDock,
+                onDragEnded: onDragEnded,
+                onScrollWheelOpacityDelta: onScrollWheelOpacityDelta
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if hoverState.isHeaderVisible {
                 VStack(spacing: AppSpacing.xs) {
@@ -545,7 +554,20 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                     LiquidGlassGroup(spacing: AppSpacing.md) {
                         HStack(spacing: AppSpacing.md) {
-                            if showTitle {
+                            if hoverState.isGhostMode {
+                                HStack(spacing: AppSpacing.xs) {
+                                    Image(systemName: "eye.slash.fill")
+                                        .font(AppIconFont.xs(weight: .semibold))
+                                        .foregroundStyle(AppleTheme.accentText)
+                                    Text("Hold ⌥ · ⌘⌥O")
+                                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                                        .foregroundStyle(.white.opacity(0.94))
+                                }
+                                .padding(.horizontal, AppSpacing.md)
+                                .frame(height: 26)
+                                .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.54))
+                                .allowsHitTesting(false)
+                            } else if showTitle {
                                 HStack(spacing: AppSpacing.sm) {
                                     if tab.mediaStatus.isHDR {
                                         AppleHDRBadge(onDarkMedia: true)
@@ -765,6 +787,32 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                                         Divider()
 
+                                        HStack(spacing: AppSpacing.md) {
+                                            Button(action: onToggleGhostMode) {
+                                                HStack(spacing: AppSpacing.xs) {
+                                                    Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
+                                                        .font(AppIconFont.xs(weight: .semibold))
+                                                        .foregroundStyle(hoverState.isGhostMode ? AppleTheme.accentText : .primary)
+                                                    Text("Ghost Mode")
+                                                        .font(AppFont.caption(weight: .semibold))
+                                                    Spacer()
+                                                    Text("Hold ⌥ · ⌘⌥O")
+                                                        .font(AppFont.micro(weight: .medium, tabular: true))
+                                                        .foregroundStyle(AppleTheme.textSecondary)
+                                                }
+                                                .padding(.horizontal, AppSpacing.md)
+                                                .minHitTarget(26, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+                                                        .fill(hoverState.isGhostMode ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.08))
+                                                )
+                                                .foregroundStyle(Color.primary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+
+                                        Divider()
+
                                         VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             HStack {
                                                 Text("Window Size")
@@ -804,6 +852,15 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     .preferredColorScheme(.dark)
                                     .environment(\.font, AppFont.body)
                                 }
+
+                                Button(action: onToggleGhostMode) {
+                                    Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
+                                        .foregroundStyle(hoverState.isGhostMode ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
+                                }
+                                .help("Ghost Mode (Hold ⌥ · ⌘⌥O)")
+                                .accessibilityLabel("Toggle Ghost Mode")
 
                                 Button {
                                     onDock()
@@ -867,6 +924,8 @@ private struct FloatingMultiviewHeaderOverlayView: View {
     let onStepSize: (Bool) -> Void
     let onPreparePopover: () -> Void
     let onPopoverVisibilityChanged: (Bool) -> Void
+    let onToggleGhostMode: () -> Void
+    let onScrollWheelOpacityDelta: (CGFloat) -> Void
     let onDragEnded: () -> Void
     let onDock: () -> Void
     let onClose: () -> Void
@@ -879,8 +938,13 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            WindowDragArea(edgeResizeInset: 10, onDoubleClick: onDock, onDragEnded: onDragEnded)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            WindowDragArea(
+                edgeResizeInset: 10,
+                onDoubleClick: onDock,
+                onDragEnded: onDragEnded,
+                onScrollWheelOpacityDelta: onScrollWheelOpacityDelta
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if hoverState.isHeaderVisible {
                 VStack(spacing: AppSpacing.xs) {
@@ -892,6 +956,21 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                     LiquidGlassGroup(spacing: AppSpacing.sm) {
                         HStack(spacing: AppSpacing.sm) {
+                            if hoverState.isGhostMode {
+                                HStack(spacing: AppSpacing.xs) {
+                                    Image(systemName: "eye.slash.fill")
+                                        .font(AppIconFont.xs(weight: .semibold))
+                                        .foregroundStyle(AppleTheme.accentText)
+                                    Text("Hold ⌥ · ⌘⌥O")
+                                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                                        .foregroundStyle(.white.opacity(0.94))
+                                }
+                                .padding(.horizontal, AppSpacing.md)
+                                .frame(height: 26)
+                                .appleGlass(in: Capsule(style: .continuous), tint: .black.opacity(0.54))
+                                .allowsHitTesting(false)
+                            }
+
                             // Leading clickable slot audio pills [1] [2] [3] [4]
                             HStack(spacing: AppSpacing.xs) {
                                 ForEach(Array(hoverState.hostedTabs.enumerated()), id: \.element.id) { index, tab in
@@ -1160,6 +1239,30 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                                         Divider()
 
+                                        Button(action: onToggleGhostMode) {
+                                            HStack(spacing: AppSpacing.xs) {
+                                                Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
+                                                    .font(AppIconFont.xs(weight: .semibold))
+                                                    .foregroundStyle(hoverState.isGhostMode ? AppleTheme.accentText : .primary)
+                                                Text("Ghost Mode")
+                                                    .font(AppFont.caption(weight: .semibold))
+                                                Spacer()
+                                                Text("Hold ⌥ · ⌘⌥O")
+                                                    .font(AppFont.micro(weight: .medium, tabular: true))
+                                                    .foregroundStyle(AppleTheme.textSecondary)
+                                            }
+                                            .padding(.horizontal, AppSpacing.md)
+                                            .minHitTarget(26, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                                            .background(
+                                                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+                                                    .fill(hoverState.isGhostMode ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.08))
+                                            )
+                                            .foregroundStyle(Color.primary)
+                                        }
+                                        .buttonStyle(.plain)
+
+                                        Divider()
+
                                         HStack(spacing: AppSpacing.md) {
                                             Button(action: onPlayAll) {
                                                 HStack(spacing: AppSpacing.xs) {
@@ -1203,6 +1306,15 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                     .preferredColorScheme(.dark)
                                     .environment(\.font, AppFont.body)
                                 }
+
+                                Button(action: onToggleGhostMode) {
+                                    Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
+                                        .foregroundStyle(hoverState.isGhostMode ? AppleTheme.accentText : .white)
+                                        .frame(width: 24, height: 24)
+                                        .contentShape(Circle())
+                                }
+                                .help("Ghost Mode (Hold ⌥ · ⌘⌥O)")
+                                .accessibilityLabel("Toggle Ghost Mode")
 
                                 Button(action: onDock) {
                                     Image(systemName: "arrow.down.right.and.arrow.up.left")
@@ -1268,10 +1380,17 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     private var hostedTabsResizeSyncTask: Task<Void, Never>?
     private var urlObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
 
+    nonisolated(unsafe) private var globalGhostFlagsMonitor: Any?
+    nonisolated(unsafe) private var localGhostFlagsMonitor: Any?
+
     var onFrameChanged: ((NSRect) -> Void)?
     var onGridFrameChanged: ((NSRect) -> Void)?
     var onWindowClosedExternally: (() -> Void)?
     var onOpacityChanged: ((Double) -> Void)?
+
+    public var isGhostMode: Bool {
+        hoverState.isGhostMode
+    }
 
     var isVisible: Bool {
         panel?.isVisible ?? false
@@ -1291,6 +1410,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     /// with any child popover window, preventing app-activation auto-dock mid-click, mid-scrub, or mid-resize.
     var isInteractingWithPanel: Bool {
         guard let panel, panel.isVisible else { return false }
+        if hoverState.isGhostMode && !hoverState.isOptionPeekActive {
+            return false
+        }
         if isLiveEdgeResizing || hoverState.isPopoverPresented {
             return true
         }
@@ -1315,6 +1437,109 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         self.savedGridFrame = initialSavedGridFrame
         self.hoverState.opacity = min(max(initialOpacity.isFinite ? initialOpacity : 1.0, 0.40), 1.0)
         super.init()
+    }
+
+    deinit {
+        tearDownGhostMonitors()
+    }
+
+    nonisolated private func tearDownGhostMonitors() {
+        if let global = globalGhostFlagsMonitor {
+            NSEvent.removeMonitor(global)
+            globalGhostFlagsMonitor = nil
+        }
+        if let local = localGhostFlagsMonitor {
+            NSEvent.removeMonitor(local)
+            localGhostFlagsMonitor = nil
+        }
+    }
+
+    public func setGhostMode(_ enabled: Bool) {
+        if enabled {
+            guard let panel, panel.isVisible, !hasLiveFullscreenTab else {
+                setGhostMode(false)
+                return
+            }
+            hoverState.isGhostMode = true
+            if hoverState.opacity >= 0.99 {
+                updateOpacity(0.55)
+                onOpacityChanged?(0.55)
+            }
+            hoverState.isOptionPeekActive = NSEvent.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.option)
+            installGhostMonitorsIfNeeded()
+            syncGhostMouseTransparency()
+        } else {
+            tearDownGhostMonitors()
+            hoverState.isGhostMode = false
+            hoverState.isOptionPeekActive = false
+            panel?.ignoresMouseEvents = false
+            if let panel, panel.isVisible {
+                let inside = panel.frame.contains(NSEvent.mouseLocation)
+                edgeResizeView?.isVisibleGrip = inside
+                hoverState.isHovered = inside
+            } else {
+                edgeResizeView?.isVisibleGrip = false
+                hoverState.isHovered = false
+            }
+        }
+    }
+
+    @discardableResult
+    public func toggleGhostMode() -> Bool {
+        setGhostMode(!hoverState.isGhostMode)
+        return hoverState.isGhostMode
+    }
+
+    private func installGhostMonitorsIfNeeded() {
+        if globalGhostFlagsMonitor == nil {
+            globalGhostFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                let optionHeld = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
+                Task { @MainActor [weak self] in
+                    self?.updateOptionPeek(optionHeld)
+                }
+            }
+        }
+        if localGhostFlagsMonitor == nil {
+            localGhostFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                let optionHeld = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
+                Task { @MainActor [weak self] in
+                    self?.updateOptionPeek(optionHeld)
+                }
+                return event
+            }
+        }
+    }
+
+    private func updateOptionPeek(_ optionHeld: Bool) {
+        guard hoverState.isGhostMode else { return }
+        guard hoverState.isOptionPeekActive != optionHeld else { return }
+        hoverState.isOptionPeekActive = optionHeld
+        syncGhostMouseTransparency()
+    }
+
+    private func syncGhostMouseTransparency() {
+        if hasLiveFullscreenTab && hoverState.isGhostMode {
+            setGhostMode(false)
+            return
+        }
+        let shouldIgnore = hoverState.isGhostMode && !hoverState.isOptionPeekActive && !hasLiveFullscreenTab && isVisible
+        panel?.ignoresMouseEvents = shouldIgnore
+        if shouldIgnore {
+            edgeResizeView?.isVisibleGrip = false
+            hoverState.isHovered = false
+        } else if let panel, panel.isVisible {
+            let inside = panel.frame.contains(NSEvent.mouseLocation)
+            edgeResizeView?.isVisibleGrip = inside
+            hoverState.isHovered = inside
+        }
+    }
+
+    private func handleScrollWheelOpacityDelta(_ delta: CGFloat) {
+        let next = min(max(hoverState.opacity + Double(delta), 0.40), 1.0)
+        updateOpacity(next)
+        onOpacityChanged?(next)
     }
 
     func updateOpacity(_ opacity: Double) {
@@ -1509,9 +1734,11 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     @discardableResult
     func detachAndHide() -> [BrowserTab] {
         guard !hasLiveFullscreenTab else {
+            setGhostMode(false)
             return []
         }
 
+        setGhostMode(false)
         cancelPendingGeometryTasks()
         edgeResizeView?.cancelDrag()
         edgeResizeView?.isVisibleGrip = false
@@ -1799,6 +2026,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        setGhostMode(false)
         guard !isProgrammaticallyHiding else { return }
         edgeResizeView?.cancelDrag()
         isLiveEdgeResizing = false
@@ -2017,9 +2245,21 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onPopoverVisibilityChanged: { [weak self] open in
                     self?.refreshHoverAfterPopoverDismissal(open)
                 },
+                onToggleGhostMode: { [weak self] in
+                    _ = self?.toggleGhostMode()
+                },
+                onScrollWheelOpacityDelta: { [weak self] delta in
+                    self?.handleScrollWheelOpacityDelta(delta)
+                },
                 onDragEnded: {},
-                onDock: onDock,
-                onClose: onClose
+                onDock: { [weak self] in
+                    self?.setGhostMode(false)
+                    onDock()
+                },
+                onClose: { [weak self] in
+                    self?.setGhostMode(false)
+                    onClose()
+                }
             )
             .environment(\.font, AppFont.body)
         )
@@ -2113,9 +2353,21 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onPopoverVisibilityChanged: { [weak self] open in
                     self?.refreshHoverAfterPopoverDismissal(open)
                 },
+                onToggleGhostMode: { [weak self] in
+                    _ = self?.toggleGhostMode()
+                },
+                onScrollWheelOpacityDelta: { [weak self] delta in
+                    self?.handleScrollWheelOpacityDelta(delta)
+                },
                 onDragEnded: {},
-                onDock: onDock,
-                onClose: onClose
+                onDock: { [weak self] in
+                    self?.setGhostMode(false)
+                    onDock()
+                },
+                onClose: { [weak self] in
+                    self?.setGhostMode(false)
+                    onClose()
+                }
             )
             .environment(\.font, AppFont.body)
         )

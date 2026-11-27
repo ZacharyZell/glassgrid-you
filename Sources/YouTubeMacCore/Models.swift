@@ -269,6 +269,55 @@ public enum MultiviewQualityCeiling: String, CaseIterable, Identifiable, Codable
     }
 }
 
+/// Lightweight non-blocking HUD toast payload for keyboard shortcuts, SponsorBlock Undo, and automated actions.
+public struct HUDToast: Equatable, Sendable {
+    public let id: UUID
+    public let icon: String
+    public let message: String
+    public let actionTitle: String?
+
+    public init(id: UUID = UUID(), icon: String, message: String, actionTitle: String? = nil) {
+        self.id = id
+        self.icon = icon
+        self.message = message
+        self.actionTitle = actionTitle
+    }
+}
+
+/// Supported SponsorBlock skip segment categories.
+public enum SponsorSegmentCategory: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
+    case sponsor
+    case selfpromo
+    case intro
+    case outro
+    case interaction
+
+    public static let defaultEnabled: [SponsorSegmentCategory] = [.sponsor]
+    public static let defaultCategorySet: Set<String> = [SponsorSegmentCategory.sponsor.rawValue]
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .sponsor: return "Sponsor"
+        case .selfpromo: return "Self-Promotion"
+        case .intro: return "Intro / Intermission"
+        case .outro: return "Outro / Credits"
+        case .interaction: return "Subscribe / Interaction"
+        }
+    }
+
+    public var shortLabel: String {
+        switch self {
+        case .sponsor: return "Sponsor"
+        case .selfpromo: return "Self-Promo"
+        case .intro: return "Intro"
+        case .outro: return "Outro"
+        case .interaction: return "Interaction"
+        }
+    }
+}
+
 /// A single SponsorBlock skip segment interval in seconds.
 public struct SponsorSegment: Equatable, Codable, Sendable {
     public let start: Double
@@ -279,6 +328,14 @@ public struct SponsorSegment: Equatable, Codable, Sendable {
         self.start = start
         self.end = end
         self.category = category
+    }
+
+    public var categoryEnum: SponsorSegmentCategory? {
+        SponsorSegmentCategory(rawValue: category)
+    }
+
+    public var categoryDisplayName: String {
+        categoryEnum?.displayName ?? category.capitalized
     }
 }
 
@@ -861,6 +918,8 @@ public struct DistractionFreeConfig: Equatable, Sendable {
     public var multiviewTileActive: Bool
     public var cleanBoxStreamingPlayers: Bool
     public var cleanBoxBypassed: Bool
+    public var contentFilterKeywords: [String]
+    public var contentFilterChannels: [String]
 
     public init(
         hideShorts: Bool = true,
@@ -883,7 +942,9 @@ public struct DistractionFreeConfig: Equatable, Sendable {
         miniPlayerActive: Bool = false,
         multiviewTileActive: Bool = false,
         cleanBoxStreamingPlayers: Bool = true,
-        cleanBoxBypassed: Bool = false
+        cleanBoxBypassed: Bool = false,
+        contentFilterKeywords: [String] = [],
+        contentFilterChannels: [String] = []
     ) {
         self.hideShorts = hideShorts
         self.redirectShortsToWatch = redirectShortsToWatch
@@ -906,6 +967,8 @@ public struct DistractionFreeConfig: Equatable, Sendable {
         self.multiviewTileActive = multiviewTileActive
         self.cleanBoxStreamingPlayers = cleanBoxStreamingPlayers
         self.cleanBoxBypassed = cleanBoxBypassed
+        self.contentFilterKeywords = contentFilterKeywords
+        self.contentFilterChannels = contentFilterChannels
     }
 
     public var effectiveTilePlayerActive: Bool {

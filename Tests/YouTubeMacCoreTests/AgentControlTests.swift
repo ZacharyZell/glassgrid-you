@@ -130,12 +130,12 @@ final class AgentControlTests: XCTestCase {
         let ctx = AgentRequestContext(source: .mcpStdio, clientName: "test")
 
         // Initialize
-        XCTAssertEqual(handler.serverVersion, "1.3.1")
+        XCTAssertEqual(handler.serverVersion, "1.4.0")
         let initReq = Data(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#.utf8)
         if case .reply(let replyData) = await handler.handleMessageData(initReq, context: ctx, executor: executor),
            let decoded = try? JSONValue.decode(from: replyData) {
             XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["protocolVersion"]?.stringValue, "2025-06-18")
-            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.3.1")
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.4.0")
         } else {
             XCTFail("Expected initialize reply")
         }
@@ -145,14 +145,14 @@ final class AgentControlTests: XCTestCase {
         let notifRes = await handler.handleMessageData(notifReq, context: ctx, executor: executor)
         XCTAssertEqual(notifRes, .noResponse)
 
-        // tools/list returns all 28 tools with annotations
+        // tools/list returns all 32 tools with annotations
         let listReq = Data(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#.utf8)
         if case .reply(let listData) = await handler.handleMessageData(listReq, context: ctx, executor: executor),
            let decoded = try? JSONValue.decode(from: listData),
            let tools = decoded.objectValue?["result"]?.objectValue?["tools"]?.arrayValue {
-            XCTAssertEqual(tools.count, 28)
+            XCTAssertEqual(tools.count, 32)
         } else {
-            XCTFail("Expected 28 tools from tools/list")
+            XCTFail("Expected 32 tools from tools/list")
         }
 
         // resources/list returns all 5 resources
@@ -347,6 +347,28 @@ final class AgentControlTests: XCTestCase {
         if case .success = AgentURLActionParser.parse(URL(string: "glassgridyou://action/manage_tabs?action=close")!) {
             XCTFail("Tier 3 verb must not be exposed via URL action")
         }
+
+        // v1.4.0 Multiview sync_all and Ghost Mode URL actions
+        if case .success(let syncAction) = AgentURLActionParser.parse(URL(string: "glassgridyou://action/multiview?action=sync_all")!) {
+            XCTAssertEqual(syncAction.toolName, "sync_multiview_all")
+            XCTAssertEqual(syncAction.arguments, [:])
+        } else {
+            XCTFail("Expected multiview?action=sync_all to parse")
+        }
+
+        if case .success(let ghostToggle) = AgentURLActionParser.parse(URL(string: "glassgridyou://action/ghost-mode")!) {
+            XCTAssertEqual(ghostToggle.toolName, "toggle_ghost_mode")
+            XCTAssertEqual(ghostToggle.arguments, [:])
+        } else {
+            XCTFail("Expected ghost-mode URL action to parse")
+        }
+
+        if case .success(let ghostEnable) = AgentURLActionParser.parse(URL(string: "glassgridyou://action/ghost-mode?enabled=true")!) {
+            XCTAssertEqual(ghostEnable.toolName, "toggle_ghost_mode")
+            XCTAssertEqual(ghostEnable.arguments["enabled"]?.boolValue, true)
+        } else {
+            XCTFail("Expected ghost-mode?enabled=true URL action to parse")
+        }
     }
 
     // MARK: - 7. MCP Client Config Mergers (JSON & TOML)
@@ -489,8 +511,23 @@ final class AgentControlTests: XCTestCase {
     }
 
     func testMCPCatalogPreservesSurfaceAndExposesCleanBoxAndGridControls() {
-        XCTAssertEqual(AgentToolCatalog.tools.count, 28)
+        XCTAssertEqual(AgentToolCatalog.tools.count, 32)
         XCTAssertEqual(AgentToolCatalog.resources.count, 5)
+
+        let transcriptTool = AgentToolCatalog.tool(named: "get_transcript")
+        XCTAssertNotNil(transcriptTool)
+        XCTAssertEqual(transcriptTool?.requiredTier, .readOnly)
+        XCTAssertEqual(transcriptTool?.readOnlyHint, true)
+        XCTAssertEqual(transcriptTool?.idempotentHint, true)
+
+        let syncTool = AgentToolCatalog.tool(named: "sync_multiview_all")
+        XCTAssertEqual(syncTool?.requiredTier, .playbackAndNavigation)
+
+        let ghostTool = AgentToolCatalog.tool(named: "toggle_ghost_mode")
+        XCTAssertEqual(ghostTool?.requiredTier, .playbackAndNavigation)
+
+        let bookmarkTool = AgentToolCatalog.tool(named: "add_bookmark")
+        XCTAssertEqual(bookmarkTool?.requiredTier, .fullControl)
 
         let miniTool = AgentToolCatalog.tool(named: "mini_player_control")
         XCTAssertNotNil(miniTool)

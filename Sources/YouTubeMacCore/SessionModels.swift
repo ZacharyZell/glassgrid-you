@@ -291,3 +291,173 @@ public enum AudioOutputDisconnectDetector {
         return previous.isHeadphonesOrExternal && current.isBuiltInInternalSpeakers
     }
 }
+
+/// User-saved timestamped video or stream bookmark (`⌘⇧K`).
+public struct VideoBookmark: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public let videoID: String?
+    public var urlString: String
+    public var title: String
+    public var channel: String
+    public var note: String
+    public var timestampSeconds: Double
+    public let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case videoID
+        case urlString
+        case title
+        case channel
+        case note
+        case timestampSeconds
+        case createdAt
+    }
+
+    public init(
+        id: UUID = UUID(),
+        videoID: String? = nil,
+        urlString: String,
+        title: String,
+        channel: String = "",
+        note: String = "",
+        timestampSeconds: Double = 0,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.videoID = videoID
+        self.urlString = urlString
+        self.title = title
+        self.channel = channel
+        self.note = note
+        self.timestampSeconds = timestampSeconds.isFinite && timestampSeconds >= 0 ? timestampSeconds : 0
+        self.createdAt = createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        videoID = try container.decodeIfPresent(String.self, forKey: .videoID)
+        urlString = try container.decode(String.self, forKey: .urlString)
+        title = try container.decode(String.self, forKey: .title)
+        channel = try container.decodeIfPresent(String.self, forKey: .channel) ?? ""
+        note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
+        let rawSeconds = try container.decodeIfPresent(Double.self, forKey: .timestampSeconds) ?? 0
+        timestampSeconds = rawSeconds.isFinite && rawSeconds >= 0 ? rawSeconds : 0
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
+
+    public var formattedTimestamp: String {
+        MediaState.formatTime(timestampSeconds)
+    }
+
+    public var url: URL? {
+        guard let parsed = URL(string: urlString) else { return nil }
+        if timestampSeconds >= 1 {
+            return YouTubeURLRouter.urlWithTimestamp(parsed, seconds: timestampSeconds)
+        }
+        return parsed
+    }
+}
+
+/// Individual user-defined content filter rule for hiding distracting channels or topic keywords on YouTube feeds.
+public struct ContentFilterRule: Identifiable, Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Hashable, Sendable {
+        case keyword
+        case channel
+    }
+
+    public let id: UUID
+    public var kind: Kind
+    public var pattern: String
+    public var isEnabled: Bool
+
+    public init(
+        id: UUID = UUID(),
+        kind: Kind,
+        pattern: String,
+        isEnabled: Bool = true
+    ) {
+        self.id = id
+        self.kind = kind
+        self.pattern = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isEnabled = isEnabled
+    }
+}
+
+/// Opt-in YouTube feed content filter configuration (`isEnabled` defaults to `false`).
+public struct ContentFilterConfig: Equatable, Codable, Sendable {
+    public var isEnabled: Bool
+    public var blockedChannels: [String]
+    public var blockedKeywords: [String]
+
+    public static let empty = ContentFilterConfig()
+
+    enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case blockedChannels
+        case blockedKeywords
+    }
+
+    public init(
+        isEnabled: Bool = false,
+        blockedChannels: [String] = [],
+        blockedKeywords: [String] = []
+    ) {
+        self.isEnabled = isEnabled
+        self.blockedChannels = blockedChannels
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        self.blockedKeywords = blockedKeywords
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        let channels = try container.decodeIfPresent([String].self, forKey: .blockedChannels) ?? []
+        let keywords = try container.decodeIfPresent([String].self, forKey: .blockedKeywords) ?? []
+        blockedChannels = channels
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        blockedKeywords = keywords
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    public var effectiveBlockedChannels: [String] {
+        isEnabled ? blockedChannels : []
+    }
+
+    public var effectiveBlockedKeywords: [String] {
+        isEnabled ? blockedKeywords : []
+    }
+
+    /// Returns `true` when `isEnabled` is true and either `channel` or `title` matches any configured filter rule.
+    public func matches(title: String, channel: String) -> Bool {
+        guard isEnabled else { return false }
+        let normChannel = channel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if !normChannel.isEmpty {
+            for blocked in blockedChannels {
+                let needle = blocked.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !needle.isEmpty && (normChannel == needle || normChannel.contains(needle)) {
+                    return true
+                }
+            }
+        }
+        if !normTitle.isEmpty {
+            for keyword in blockedKeywords {
+                let needle = keyword.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !needle.isEmpty && normTitle.contains(needle) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+}
+
+public typealias ContentFilterRules = ContentFilterConfig

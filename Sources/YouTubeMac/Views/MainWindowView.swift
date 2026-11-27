@@ -43,6 +43,8 @@ struct MainWindowView: View {
     @State private var isCompactTabsPopoverPresented = false
     @State private var isCompactMultiviewPopoverPresented = false
     @State private var isHeaderAddPickerPresented = false
+    @State private var isTranscriptPopoverPresented = false
+    @State private var isBookmarksPopoverPresented = false
     @State private var hoveredCompactTabID: UUID?
     @State private var hoveredCompactCloseTabID: UUID?
     @State private var headerWidth: CGFloat = 1100
@@ -225,15 +227,14 @@ struct MainWindowView: View {
                             } else if isSelectedTabPoppedOut, let poppedTab = controller.poppedOutTab {
                                 poppedOutPlaceholder(for: poppedTab)
                             }
-
+                        }
+                        .overlay(alignment: .top) {
                             if let toast = controller.activeToast {
-                                VStack {
-                                    AppleHUDToast(toast: toast)
-                                        .padding(.top, AppSpacing.lg)
-                                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                                    Spacer()
+                                AppleHUDToast(toast: toast) {
+                                    controller.executeActiveToastAction()
                                 }
-                                .allowsHitTesting(false)
+                                .padding(.top, AppSpacing.lg)
+                                .transition(.opacity.combined(with: .scale(scale: 0.96)))
                             }
                         }
                         .overlay(alignment: .topTrailing) {
@@ -499,6 +500,32 @@ struct MainWindowView: View {
                                 controller.toggleMiniPlayer()
                             }
 
+                            if !isCompact && !foldSecondaryControls {
+                                AppleIconButton(
+                                    systemImage: "captions.bubble",
+                                    isActive: isTranscriptPopoverPresented,
+                                    isDisabled: controller.hasLiveFullscreenTab || !(controller.selectedTab?.mediaStatus.hasVideo ?? false),
+                                    helpText: "Transcript"
+                                ) {
+                                    isTranscriptPopoverPresented.toggle()
+                                }
+                                .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
+                                    transcriptPopoverContent
+                                }
+
+                                AppleIconButton(
+                                    systemImage: "bookmark",
+                                    isActive: isBookmarksPopoverPresented,
+                                    isDisabled: controller.hasLiveFullscreenTab,
+                                    helpText: "Timestamp Bookmarks (⌘⇧K)"
+                                ) {
+                                    isBookmarksPopoverPresented.toggle()
+                                }
+                                .popover(isPresented: $isBookmarksPopoverPresented, arrowEdge: .bottom) {
+                                    bookmarksPopoverContent
+                                }
+                            }
+
                             if !foldSecondaryControls {
                                 AppleIconButton(
                                     systemImage: "airplayvideo",
@@ -545,7 +572,7 @@ struct MainWindowView: View {
                                 controller.toggleCompactHeaderMode()
                             }
 
-                            if foldSecondaryControls {
+                            if isCompact || foldSecondaryControls {
                                 controlsMenu
                                     .popover(isPresented: $controller.isAirPlayPopoverPresented, arrowEdge: .bottom) {
                                         AirPlayPopoverView(
@@ -553,6 +580,12 @@ struct MainWindowView: View {
                                             onDismiss: { controller.isAirPlayPopoverPresented = false }
                                         )
                                         .environment(\.font, AppFont.body)
+                                    }
+                                    .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
+                                        transcriptPopoverContent
+                                    }
+                                    .popover(isPresented: $isBookmarksPopoverPresented, arrowEdge: .bottom) {
+                                        bookmarksPopoverContent
                                     }
                             } else {
                                 controlsMenu
@@ -788,7 +821,7 @@ struct MainWindowView: View {
 
             compactTabLeadingIcon(for: tab)
 
-            Text(tab.displayTitle)
+            Text(controller.effectiveTitle(for: tab))
                 .font(AppFont.callout(weight: .regular))
                 .foregroundStyle(tab.isSleeping ? AppleTheme.textMuted : Color.primary.opacity(0.84))
                 .lineLimit(1)
@@ -1023,7 +1056,10 @@ struct MainWindowView: View {
             if isSelectedTabOnHome {
                 return "Search YouTube"
             }
-            return controller.selectedTab?.displayTitle ?? "Search YouTube"
+            guard let selectedTab = controller.selectedTab else {
+                return "Search YouTube"
+            }
+            return controller.effectiveTitle(for: selectedTab)
         }()
 
         Group {
@@ -1355,6 +1391,21 @@ struct MainWindowView: View {
 
             Divider()
 
+            Button {
+                isTranscriptPopoverPresented = true
+            } label: {
+                Label("Transcript…", systemImage: "captions.bubble")
+            }
+            .disabled(!hasVideo)
+
+            Button {
+                isBookmarksPopoverPresented = true
+            } label: {
+                Label("Timestamp Bookmarks…", systemImage: "bookmark")
+            }
+
+            Divider()
+
             Button(controller.isCurrentPagePinned ? "Unpin Page" : "Pin Page to Sidebar") {
                 controller.togglePinCurrentPage()
             }
@@ -1430,7 +1481,7 @@ struct MainWindowView: View {
     private func poppedOutPlaceholder(for tab: BrowserTab) -> some View {
         GlassRecoveryCard(
             systemImage: tab.mediaStatus.isPlaying ? "pip.fill" : "pause.circle.fill",
-            title: tab.displayTitle,
+            title: controller.effectiveTitle(for: tab),
             message: tab.mediaStatus.isPlaying ? "Playing in Floating Mini-Player" : "Paused in Floating Mini-Player",
             messageLineLimit: 2,
             primaryAction: GlassRecoveryAction(
@@ -1488,7 +1539,7 @@ struct MainWindowView: View {
                                     .font(AppFont.micro(weight: .bold, tabular: true))
                                 Image(systemName: isAudio ? "waveform" : "speaker.slash.fill")
                                     .font(AppIconFont.xs(weight: .semibold))
-                                Text(tab.displayTitle)
+                                Text(controller.effectiveTitle(for: tab))
                                     .font(AppFont.caption(weight: .medium))
                                     .lineLimit(1)
                             }
@@ -1507,6 +1558,57 @@ struct MainWindowView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var transcriptPopoverContent: some View {
+        let tab = controller.selectedTab
+        let currentTime = tab?.timeline.currentTime ?? controller.activeTimeline?.currentTime ?? 0
+        TranscriptPopoverView(
+            transcript: controller.currentTranscript,
+            isLoading: controller.isFetchingTranscript,
+            currentTime: currentTime,
+            onRefresh: {
+                Task { @MainActor in
+                    _ = await controller.fetchCurrentTabTranscript()
+                }
+            },
+            onSeek: { seconds in
+                controller.seek(to: seconds)
+            }
+        )
+        .onAppear {
+            let currentVideoID = tab.flatMap { YouTubeURLRouter.extractVideoID(from: $0.url) }
+            if controller.currentTranscript == nil || controller.currentTranscript?.videoID != currentVideoID {
+                Task { @MainActor in
+                    _ = await controller.fetchCurrentTabTranscript()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bookmarksPopoverContent: some View {
+        let tab = controller.selectedTab
+        let title = tab.map { controller.effectiveTitle(for: $0) } ?? "YouTube"
+        let currentTime = tab?.timeline.currentTime ?? controller.activeTimeline?.currentTime ?? 0
+        let hasVideo = controller.nowPlayingStatus.hasVideo
+        BookmarksPopoverView(
+            bookmarks: controller.settings.videoBookmarks,
+            currentVideoTitle: title,
+            currentTime: currentTime,
+            hasVideo: hasVideo,
+            onAddBookmark: { note in
+                _ = controller.addCurrentTimestampBookmark(note: note)
+            },
+            onJump: { bookmark in
+                controller.jumpToBookmark(bookmark)
+                isBookmarksPopoverPresented = false
+            },
+            onDelete: { id in
+                controller.removeVideoBookmark(id: id)
+            }
+        )
     }
 
     private func activateOmniboxForSearch(clearInput: Bool) {
@@ -1620,7 +1722,7 @@ private struct CompactTabsPopoverView: View {
                                             .frame(width: 16, alignment: .center)
                                     }
 
-                                    Text(tab.displayTitle)
+                                    Text(controller.effectiveTitle(for: tab))
                                         .font(AppFont.callout(weight: isSelected ? .semibold : .regular))
                                         .foregroundStyle(tab.isSleeping ? AppleTheme.textMuted : .primary)
                                         .lineLimit(1)

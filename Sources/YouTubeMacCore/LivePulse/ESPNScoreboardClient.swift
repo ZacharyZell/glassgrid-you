@@ -11,6 +11,7 @@ public struct ESPNGameSummaryUpdate: Equatable, Sendable {
     public let overUnder: Double?
     public let athleteStats: [String: String]
     public let athleteStatsByNameAndTeam: [String: String]
+    public let recentPlays: [PlayByPlayEvent]
 
     public init(
         eventID: String,
@@ -21,7 +22,8 @@ public struct ESPNGameSummaryUpdate: Equatable, Sendable {
         spreadSummary: String? = nil,
         overUnder: Double? = nil,
         athleteStats: [String: String] = [:],
-        athleteStatsByNameAndTeam: [String: String] = [:]
+        athleteStatsByNameAndTeam: [String: String] = [:],
+        recentPlays: [PlayByPlayEvent] = []
     ) {
         self.eventID = eventID
         self.league = league
@@ -32,6 +34,7 @@ public struct ESPNGameSummaryUpdate: Equatable, Sendable {
         self.overUnder = overUnder
         self.athleteStats = athleteStats
         self.athleteStatsByNameAndTeam = athleteStatsByNameAndTeam
+        self.recentPlays = recentPlays
     }
 }
 
@@ -124,33 +127,47 @@ public actor ESPNScoreboardClient {
             var awayScore: TeamScore?
             var homeScore: TeamScore?
 
-            for competitor in competitors {
-                guard let teamObj = competitor["team"] as? [String: Any],
-                      let teamID = stringValue(teamObj["id"]) ?? stringValue(competitor["id"]),
-                      let abbr = stringValue(teamObj["abbreviation"]) else {
-                    continue
-                }
-                let displayName = stringValue(teamObj["displayName"]) ?? abbr
-                let shortName = stringValue(teamObj["shortDisplayName"]) ?? stringValue(teamObj["name"]) ?? abbr
-                let score = intValue(competitor["score"]) ?? 0
-                let records = competitor["records"] as? [[String: Any]]
-                let recordSummary = stringValue(records?.first?["summary"])
-                let isPossession = possessionTeamID != nil && possessionTeamID == teamID
+            if league == .f1 {
+                let topTwo = extractF1TopTwo(from: competitors)
+                awayScore = topTwo?.away
+                homeScore = topTwo?.home
+            } else {
+                for competitor in competitors {
+                    guard let teamObj = competitor["team"] as? [String: Any],
+                          let teamID = stringValue(teamObj["id"]) ?? stringValue(competitor["id"]),
+                          let abbr = stringValue(teamObj["abbreviation"]) else {
+                        continue
+                    }
+                    let displayName = stringValue(teamObj["displayName"]) ?? abbr
+                    let shortName = stringValue(teamObj["shortDisplayName"]) ?? stringValue(teamObj["name"]) ?? abbr
+                    let score = intValue(competitor["score"]) ?? 0
+                    let records = competitor["records"] as? [[String: Any]]
+                    let recordSummary = stringValue(records?.first?["summary"])
+                    let isPossession = possessionTeamID != nil && possessionTeamID == teamID
+                    let rawRank = intValue((competitor["curatedRank"] as? [String: Any])?["current"])
+                    let rank = (rawRank != nil && (1...25).contains(rawRank!)) ? rawRank : nil
 
-                let teamScore = TeamScore(
-                    espnTeamID: teamID,
-                    abbreviation: abbr,
-                    displayName: displayName,
-                    shortName: shortName,
-                    score: score,
-                    record: recordSummary,
-                    isPossession: isPossession
-                )
+                    let teamScore = TeamScore(
+                        espnTeamID: teamID,
+                        abbreviation: abbr,
+                        displayName: displayName,
+                        shortName: shortName,
+                        score: score,
+                        record: recordSummary,
+                        isPossession: isPossession,
+                        rank: rank
+                    )
 
-                if stringValue(competitor["homeAway"])?.lowercased() == "away" {
-                    awayScore = teamScore
-                } else {
-                    homeScore = teamScore
+                    let homeAway = stringValue(competitor["homeAway"])?.lowercased()
+                    if homeAway == "away" {
+                        awayScore = teamScore
+                    } else if homeAway == "home" {
+                        homeScore = teamScore
+                    } else if awayScore == nil {
+                        awayScore = teamScore
+                    } else if homeScore == nil {
+                        homeScore = teamScore
+                    }
                 }
             }
 
@@ -242,6 +259,9 @@ public actor ESPNScoreboardClient {
             athleteStatsByNameAndTeam = parsedBoxscore.byNameAndTeam
         }
 
+        let teamAbbrByID = extractTeamAbbreviationMap(from: root)
+        let recentPlays = extractRecentPlays(from: root, eventID: eventID, teamAbbrByID: teamAbbrByID, limit: 15)
+
         return ESPNGameSummaryUpdate(
             eventID: eventID,
             league: league,
@@ -251,7 +271,8 @@ public actor ESPNScoreboardClient {
             spreadSummary: spreadSummary,
             overUnder: overUnder,
             athleteStats: athleteStats,
-            athleteStatsByNameAndTeam: athleteStatsByNameAndTeam
+            athleteStatsByNameAndTeam: athleteStatsByNameAndTeam,
+            recentPlays: recentPlays
         )
     }
 
@@ -320,7 +341,7 @@ public actor ESPNScoreboardClient {
         var byID: [String: String] = [:]
         var byNameAndTeam: [String: String] = [:]
 
-        if league == .nfl {
+        if league == .nfl || league == .ncaaf {
             let opponentScoresByTeam = extractOpponentScoresByTeam(from: root, league: league)
             var defenseByTeam = extractNFLTeamStatsFromTeamsBoxscore(from: boxscore, league: league)
             var teamOrder: [String] = []
@@ -471,13 +492,13 @@ public actor ESPNScoreboardClient {
                     let map = makeLabelMap(labels: labels, stats: stats)
                     let line: String?
                     switch league {
-                    case .nba:
+                    case .nba, .ncaab:
                         line = formatNBAAthleteLine(map: map, labels: labels, stats: stats)
                     case .mlb:
                         line = formatMLBAthleteLine(catName: catName, map: map, labels: labels, stats: stats)
                     case .nhl:
                         line = formatNHLAthleteLine(catName: catName, map: map, labels: labels, stats: stats)
-                    case .nfl:
+                    case .nfl, .ncaaf, .mls, .epl, .f1:
                         line = nil
                     }
                     guard let line, !line.isEmpty else { continue }
@@ -1014,6 +1035,150 @@ public actor ESPNScoreboardClient {
         if let num = raw as? NSNumber { return num.intValue }
         if let str = raw as? String { return Int(str) }
         return nil
+    }
+
+    private nonisolated static func extractF1TopTwo(
+        from competitors: [[String: Any]]
+    ) -> (away: TeamScore, home: TeamScore)? {
+        struct RankedDriver {
+            let order: Int
+            let score: TeamScore
+        }
+
+        var drivers: [RankedDriver] = []
+        for (idx, comp) in competitors.enumerated() {
+            let athlete = comp["athlete"] as? [String: Any]
+            let team = comp["team"] as? [String: Any]
+            let id = stringValue(comp["id"]) ?? stringValue(athlete?["id"]) ?? stringValue(team?["id"]) ?? "\(idx + 1)"
+            let displayName = stringValue(athlete?["displayName"])
+                ?? stringValue(athlete?["fullName"])
+                ?? stringValue(team?["displayName"])
+                ?? "Driver \(idx + 1)"
+            let shortName = stringValue(athlete?["shortName"])
+                ?? stringValue(team?["shortDisplayName"])
+                ?? displayName
+            let explicitAbbr = stringValue(athlete?["abbreviation"]) ?? stringValue(team?["abbreviation"])
+            let abbr: String
+            if let explicitAbbr, !explicitAbbr.isEmpty {
+                abbr = explicitAbbr.uppercased()
+            } else {
+                let lastWord = displayName.split(separator: " ").last.map(String.init) ?? displayName
+                let letters = lastWord.uppercased().filter(\.isLetter)
+                abbr = String((letters.isEmpty ? "F1" : letters).prefix(3))
+            }
+            let position = intValue(comp["order"]) ?? (idx + 1)
+            let driverScore = TeamScore(
+                espnTeamID: id,
+                abbreviation: abbr,
+                displayName: displayName,
+                shortName: shortName,
+                score: position,
+                record: "P\(position)",
+                isPossession: false
+            )
+            drivers.append(RankedDriver(order: position, score: driverScore))
+        }
+
+        drivers.sort { $0.order < $1.order }
+        guard drivers.count >= 2 else { return nil }
+        return (away: drivers[1].score, home: drivers[0].score)
+    }
+
+    private nonisolated static func extractTeamAbbreviationMap(from root: [String: Any]) -> [String: String] {
+        guard let header = root["header"] as? [String: Any],
+              let competitions = header["competitions"] as? [[String: Any]],
+              let comp = competitions.first,
+              let competitors = comp["competitors"] as? [[String: Any]] else {
+            return [:]
+        }
+        var map: [String: String] = [:]
+        for c in competitors {
+            guard let teamObj = c["team"] as? [String: Any],
+                  let tid = stringValue(teamObj["id"]) ?? stringValue(c["id"]),
+                  let abbr = stringValue(teamObj["abbreviation"]) else {
+                continue
+            }
+            map[tid] = abbr
+        }
+        return map
+    }
+
+    private nonisolated static func extractRecentPlays(
+        from root: [String: Any],
+        eventID: String,
+        teamAbbrByID: [String: String],
+        limit: Int
+    ) -> [PlayByPlayEvent] {
+        var rawPlayObjects: [[String: Any]] = []
+
+        if let drives = root["drives"] as? [String: Any] {
+            if let previous = drives["previous"] as? [[String: Any]] {
+                for drive in previous {
+                    if let drivePlays = drive["plays"] as? [[String: Any]] {
+                        rawPlayObjects.append(contentsOf: drivePlays)
+                    }
+                }
+            }
+            if let current = drives["current"] as? [String: Any],
+               let currentPlays = current["plays"] as? [[String: Any]] {
+                rawPlayObjects.append(contentsOf: currentPlays)
+            }
+        }
+
+        if rawPlayObjects.isEmpty, let plays = root["plays"] as? [[String: Any]] {
+            rawPlayObjects = plays
+        }
+
+        if rawPlayObjects.isEmpty, let keyEvents = root["keyEvents"] as? [[String: Any]] {
+            rawPlayObjects = keyEvents
+        }
+
+        guard !rawPlayObjects.isEmpty else { return [] }
+
+        var parsed: [PlayByPlayEvent] = []
+        parsed.reserveCapacity(min(rawPlayObjects.count, limit))
+
+        for (index, play) in rawPlayObjects.enumerated() {
+            let rawText = stringValue(play["text"])
+                ?? stringValue(play["shortDescription"])
+                ?? stringValue((play["type"] as? [String: Any])?["text"])
+                ?? ""
+            let cleanText = AgentSecurity.sanitizeWebText(rawText, maxLength: 240).text
+            guard !cleanText.isEmpty else { continue }
+
+            let playID = stringValue(play["id"]) ?? "\(eventID):p:\(index)"
+            let periodObj = play["period"] as? [String: Any]
+            let periodText = stringValue(periodObj?["displayValue"])
+                ?? intValue(periodObj?["number"]).map { "P\($0)" }
+                ?? ""
+            let clockObj = play["clock"] as? [String: Any]
+            let clock = stringValue(clockObj?["displayValue"])
+            let teamObj = play["team"] as? [String: Any]
+            let teamID = stringValue(teamObj?["id"])
+            let teamAbbr = stringValue(teamObj?["abbreviation"]) ?? teamID.flatMap { teamAbbrByID[$0] }
+            let isScoring = (play["scoringPlay"] as? Bool) ?? false
+            let awayScore = intValue(play["awayScore"])
+            let homeScore = intValue(play["homeScore"])
+            let wallclock = parseISO8601Date(stringValue(play["wallclock"]))
+
+            parsed.append(
+                PlayByPlayEvent(
+                    id: playID,
+                    gameID: eventID,
+                    periodText: periodText,
+                    clock: clock,
+                    teamAbbreviation: teamAbbr,
+                    text: cleanText,
+                    isScoringPlay: isScoring,
+                    awayScore: awayScore,
+                    homeScore: homeScore,
+                    wallclock: wallclock
+                )
+            )
+        }
+
+        // Return newest-first capped at `limit`.
+        return Array(parsed.suffix(limit).reversed())
     }
 
     private nonisolated static func doubleValue(_ raw: Any?) -> Double? {

@@ -95,7 +95,7 @@
 
         <ul class="trust-strip" aria-label="Key product highlights">
           <li>macOS 14.0+</li>
-          <li>Apple Notarized v1.3.1</li>
+          <li>Apple Notarized v1.4.0</li>
           <li>Sparkle 2 EdDSA</li>
           <li>Zero Electron</li>
           <li>Free v1.x Updates</li>
@@ -128,7 +128,7 @@
               <h3>Quad-Box Multiview with Zero-Latency Solo &amp; Live Sync.</h3>
               <p>Watch up to four simultaneous streams in Grid, Spotlight, or Stacked layouts—mixing YouTube, YouTube TV (FairPlay DRM), Twitch, Crunchyroll, ESPN, NFL+, Peacock, and any HTTPS stream side by side.</p>
               <ul class="feature-bullets">
-                <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>):</strong> Expand any tile full-window while keeping the other 3 streams live in the background; press <kbd>Esc</kbd> to snap back instantaneously with your split ratios intact.</li>
+                <li><strong>Zero-Latency Solo Tile (<kbd>⌘⌥Z</kbd>) &amp; 1-Click Live Sync:</strong> Expand any tile full-window while keeping the other 3 streams live; sync every stream to the live edge in one click, turn on subtle Master-Clock soft Auto-Sync, nudge delay (<code>−5s</code>/<code>+5s</code>), recover stalled feeds, or share grids via <code>glassgridyou://multiview</code> links.</li>
                 <li><strong>Live Stream Sync Micro-Nudge:</strong> Fine-tune broadcast delay per tile with <strong>−5s</strong>, <strong>−1s</strong>, <strong>+1s</strong>, <strong>+5s</strong>, or <strong>Jump to Live</strong> so games and watchalongs stay aligned.</li>
                 <li><strong>Reactive Live Pulse Companion (<kbd>⌘⌥B</kbd> / <kbd>⌘⌥I</kbd>):</strong> Pair Multiview with opt-in live NFL/NBA/MLB/NHL scores, fantasy tracking, and read-only odds in <a href="#live-pulse">Live Pulse</a> below.</li>
                 <li><strong>Per-Tile Audio Mixer &amp; 15% Ducking:</strong> Press <kbd>⌘⌥1–4</kbd> for exclusive focus, enable 15% background ducking, or open any tile&rsquo;s <strong>Volume Slider</strong> popover (0%&ndash;100% + 1-click <em>Reset Mix</em>) alongside 120Hz draggable dividers.</li>
@@ -150,9 +150,9 @@
 
           <article class="showcase showcase--reverse" id="live-pulse">
             <div class="showcase-copy">
-              <span class="section-label">Live Pulse · <a href="changelog.html#v1-3-0">New in v1.3.0</a></span>
+              <span class="section-label">Live Pulse · <a href="changelog.html#v1-4-0">Updated in v1.4.0</a></span>
               <h3>Live Scoreboards, Fantasy Tracking &amp; Read-Only Markets.</h3>
-              <p>Strictly <strong>OFF by default</strong>—opt in to pair active sports streams with live NFL, NBA, MLB, and NHL scoreboards, Sleeper &amp; ESPN Public fantasy matchups, and strictly read-only Kalshi &amp; Polymarket odds.</p>
+              <p>Strictly <strong>OFF by default</strong>—opt in to pair active sports streams with live NFL, NBA, MLB, NHL (plus opt-in NCAAF Top 25, NCAAB, MLS, EPL &amp; F1) scoreboards, Win%, roster-filtered Play-by-Play, Sleeper &amp; ESPN Public fantasy matchups, Menu Bar score pinning, lazy popout live chat, and strictly read-only Kalshi &amp; Polymarket odds.</p>
               <ul class="feature-bullets">
                 <li><strong>Reactive Ticker (<kbd>⌘⌥B</kbd>) &amp; Companion Drawer (<kbd>⌘⌥I</kbd>):</strong> <code>30pt</code> floating pill rail and resizable <code>280–440pt</code> drawer with passive local stream detection (<code>mediaSession</code> / <code>og:title</code> / <code>h1</code> across YouTube TV, Prime Video, Peacock, Paramount+, ESPN+, NFL+, MLB.tv, NBA, Apple TV+, and whip-around slates) plus 90s ad-break hysteresis and 1-click regional disambiguation.</li>
                 <li><strong>Starter vs. Bench (<code>BN</code>) &amp; 1-Line Boxscores:</strong> Tracks Sleeper and public ESPN Fantasy matchups (Starters counted in totals, live Bench flagged with hollow <code>BN</code> cues), sport-aware 1-line boxscores for NFL/NBA/MLB/NHL, and name+team fallback matching for rookies.</li>
@@ -206,12 +206,12 @@
 
           <article class="showcase showcase--reverse" id="automation">
             <div class="showcase-copy">
-              <span class="section-label">AI &amp; Siri Control · <a href="changelog.html#v1-3-0">New in v1.3.0</a></span>
-              <h3>Operate GlassGrid You with Claude, Gemini, Grok, Siri &amp; CLI.</h3>
-              <p>Connect your local AI assistant or macOS Shortcuts workflow via Apple's App Intents or the bundled Model Context Protocol (MCP) server—strictly opt-in, off by default, and local to your Mac.</p>
+              <span class="section-label">AI, Global Hotkeys &amp; Raycast · <a href="changelog.html#v1-4-0">Updated in v1.4.0</a></span>
+              <h3>Operate GlassGrid You with Claude, Gemini, Grok, Siri, Raycast &amp; CLI.</h3>
+              <p>Connect your local AI assistant or macOS Shortcuts workflow via Apple's App Intents, Raycast script commands, or the bundled Model Context Protocol (MCP) server—strictly opt-in, off by default, and local to your Mac.</p>
               <ul class="feature-bullets">
-                <li><strong>28 MCP Tools &amp; 5 Read-Only Resources:</strong> Bundled <code>glassgrid</code> CLI &amp; stdio MCP server with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong>, plus opt-in <code>127.0.0.1</code> Streamable HTTP MCP.</li>
-                <li><strong>Siri, Apple Intelligence &amp; Shortcuts:</strong> 12 native App Intents and 8 App Shortcuts let Siri check Now Playing, seek, open services, switch Multiview audio, or launch presets natively.</li>
+                <li><strong>32 MCP Tools &amp; 5 Read-Only Resources:</strong> Bundled <code>glassgrid</code> CLI &amp; stdio MCP server (including <code>get_transcript</code>, <code>sync_multiview_all</code>, <code>toggle_ghost_mode</code>, and <code>add_bookmark</code>) with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong>, plus opt-in <code>127.0.0.1</code> Streamable HTTP MCP.</li>
+                <li><strong>Siri, Shortcuts, Carbon Global Hotkeys &amp; Raycast Pack:</strong> 14 native App Intents (10 App Shortcuts), zero-Accessibility system-wide Carbon global hotkeys, and 7 ready-to-run Raycast script commands under <code>extras/raycast-glassgrid/</code>.</li>
                 <li><strong>Zero-Trust Local Security:</strong> Owner-only UNIX socket IPC (zero tokens in stdio configs), 3 permission tiers, live Activity Log, and permanent blocks on cookies, logins, arbitrary JS, and site-data wipes.</li>
               </ul>
             </div>
@@ -227,8 +227,8 @@
                     decoding="async">
                 </div>
                 <div class="pedestal-caption" aria-hidden="true">
-                  <span class="pedestal-pill">28 MCP Tools</span>
-                  <span class="pedestal-pill">12 Siri Intents</span>
+                  <span class="pedestal-pill">32 MCP Tools</span>
+                  <span class="pedestal-pill">14 Siri Intents</span>
                   <span class="pedestal-pill">Off by Default</span>
                 </div>
               </div>
@@ -269,7 +269,7 @@
               <h3>Always-on-top Single or Quad-Box Floating Multiview Grid.</h3>
               <p>Keep either a single borderless 16:9 stream or an entire 2&ndash;4 stream Multiview Grid pinned in any corner—with zero reload, click-to-focus audio, and Split Screen–aware auto pop-out.</p>
               <ul class="feature-bullets">
-                <li><strong>Floating Single &amp; Multiview Grid (<kbd>⌘⇧M</kbd>):</strong> Pop out single streams or 2-Up, 3-Up, and 2&times;2 Quad-Box walls with crimson active-audio borders, click-any-tile audio switching, smooth <strong>8-edge &amp; corner drag resizing</strong>, direct Shrink (<code>&minus;</code>) / Expand (<code>+</code>) hover header controls, and 4 preset sizes up to <strong>XL</strong> (<strong>880&times;495</strong> Single / <strong>1040&times;585</strong> Grid).</li>
+                <li><strong>Floating Single &amp; Multiview Grid (<kbd>⌘⇧M</kbd>) + Ghost Mode (<kbd>⌘⌥O</kbd>):</strong> Pop out single streams or 2-Up, 3-Up, and 2&times;2 Quad-Box walls with crimson active-audio borders, click-any-tile audio switching, smooth <strong>8-edge &amp; corner drag resizing</strong>, Shrink/Expand header buttons, click-through <strong>Ghost Mode</strong> with Option-hold (<code>⌥</code>) peek, scroll-wheel drag-bar opacity, and presets up to <strong>XL</strong> (<strong>880&times;495</strong> Single / <strong>1040&times;585</strong> Grid).</li>
                 <li><strong>Adjustable Opacity (40%&ndash;100%) &amp; Controls:</strong> Dial transparency, check live dimensions in Display Options, switch Grid/Spotlight/Stacked layouts, Mute All, or toggle speed and AirPlay straight from the adaptive compact Liquid Glass hover header (<code>&ge;300pt</code>).</li>
                 <li><strong>Split Screen–Aware Auto Pop-Out:</strong> Floats automatically when another app covers GlassGrid You, and docks cleanly back the moment you return.</li>
               </ul>
@@ -307,9 +307,9 @@
 
         <div class="bento-grid">
           <div class="glass-card">
-            <span class="bento-badge">8.3 MB DMG</span>
+            <span class="bento-badge">9.6 MB DMG</span>
             <h3>Zero Electron Overhead</h3>
-            <p>Compiled natively in Swift 6 (~8.3 MB notarized universal DMG with bundled Inter v4.1 font &amp; Sparkle 2) using SwiftUI, AppKit, and Apple WebKit—without bundling Chromium.</p>
+            <p>Compiled natively in Swift 6 (~9.6 MB notarized DMG with bundled Inter v4.1 font &amp; Sparkle 2) using SwiftUI, AppKit, and Apple WebKit—without bundling Chromium.</p>
           </div>
 
           <div class="glass-card">
@@ -355,31 +355,31 @@
 
         <div class="pricing-grid">
           <div class="pricing-card pricing-card--featured">
-            <span class="pricing-kicker">Recommended · Instant Install (v1.3.1)</span>
+            <span class="pricing-kicker">Recommended · Instant Install (v1.4.0)</span>
             <h3>Notarized macOS Installer</h3>
             <div class="price-row">
               <span class="price-amount">$12</span>
               <span class="price-note">one-time · free v1.x updates</span>
             </div>
-            <p class="pricing-desc">Latest signed &amp; Apple-notarized release is <strong>v1.3.1 (Build 7)</strong>—includes free automatic Sparkle 2 updates for every future v1.x release.</p>
+            <p class="pricing-desc">Latest signed &amp; Apple-notarized release is <strong>v1.4.0 (Build 8)</strong>—includes free automatic Sparkle 2 updates for every future v1.x release.</p>
             <ul class="pricing-list">
               <li>Signed &amp; Apple-Notarized macOS <code>.dmg</code></li>
               <li>Zero Xcode or command-line setup required</li>
               <li>Sparkle 2 EdDSA-verified automatic updates</li>
-              <li>Includes Live Pulse, Compact Header, Per-Tile Volume, Holiday Themes &amp; MCP</li>
+              <li>Includes Ghost Mode, Multiview Sync, Transcripts, DeArrow, Bookmarks &amp; 9-League Live Pulse</li>
               <li>Directly supports independent macOS development</li>
             </ul>
             <a class="btn btn-primary" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download for macOS — $12</a>
           </div>
 
           <div class="pricing-card pricing-card--muted">
-            <span class="pricing-kicker">Open Source · MIT License (v1.3.1 on main)</span>
+            <span class="pricing-kicker">Open Source · MIT License (v1.4.0 on main)</span>
             <h3>Build from Source</h3>
             <div class="price-row">
               <span class="price-amount">$0</span>
               <span class="price-note">forever · full Swift 6 repo</span>
             </div>
-            <p class="pricing-desc">Includes the complete <strong>v1.3.1</strong> codebase on <code>main</code> today—clone the public repository and build locally with Xcode and Swift 6.</p>
+            <p class="pricing-desc">Includes the complete <strong>v1.4.0</strong> codebase on <code>main</code> today—clone the public repository and build locally with Xcode and Swift 6.</p>
             <ul class="pricing-list">
               <li>100% identical feature set—zero locked pro tiers</li>
               <li>Clean Swift Package Manager &amp; <code>./scripts/bundle.sh</code></li>
@@ -421,14 +421,14 @@
           <details class="faq-item">
             <summary>How does Live Pulse work for live scores, fantasy leagues, and prediction markets?</summary>
             <div class="faq-answer">
-              <p><strong>Live Pulse</strong> (introduced in <strong>v1.3.0</strong>) ships strictly <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; Live Pulse</strong> or toggled via <kbd>⌘⌥B</kbd> (Ticker Bar) / <kbd>⌘⌥I</kbd> (Companion Drawer), it passively matches active sports streams (YouTube, YouTube TV, Prime Video, Peacock, Paramount+, ESPN+, NFL+, MLB.tv, NBA, Apple TV+, and whip-around slates like RedZone) locally in memory using <code>mediaSession</code>, <code>og:title</code>, watch headings, and URLs with strict auth-page bailout. It shows live NFL/NBA/MLB/NHL scoreboards ranked by custom <code>#1–#4</code> Sport Priority (or 1-click <strong>Watched Stream Focus</strong>), tracks <strong>Sleeper</strong> and public <strong>ESPN Fantasy</strong> matchups with clear Starter vs. hollow <code>BN</code> Bench cues and compact 1-line boxscores, displays 15s-bucketed freshness + manual refresh, and surfaces strictly read-only implied odds from <strong>Kalshi</strong> and <strong>Polymarket</strong>. All requests use cookieless ephemeral sessions, and a configurable <code>0s</code>/<code>20s</code>/<code>35s</code> <strong>Spoiler Delay</strong> prevents broadcast spoilers—with zero wagering or trade execution anywhere in the app. See our <a href="terms.html">Terms &amp; Disclaimers</a>.</p>
+              <p><strong>Live Pulse</strong> (expanded in <strong>v1.4.0</strong>) ships strictly <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; Live Pulse</strong> or toggled via <kbd>⌘⌥B</kbd> (Ticker Bar) / <kbd>⌘⌥I</kbd> (Companion Drawer), it passively matches active sports streams locally in memory using <code>mediaSession</code>, <code>og:title</code>, watch headings, and URLs with strict auth-page bailout. It tracks NFL, NBA, MLB, and NHL by default plus opt-in <strong>NCAAF (Top 25), NCAAB, MLS, EPL, and F1</strong> scoreboards with Win% and roster-filtered Play-by-Play, tracks <strong>Sleeper</strong> and public <strong>ESPN Fantasy</strong> matchups with Starter vs. <code>BN</code> Bench cues, offers opt-in Menu Bar score pinning and lazy YouTube/Twitch live chat, and surfaces strictly read-only implied odds from <strong>Kalshi</strong> and <strong>Polymarket</strong>. All requests use cookieless ephemeral sessions, and a configurable <code>0s</code>/<code>20s</code>/<code>35s</code> <strong>Spoiler Delay</strong> protects against spoilers—with zero wagering or trade execution anywhere in the app. See our <a href="terms.html">Terms &amp; Disclaimers</a>.</p>
             </div>
           </details>
 
           <details class="faq-item">
             <summary>How does AI Agent, MCP, and Siri automation work—and is it private?</summary>
             <div class="faq-answer">
-              <p>All AI, MCP, CLI, URL trigger, and Siri features (introduced in <strong>v1.3.0</strong>) are strictly opt-in and <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; AI &amp; Automation</strong>, the bundled <code>glassgrid</code> CLI &amp; stdio MCP server lets Claude Desktop, Claude Code, Gemini CLI, Antigravity, or Grok CLI operate GlassGrid You over an owner-only local UNIX socket (never transmitting cookies, passwords, or arbitrary JS), alongside 12 native Siri / Shortcuts App Intents.</p>
+              <p>All AI, MCP, CLI, URL trigger, and Siri features are strictly opt-in and <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; AI &amp; Automation</strong>, the bundled <code>glassgrid</code> CLI &amp; stdio MCP server (32 tools including on-demand transcripts, bookmarks, Multiview Sync All, and Ghost Mode) lets Claude Desktop, Claude Code, Gemini CLI, Antigravity, Raycast, or Grok CLI operate GlassGrid You over an owner-only local UNIX socket (never transmitting cookies, passwords, or arbitrary JS), alongside 14 native Siri / Shortcuts App Intents.</p>
             </div>
           </details>
 

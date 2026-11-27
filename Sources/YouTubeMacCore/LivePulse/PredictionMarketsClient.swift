@@ -561,6 +561,11 @@ public actor PredictionMarketsClient {
         if haystack.contains(" nba ") { return .nba }
         if haystack.contains(" mlb ") || haystack.contains("world series") { return .mlb }
         if haystack.contains(" nhl ") || haystack.contains("stanley cup") { return .nhl }
+        if haystack.contains(" ncaaf ") || haystack.contains("college football") || haystack.contains(" cfb ") { return .ncaaf }
+        if haystack.contains(" ncaab ") || haystack.contains("college basketball") || haystack.contains("march madness") { return .ncaab }
+        if haystack.contains(" mls ") { return .mls }
+        if haystack.contains("premier league") || haystack.contains(" epl ") { return .epl }
+        if haystack.contains("formula 1") || haystack.contains("formula one") || haystack.contains(" f1 ") || haystack.contains("grand prix") { return .f1 }
         return nil
     }
 

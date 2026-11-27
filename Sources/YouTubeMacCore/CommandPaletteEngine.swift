@@ -25,11 +25,75 @@ public enum CommandPaletteSection: String, CaseIterable, Sendable {
     }
 }
 
+/// Pure Core descriptors for opt-in system-wide Carbon global hotkeys (zero Carbon framework linkage).
+public enum GlobalHotKeyAction: String, CaseIterable, Identifiable, Codable, Sendable {
+    case playPause
+    case toggleMiniPlayer
+    case toggleGhostMode
+    case addBookmark
+    case toggleMute
+
+    public var id: String { rawValue }
+
+    public var carbonHotKeyID: UInt32 {
+        switch self {
+        case .playPause: return 1
+        case .toggleMiniPlayer: return 2
+        case .toggleGhostMode: return 3
+        case .addBookmark: return 4
+        case .toggleMute: return 5
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .playPause: return "Play / Pause Active Video"
+        case .toggleMiniPlayer: return "Toggle Floating Mini-Player"
+        case .toggleGhostMode: return "Toggle Mini-Player Ghost Mode"
+        case .addBookmark: return "Bookmark Current Timestamp"
+        case .toggleMute: return "Mute / Unmute Active Video"
+        }
+    }
+
+    /// Carbon virtual key code (`kVK_ANSI_*` integer constants).
+    public var defaultKeyCode: UInt32 {
+        switch self {
+        case .playPause: return 0x23        // 'P'
+        case .toggleMiniPlayer: return 0x22 // 'I'
+        case .toggleGhostMode: return 0x1F  // 'O'
+        case .addBookmark: return 0x28      // 'K'
+        case .toggleMute: return 0x2E       // 'M'
+        }
+    }
+
+    /// Carbon modifier bitmask (`cmdKey = 0x0100`, `shiftKey = 0x0200`, `optionKey = 0x0800`, `controlKey = 0x1000`).
+    public var defaultCarbonModifiers: UInt32 {
+        switch self {
+        case .playPause: return 0x0900        // ⌘⌥P
+        case .toggleMiniPlayer: return 0x1800 // ⌃⌥I
+        case .toggleGhostMode: return 0x0900  // ⌘⌥O
+        case .addBookmark: return 0x0300      // ⌘⇧K
+        case .toggleMute: return 0x1800       // ⌃⌥M
+        }
+    }
+
+    public var shortcutDisplay: String {
+        switch self {
+        case .playPause: return "⌘⌥P"
+        case .toggleMiniPlayer: return "⌃⌥I"
+        case .toggleGhostMode: return "⌘⌥O"
+        case .addBookmark: return "⌘⇧K"
+        case .toggleMute: return "⌃⌥M"
+        }
+    }
+}
+
 /// Built-in app actions executable from the Command Palette with discoverable shortcut hints.
 public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case toggleMultiview
     case openYouTubeTVInMultiview
     case toggleMiniPlayer
+    case toggleMiniPlayerGhostMode
     case togglePictureInPicture
     case toggleFocusMode
     case toggleDayNightMode
@@ -52,6 +116,12 @@ public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case toggleCompactHeaderMode
     case toggleHolidayEffects
     case cycleHolidayTheme
+    case syncMultiviewStreams
+    case copyMultiviewShareLink
+    case addBookmark
+    case openBookmarks
+    case openTranscript
+    case toggleGlobalHotkeys
 }
 
 /// Action payload executed when a Command Palette row is selected.
@@ -259,6 +329,7 @@ public enum CommandPaletteEngine {
         pinnedItems: [PinnedItem],
         pinnedFolders: [PinnedFolder] = [],
         watchedChannels: [WatchedChannelStat],
+        bookmarks: [VideoBookmark] = [],
         enabledServices: [StreamingService] = [],
         isMultiviewActive: Bool = false,
         canAddMultiviewTile: Bool = false,
@@ -438,6 +509,28 @@ public enum CommandPaletteEngine {
                 )
             ))
         }
+        for bookmark in bookmarks {
+            guard let url = bookmark.url, seenChannelURLs.insert(url.absoluteString).inserted else { continue }
+            let titleScore = fuzzyScore(query: trimmed, in: bookmark.title) ?? 0
+            let noteScore = bookmark.note.isEmpty ? 0 : (fuzzyScore(query: trimmed, in: bookmark.note).map { $0 - 40 } ?? 0)
+            let channelScore = bookmark.channel.isEmpty ? 0 : (fuzzyScore(query: trimmed, in: bookmark.channel).map { $0 - 80 } ?? 0)
+            let best = max(titleScore, max(noteScore, channelScore))
+            guard best > 0 else { continue }
+            let isCompanion = YouTubeURLRouter.preferredRoutingMode(for: url) == .companion
+            let sub = bookmark.note.isEmpty ? "Bookmark · \(bookmark.formattedTimestamp)" : "\(bookmark.note) · \(bookmark.formattedTimestamp)"
+            channelEntries.append((
+                best + 15,
+                CommandPaletteItem(
+                    id: "bookmark-\(bookmark.id.uuidString)",
+                    section: .channelsAndPins,
+                    title: bookmark.title,
+                    subtitle: sub,
+                    systemImage: "bookmark.fill",
+                    badgeText: bookmark.formattedTimestamp,
+                    payload: isCompanion ? .openCompanionURL(url) : .openURL(url)
+                )
+            ))
+        }
         channelEntries.sort { $0.score > $1.score }
         results.append(contentsOf: channelEntries.prefix(5).map(\.item))
 
@@ -535,8 +628,8 @@ public enum CommandPaletteEngine {
             )
         }
 
-        // 8. Guaranteed offline direct-search fallback (when input isn't already a direct YouTube URL)
-        if detectedYouTubeURL == nil {
+        // 8. Guaranteed offline direct-search fallback + cross-service search (when input isn't already a direct YouTube URL)
+        if detectedYouTubeURL == nil && detectedCompanionURL == nil {
             results.append(
                 CommandPaletteItem(
                     id: "search-direct-\(normalizedQuery)",
@@ -548,6 +641,34 @@ public enum CommandPaletteEngine {
                     payload: .searchYouTube(trimmed)
                 )
             )
+            if enabledServices.contains(where: { $0.id == "twitch" }),
+               let twitchURL = YouTubeURLRouter.twitchSearchURL(for: trimmed) {
+                results.append(
+                    CommandPaletteItem(
+                        id: "search-twitch-\(normalizedQuery)",
+                        section: .directSearch,
+                        title: "Search Twitch for \"\(trimmed)\"",
+                        subtitle: twitchURL.absoluteString,
+                        systemImage: "gamecontroller",
+                        badgeText: "Twitch",
+                        payload: .openCompanionURL(twitchURL)
+                    )
+                )
+            }
+            if enabledServices.contains(where: { $0.id == "yttv" }),
+               let yttvURL = YouTubeURLRouter.youtubeTVSearchURL(for: trimmed) {
+                results.append(
+                    CommandPaletteItem(
+                        id: "search-yttv-\(normalizedQuery)",
+                        section: .directSearch,
+                        title: "Search YouTube TV for \"\(trimmed)\"",
+                        subtitle: yttvURL.absoluteString,
+                        systemImage: "tv",
+                        badgeText: "YTTV",
+                        payload: .openURL(yttvURL)
+                    )
+                )
+            }
         }
 
         return results

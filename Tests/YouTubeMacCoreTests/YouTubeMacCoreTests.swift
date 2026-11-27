@@ -2679,4 +2679,53 @@ final class YouTubeMacCoreTests: XCTestCase {
         XCTAssertEqual(MediaStatus.formatPlaybackRate(1.0), "1×")
         XCTAssertEqual(MediaStatus.formatPlaybackRate(1.5), "1.5×")
     }
+
+    func testV140CommandPaletteBookmarksCrossServiceSearchAndFilterConfig() {
+        let cfg = DistractionFreeConfig(
+            contentFilterKeywords: ["spoilers", "drama"],
+            contentFilterChannels: ["NoiseTV"]
+        )
+        let bootstrap = EnhancementScript.bootstrapScript(config: cfg)
+        XCTAssertTrue(bootstrap.contains("contentFilterKeywords"))
+        XCTAssertTrue(bootstrap.contains("NoiseTV"))
+
+        let bookmark = VideoBookmark(
+            videoID: "vid12345678",
+            urlString: "https://www.youtube.com/watch?v=vid12345678",
+            title: "Metal Performance Deep Dive",
+            channel: "Apple Developer",
+            note: "Shader pipeline",
+            timestampSeconds: 95
+        )
+        let twitchService = StreamingServiceCatalog.service(id: "twitch")!
+        let yttvService = StreamingServiceCatalog.service(id: "yttv")!
+
+        let items = CommandPaletteEngine.rank(
+            query: "Shader",
+            openTabs: [],
+            presets: [],
+            continueWatching: [],
+            pinnedItems: [],
+            watchedChannels: [],
+            bookmarks: [bookmark],
+            enabledServices: [twitchService, yttvService],
+            actions: [],
+            suggestions: []
+        )
+
+        XCTAssertTrue(items.contains(where: {
+            $0.section == .channelsAndPins &&
+            $0.title == "Metal Performance Deep Dive" &&
+            $0.badgeText == "1:35" &&
+            $0.payload == .openURL(URL(string: "https://www.youtube.com/watch?v=vid12345678&t=95s")!)
+        }))
+        XCTAssertTrue(items.contains(where: {
+            $0.id == "search-twitch-shader" &&
+            $0.badgeText == "Twitch"
+        }))
+        XCTAssertTrue(items.contains(where: {
+            $0.id == "search-yttv-shader" &&
+            $0.badgeText == "YTTV"
+        }))
+    }
 }

@@ -23,6 +23,7 @@ struct LivePulseTickerBar: View {
         let detail: String?
         let isPositive: Bool?
         let targetTab: LivePulseDrawerTab
+        let gameID: String?
 
         enum Kind: Equatable {
             case playerDelta
@@ -89,7 +90,8 @@ struct LivePulseTickerBar: View {
             text: "\(abbreviatedPlayerName(player.name)) \(deltaText)",
             detail: player.liveStatLine,
             isPositive: isPos,
-            targetTab: .players
+            targetTab: .players,
+            gameID: player.matchedGameID
         )
     }
 
@@ -148,7 +150,7 @@ struct LivePulseTickerBar: View {
             .filter { snapshot.activeGameIDs.contains($0.id) }
             .sorted { store.leaguePriorityRank(for: $0.league) < store.leaguePriorityRank(for: $1.league) }
         for game in inStreamGames {
-            let scoreText = "\(game.away.abbreviation) \(game.away.score) – \(game.home.abbreviation) \(game.home.score)"
+            let scoreText = formattedRailGameScore(game)
             let detail = game.clock ?? game.statusDetail
             items.append(
                 TickerRailItem(
@@ -159,7 +161,8 @@ struct LivePulseTickerBar: View {
                     text: scoreText,
                     detail: detail.isEmpty ? nil : detail,
                     isPositive: nil,
-                    targetTab: .scores
+                    targetTab: .scores,
+                    gameID: game.id
                 )
             )
         }
@@ -187,7 +190,7 @@ struct LivePulseTickerBar: View {
                 .filter { !snapshot.activeGameIDs.contains($0.id) && ($0.status == .live || $0.status == .halftime) }
                 .sorted { store.leaguePriorityRank(for: $0.league) < store.leaguePriorityRank(for: $1.league) }
             for game in otherLiveGames.prefix(5) {
-                let scoreText = "\(game.away.abbreviation) \(game.away.score) – \(game.home.abbreviation) \(game.home.score)"
+                let scoreText = formattedRailGameScore(game)
                 let detail = game.clock ?? game.statusDetail
                 items.append(
                     TickerRailItem(
@@ -198,7 +201,8 @@ struct LivePulseTickerBar: View {
                         text: scoreText,
                         detail: detail.isEmpty ? nil : detail,
                         isPositive: nil,
-                        targetTab: .scores
+                        targetTab: .scores,
+                        gameID: game.id
                     )
                 )
             }
@@ -261,7 +265,8 @@ struct LivePulseTickerBar: View {
                         text: "\(quote.outcomeLabel) \(pct)%\(deltaSuffix)",
                         detail: quote.title,
                         isPositive: isPos,
-                        targetTab: .markets
+                        targetTab: .markets,
+                        gameID: quote.matchedGameID
                     )
                 )
             }
@@ -300,6 +305,9 @@ struct LivePulseTickerBar: View {
         }
         if case .matchedGame(let gameID, _, _, let sourceLabel) = snapshot.primaryContext {
             if let game = snapshot.games.first(where: { $0.id == gameID }) {
+                if game.league == .f1 {
+                    return "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
+                }
                 return "\(game.away.abbreviation) \(game.away.score)–\(game.home.score) \(game.home.abbreviation)"
             }
             return sourceLabel
@@ -422,6 +430,12 @@ struct LivePulseTickerBar: View {
         .popover(isPresented: $isPinPopoverPresented, arrowEdge: .bottom) {
             manualGamePinPopover
         }
+        .contextMenu {
+            if case .matchedGame(let gameID, _, _, _) = snapshot.primaryContext,
+               let matched = snapshot.games.first(where: { $0.id == gameID }) {
+                menuBarPinContextMenuButton(for: matched)
+            }
+        }
     }
 
     @ViewBuilder
@@ -529,6 +543,55 @@ struct LivePulseTickerBar: View {
             }
             .buttonStyle(.plain)
             .disabled(isFrozen)
+        } else if controller.settings.livePulseEnabled,
+                  controller.settings.livePulseScoringFlashes,
+                  let alert = store.activeScoringFlashAlert {
+            Button {
+                controller.openLivePulseDrawer(tab: alert.gameID.hasPrefix("fantasy:") ? .matchup : .scores)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "bolt.fill")
+                        .font(AppIconFont.xs(weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, AppSpacing.xxs)
+                        .background(AppleTheme.positive, in: Capsule(style: .continuous))
+                        .fixedSize()
+                        .layoutPriority(1)
+
+                    Text(alert.headline)
+                        .font(AppFont.caption(weight: .semibold, tabular: true))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .layoutPriority(0.8)
+
+                    if !alert.detail.isEmpty {
+                        Text("· \(alert.detail)")
+                            .font(AppFont.caption(weight: .medium, tabular: true))
+                            .foregroundStyle(AppleTheme.positive)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .layoutPriority(-1)
+                    }
+                }
+                .id("flash:\(alert.id)")
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .bottom)),
+                    removal: .opacity.combined(with: .move(edge: .top))
+                ))
+                .padding(.horizontal, AppSpacing.md)
+                .frame(height: 24)
+                .frame(minWidth: 180, maxWidth: 480)
+                .appleGlass(
+                    in: Capsule(style: .continuous),
+                    tint: AppleTheme.positive.opacity(0.18),
+                    interactive: true
+                )
+                .contentShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isFrozen)
+            .help("Spoiler-Delayed Scoring Flash — Click to open Live Companion")
         } else if let item = activeRailItem {
             Button {
                 controller.openLivePulseDrawer(tab: item.targetTab)
@@ -598,6 +661,12 @@ struct LivePulseTickerBar: View {
             .disabled(isFrozen)
             .onHover { isRailHovered = $0 }
             .help("Click to open \(item.targetTab.title) in Live Companion Drawer")
+            .contextMenu {
+                if let gameID = item.gameID,
+                   let game = snapshot.games.first(where: { $0.id == gameID }) {
+                    menuBarPinContextMenuButton(for: game)
+                }
+            }
         } else if controller.settings.livePulseStreamFocusOnly {
             HStack(spacing: AppSpacing.xs) {
                 Text("No matched stream")
@@ -896,9 +965,11 @@ struct LivePulseTickerBar: View {
                 Text(game.league.displayName)
                     .font(AppFont.micro(weight: .bold))
                     .foregroundStyle(AppleTheme.textSecondary)
-                    .frame(width: 28, alignment: .leading)
-                Text("\(game.away.abbreviation) \(game.away.score) – \(game.home.score) \(game.home.abbreviation)")
+                    .frame(width: 42, alignment: .leading)
+                    .lineLimit(1)
+                Text(formattedPopoverGameScore(game))
                     .font(AppFont.callout(weight: .medium, tabular: true))
+                    .lineLimit(1)
                 Spacer()
                 Text(game.clock ?? game.statusDetail)
                     .font(AppFont.caption(tabular: true))
@@ -919,6 +990,43 @@ struct LivePulseTickerBar: View {
             )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            menuBarPinContextMenuButton(for: game)
+        }
+    }
+
+    @ViewBuilder
+    private func menuBarPinContextMenuButton(for game: LiveGame) -> some View {
+        let isMenuBarPinned = store.menuBarPinnedGame?.id == game.id
+        Button {
+            if isMenuBarPinned {
+                store.pinGameToMenuBar(nil)
+            } else {
+                controller.settings.livePulseMenuBarPin = true
+                store.pinGameToMenuBar(game.id)
+            }
+        } label: {
+            Label(
+                isMenuBarPinned ? "Unpin from Menu Bar" : "Pin to Menu Bar",
+                systemImage: isMenuBarPinned ? "pin.slash" : "menubar.rectangle"
+            )
+        }
+    }
+
+    private func formattedRailGameScore(_ game: LiveGame) -> String {
+        if game.league == .f1 {
+            return "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
+        }
+        return "\(game.away.abbreviation) \(game.away.score) – \(game.home.abbreviation) \(game.home.score)"
+    }
+
+    private func formattedPopoverGameScore(_ game: LiveGame) -> String {
+        if game.league == .f1 {
+            return "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
+        }
+        let awayRank = game.away.rank.map { "#\($0) " } ?? ""
+        let homeRank = game.home.rank.map { "#\($0) " } ?? ""
+        return "\(awayRank)\(game.away.abbreviation) \(game.away.score) – \(game.home.score) \(homeRank)\(game.home.abbreviation)"
     }
 
     private func pinGame(_ game: LiveGame) {
@@ -953,6 +1061,11 @@ struct LivePulseTickerBar: View {
         case .nba: return "NBA Live Whip-Around"
         case .mlb: return "MLB Big Inning Slate"
         case .nhl: return "NHL Frozen Frenzy Slate"
+        case .ncaaf: return "NCAAFB Live Slate"
+        case .ncaab: return "NCAAB Live Slate"
+        case .mls: return "MLS 360 / Live Slate"
+        case .epl: return "Premier League Live Slate"
+        case .f1: return "F1 Race / Live Timing"
         }
     }
 

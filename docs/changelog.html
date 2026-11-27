@@ -76,12 +76,16 @@
         <span class="section-label">Release Log &amp; Version Diffs</span>
         <h1>What changed in every update.</h1>
         <p class="changelog-sub">
-          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.3.1</strong>, Build 7).
+          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.4.0</strong>, Build 8).
         </p>
 
         <nav class="release-jump-strip" aria-label="Jump to version">
-          <a class="release-jump-pill" href="#v1-3-1">
+          <a class="release-jump-pill" href="#v1-4-0">
             <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span>v1.4.0</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-3-1">
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
             <span>v1.3.1</span>
           </a>
           <a class="release-jump-pill" href="#v1-3-0">
@@ -138,11 +142,71 @@
       -->
 
       <div class="changelog-timeline">
-        <article class="release-card release-card--latest" id="v1-3-1">
+        <article class="release-card release-card--latest" id="v1-4-0">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.4.0</h2>
+              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 8</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-27">Nov 27, 2026</time>
+              <span>DMG: 9,616,685 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/483cd40...main" target="_blank" rel="noopener noreferrer">Diff v1.3.1 &rarr; v1.4.0 &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.3.1:</strong> Introduces click-through <strong>Ghost Mode (<kbd>⌘⌥O</kbd>)</strong> with Option-hold (<code>⌥</code>) peek &amp; scroll-wheel opacity on Mini-Player drag bars; adds 1-click <strong>Multiview Sync All</strong>, Master-Clock soft Auto-Sync, Stalled-Tile Watchdog, and <code>glassgridyou://multiview</code> share links; ships on-demand <strong>Transcripts</strong>, opt-in <strong>DeArrow</strong>, 5-category SponsorBlock with 4s <em>Un-skip</em> undo, <strong>Timestamped Bookmarks (<kbd>⌘⇧K</kbd>)</strong>, cookieless Channel RSS Inbox, local Content Filters, and <code>⌘K</code> shorthands; expands <strong>Live Pulse</strong> to <strong>9 leagues</strong> (adding NCAAF Top 25, NCAAB, MLS, EPL, F1) with Win%, roster-filtered Play-by-Play, Menu Bar Score Pin, Fantasy Scoring Flashes, and lazy Live Chat; and adds opt-in <strong>Global Carbon Hotkeys</strong>, <strong>Notch Media HUD</strong>, 7 <strong>Raycast Script Commands</strong>, and <strong>32 MCP tools</strong>.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">+Ghost Mode (<kbd>⌘⌥O</kbd>) &amp; Opacity Wheel</span>
+              <span class="delta-pill">+Multiview Sync All &amp; Share Links</span>
+              <span class="delta-pill">+Transcripts, DeArrow &amp; Bookmarks (<kbd>⌘⇧K</kbd>)</span>
+              <span class="delta-pill">4 &rarr; 9 Live Pulse Leagues + Menu Bar Pin</span>
+              <span class="delta-pill">+Global Hotkeys, Notch HUD &amp; Raycast Pack</span>
+              <span class="delta-pill">129 &rarr; 143 Unit Tests</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>Floating Mini-Player Ghost Mode (<kbd>⌘⌥O</kbd>) &amp; Opacity Scroll Wheel:</strong> Added click-through Ghost Mode (<code>ignoresMouseEvents = true</code>), live Option-hold (<code>⌥</code>) global+local peek so you can temporarily interact without toggling off, and smooth scroll-wheel opacity (40%&ndash;100%) strictly on the top drag handles (with automatic reset on detach/dock/close/fullscreen).</li>
+                <li><strong>Multiview Sync All, Master-Clock Auto-Sync, Stalled Watchdog &amp; Share Links:</strong> Added 1-click <strong>Sync All</strong> (<code>sync_multiview_all</code>), opt-in passive soft rate-catchup Auto-Sync (<code>0.92&times;</code>/<code>1.08&times;</code> within 0.6s drift, returning to <code>1.0&times;</code> at 0.15s with zero <code>AudioContext</code>), stalled live-tile detection + 1-click recovery pill, and strict HTTPS-validated <code>glassgridyou://multiview?...</code> share links.</li>
+                <li><strong>On-Demand Transcripts, Timestamped Bookmarks (<kbd>⌘⇧K</kbd>), DeArrow &amp; Content Filters:</strong> Added searchable timestamped captions extracted strictly on demand (capped at 64 KB / 1,000 cues), timestamped video bookmarks popover &amp; Home shelf strip, opt-in k-anonymous <strong>DeArrow</strong> clean titles, granular 5-category <strong>SponsorBlock</strong> toggles with a 4s <strong>Un-skip</strong> toast undo button, cookieless Channel Atom RSS Inbox, Single-View Auto-Pause Background Tab (off by default), and local channel/keyword filtering.</li>
+                <li><strong>Expanded Live Pulse (9 Leagues, Win%, Play-by-Play, Menu Bar Pin &amp; Lazy Chat):</strong> Added opt-in <strong>NCAAF</strong> (with Top 25 rankings), <strong>NCAAB</strong>, <strong>MLS</strong>, <strong>EPL</strong>, and <strong>F1</strong> alongside NFL/NBA/MLB/NHL; summary Win Probability + &ldquo;My Roster Plays&rdquo; Play-by-Play filtering; opt-in spoiler-delayed <strong>Menu Bar Score Pin</strong> &amp; <strong>Fantasy Scoring Flashes</strong>; and a 5th <strong>Chat</strong> drawer tab with strictly lazy, HTTPS-allowlisted Twitch/YouTube popout chat (showing a clean native unavailable state on VODs).</li>
+                <li><strong>Opt-In Global Carbon Hotkeys, Notch Media HUD Pill, Raycast Pack &amp; 32 MCP Tools:</strong> Added zero-Accessibility Carbon global hotkeys + new <strong>Settings &rarr; Shortcuts</strong> tab, opt-in Notch/Top-Edge Media HUD pill, 7 Raycast script commands under <code>extras/raycast-glassgrid/</code>, plus 4 new MCP tools (<code>get_transcript</code>, <code>sync_multiview_all</code>, <code>toggle_ghost_mode</code>, <code>add_bookmark</code>), 2 Siri App Intents (14 total / 10 App Shortcuts), and <code>glassgrid</code> CLI subcommands (<code>transcript</code>, <code>sync-all</code>, <code>ghost-mode</code>, <code>bookmark</code>).</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--changed">Changed</span>
+              <ul class="diff-list">
+                <li><strong>Cross-Service <code>⌘K</code> Shorthands &amp; Multi-Query Search:</strong> Added instant <code>twitch:</code>, <code>yt:</code>, and <code>yttv:</code> prefix shorthands plus cross-service search entries inside Spotlight Command Palette (<code>⌘K</code>).</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--fixed">Fixed</span>
+              <ul class="diff-list">
+                <li><strong>Startup <code>NSApp</code> Guard, Atom XML Resilience &amp; Suite Growth:</strong> Safely guarded <code>AppCoordinator.commandTarget</code> against pre-app-launch access, stripped invalid XML 1.0 control bytes in <code>ChannelInboxClient</code>, and expanded unit coverage from <strong>129 &rarr; 143 tests</strong> with <code>swift test</code> + Swift 6 strict concurrency release verification.</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--security">Security &amp; Privacy</span>
+              <ul class="diff-list">
+                <li><strong>Privacy-First Opt-In Defaults:</strong> DeArrow (k-anonymous 4-char SHA-256 prefix), Menu Bar Score Pin, Fantasy Scoring Flashes, Secondary Leagues, Global Hotkeys, Notch Media HUD, Content Filters, and Single-View Auto-Pause all ship <strong>OFF by default</strong>; transcripts carry <code>untrusted_web_page</code> trust tags; and companion chat restricts navigations strictly to <code>twitch.tv/popout/.../chat</code> and <code>youtube.com/live_chat</code>.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="release-card" id="v1-3-1">
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.3.1</h2>
-              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 7</span>
+              <span class="release-status">Signed .dmg · Build 7</span>
             </div>
             <div class="release-meta-row">
               <time datetime="2026-11-27">Nov 27, 2026</time>

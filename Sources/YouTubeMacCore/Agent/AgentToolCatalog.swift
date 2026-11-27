@@ -71,7 +71,7 @@ public struct AgentResourceDefinition: Sendable {
     }
 }
 
-/// Single source of truth for all 28 GlassGrid You MCP tools and 5 read-only resources.
+/// Single source of truth for all 32 GlassGrid You MCP tools and 5 read-only resources.
 public enum AgentToolCatalog {
     public static let resources: [AgentResourceDefinition] = [
         AgentResourceDefinition(
@@ -498,6 +498,46 @@ public enum AgentToolCatalog {
                 ],
                 required: ["action"]
             )
+        ),
+
+        // 29-32: v1.4.0 Transcript, Multiview Sync, Ghost Mode & Timestamp Bookmarks
+        AgentToolDefinition(
+            name: "get_transcript",
+            description: "Extract on-demand caption cues from the active YouTube watch page (tagged untrusted_web_page, bounded to <= 1,000 cues).",
+            requiredTier: .readOnly,
+            inputSchema: schema(properties: [
+                "query": strProp("Optional case-insensitive search substring to filter transcript cues."),
+                "max_cues": intProp("Optional maximum number of cues to return (1..1000).", min: 1, max: 1000),
+                "window_id": strProp("Optional target window UUID string.")
+            ]),
+            readOnlyHint: true,
+            idempotentHint: true
+        ),
+        AgentToolDefinition(
+            name: "sync_multiview_all",
+            description: "Synchronize all active Multiview streams to live edge (live streams) or the primary tile timestamp (VOD).",
+            requiredTier: .playbackAndNavigation,
+            inputSchema: schema(properties: [
+                "window_id": strProp("Optional target window UUID string.")
+            ])
+        ),
+        AgentToolDefinition(
+            name: "toggle_ghost_mode",
+            description: "Enable, disable, or toggle Floating Mini-Player click-through Ghost Mode (requires visible Floating Mini-Player).",
+            requiredTier: .playbackAndNavigation,
+            inputSchema: schema(properties: [
+                "enabled": boolProp("Explicit Ghost Mode state (omit to toggle)."),
+                "window_id": strProp("Optional target window UUID string.")
+            ])
+        ),
+        AgentToolDefinition(
+            name: "add_bookmark",
+            description: "Save a timestamped bookmark for the active video or stream with an optional note.",
+            requiredTier: .fullControl,
+            inputSchema: schema(properties: [
+                "note": strProp("Optional short note attached to the timestamp bookmark."),
+                "window_id": strProp("Optional target window UUID string.")
+            ])
         )
     ]
 

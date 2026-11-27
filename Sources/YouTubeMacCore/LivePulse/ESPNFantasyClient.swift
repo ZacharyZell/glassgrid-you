@@ -200,7 +200,7 @@ public actor ESPNFantasyClient {
 
     private nonisolated static func espnPositionLabel(_ id: Int, league: SportsLeague) -> String {
         switch league {
-        case .nfl:
+        case .nfl, .ncaaf:
             switch id {
             case 1: return "QB"
             case 2: return "RB"
@@ -210,7 +210,7 @@ public actor ESPNFantasyClient {
             case 16: return "D/ST"
             default: return "FLEX"
             }
-        case .nba:
+        case .nba, .ncaab:
             switch id {
             case 1: return "PG"
             case 2: return "SG"
@@ -240,6 +240,16 @@ public actor ESPNFantasyClient {
             case 5: return "G"
             default: return "F"
             }
+        case .mls, .epl:
+            switch id {
+            case 1: return "GK"
+            case 2: return "D"
+            case 3: return "M"
+            case 4: return "F"
+            default: return "POS"
+            }
+        case .f1:
+            return "DRV"
         }
     }
 

@@ -731,6 +731,12 @@ public enum SportsEntityMatcher {
 
     private static func detectExplicitLeagueKeyword(in normalized: String) -> SportsLeague? {
         let padded = " \(normalized) "
+        if containsWholePhrase(padded, phrase: "ncaaf") || containsWholePhrase(padded, phrase: "ncaafb") || containsWholePhrase(padded, phrase: "college football") {
+            return .ncaaf
+        }
+        if containsWholePhrase(padded, phrase: "ncaab") || containsWholePhrase(padded, phrase: "college basketball") || containsWholePhrase(padded, phrase: "march madness") {
+            return .ncaab
+        }
         if containsWholePhrase(padded, phrase: "nfl") || containsWholePhrase(padded, phrase: "football") {
             return .nfl
         }
@@ -742,6 +748,15 @@ public enum SportsEntityMatcher {
         }
         if containsWholePhrase(padded, phrase: "nhl") || containsWholePhrase(padded, phrase: "hockey") {
             return .nhl
+        }
+        if containsWholePhrase(padded, phrase: "mls") {
+            return .mls
+        }
+        if containsWholePhrase(padded, phrase: "epl") || containsWholePhrase(padded, phrase: "premier league") {
+            return .epl
+        }
+        if containsWholePhrase(padded, phrase: "f1") || containsWholePhrase(padded, phrase: "formula 1") || containsWholePhrase(padded, phrase: "formula one") || containsWholePhrase(padded, phrase: "grand prix") {
+            return .f1
         }
         return nil
     }

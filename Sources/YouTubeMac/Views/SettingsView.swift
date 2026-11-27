@@ -8,6 +8,8 @@ struct SettingsView: View {
     @State private var servicePendingReset: StreamingService?
     @State private var statusMessage: String?
     @State private var statusClearTask: Task<Void, Never>?
+    @State private var newBlockedChannel = ""
+    @State private var newBlockedKeyword = ""
 
     private static let speedPresets: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
@@ -42,8 +44,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Live Pulse", systemImage: "sportscourt")
                 }
+
+            shortcutsTab
+                .tabItem {
+                    Label("Shortcuts", systemImage: "command")
+                }
         }
-        .frame(width: 660, height: 560)
+        .frame(width: 660, height: 580)
         .alert("Sign Out & Clear All Site Data?", isPresented: $showClearDataConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Clear All Data", role: .destructive) {
@@ -156,6 +163,12 @@ struct SettingsView: View {
             Section("Mini-Player & Window") {
                 Toggle("Auto pop-out Mini-Player or Multiview Grid when leaving or covered by another app", isOn: $settings.autoMiniPlayerOnLeave)
                 Toggle("Keep Mini-Player visible across all Spaces", isOn: $settings.miniPlayerAllSpaces)
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("Show Notch Media HUD pill around MacBook notch", isOn: $settings.notchMediaHUDEnabled)
+                    Text("Opt-in: displays compact playback controls near the notch (or top edge on external displays), automatically hidden in fullscreen.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
             }
 
             Section("Home, Tabs & Menu Bar") {
@@ -228,6 +241,12 @@ struct SettingsView: View {
                 Toggle("Prefer original audio track (avoid auto-dubbed audio)", isOn: $settings.preferOriginalAudio)
                 Toggle("Auto-pause on screen lock, sleep, or audio disconnect", isOn: $settings.autoPauseOnSystemEvents)
                 VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("Auto-pause other single-view tabs when playback starts", isOn: $settings.singleViewAutoPauseEnabled)
+                    Text("Opt-in: pauses other single-view tabs when starting playback (Multiview grids are never interrupted).")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Toggle("Duck background Multiview audio to 15% (instead of mute)", isOn: $settings.multiviewAudioDuckingEnabled)
                     Text("Opt-in: keeps non-focused Multiview streams softly audible at 15% volume and restores 100% on focus or exit.")
                         .font(AppFont.caption)
@@ -236,11 +255,44 @@ struct SettingsView: View {
             }
 
             Section("Segments") {
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                VStack(alignment: .leading, spacing: AppSpacing.sm) {
                     Toggle("Auto-skip sponsored segments (SponsorBlock)", isOn: $settings.sponsorBlockEnabled)
                     Text("Opt-in: queries sponsor.ajay.app using a privacy-preserving 4-character SHA-256 video ID prefix and fails silently offline.")
                         .font(AppFont.caption)
                         .foregroundStyle(AppleTheme.textSecondary)
+
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Text("Categories to skip")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)],
+                            alignment: .leading,
+                            spacing: AppSpacing.xs
+                        ) {
+                            ForEach(SponsorSegmentCategory.allCases) { category in
+                                Toggle(
+                                    category.shortLabel,
+                                    isOn: Binding(
+                                        get: { settings.sponsorBlockCategories.contains(category.rawValue) },
+                                        set: { enabled in
+                                            var updated = settings.sponsorBlockCategories
+                                            if enabled {
+                                                updated.insert(category.rawValue)
+                                            } else {
+                                                updated.remove(category.rawValue)
+                                            }
+                                            settings.sponsorBlockCategories = updated
+                                        }
+                                    )
+                                )
+                                .toggleStyle(.checkbox)
+                            }
+                        }
+                    }
+                    .disabled(!settings.sponsorBlockEnabled)
+                    .opacity(settings.sponsorBlockEnabled ? 1.0 : 0.55)
+                    .padding(.top, AppSpacing.xs)
                 }
             }
         }
@@ -272,6 +324,94 @@ struct SettingsView: View {
                 Text("Promotes the native video player edge-to-edge on streaming services once playback starts. Browse pages stay untouched; press ⌘⇧B anytime for Full Page.")
                     .font(AppFont.caption)
                     .foregroundStyle(AppleTheme.textSecondary)
+            }
+
+            Section("Title & Content Filter") {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("DeArrow clickbait title removal", isOn: $settings.deArrowEnabled)
+                    Text("Opt-in: replaces sensational video titles via sponsor.ajay.app/api/branding using a 4-character SHA-256 video ID prefix.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
+
+                Toggle("Enable Content Filter (hide matching channels & keywords)", isOn: $settings.contentFilterConfig.isEnabled)
+
+                VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                    Text("Blocked Channels")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
+
+                    HStack(spacing: AppSpacing.sm) {
+                        TextField("Channel name…", text: $newBlockedChannel)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { addBlockedChannel() }
+                        Button("Add") { addBlockedChannel() }
+                            .disabled(newBlockedChannel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    if !settings.contentFilterConfig.blockedChannels.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: AppSpacing.xs) {
+                                ForEach(settings.contentFilterConfig.blockedChannels, id: \.self) { channel in
+                                    Button {
+                                        settings.contentFilterConfig.blockedChannels.removeAll { $0 == channel }
+                                    } label: {
+                                        HStack(spacing: AppSpacing.xs) {
+                                            Text(channel)
+                                                .font(AppFont.caption(weight: .medium))
+                                            Image(systemName: "xmark")
+                                                .font(AppIconFont.xs(weight: .bold))
+                                        }
+                                        .padding(.horizontal, AppSpacing.md)
+                                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                                        .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove \(channel)")
+                                }
+                            }
+                        }
+                    }
+
+                    Text("Blocked Keywords")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .padding(.top, AppSpacing.xs)
+
+                    HStack(spacing: AppSpacing.sm) {
+                        TextField("Keyword or spoiler phrase…", text: $newBlockedKeyword)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { addBlockedKeyword() }
+                        Button("Add") { addBlockedKeyword() }
+                            .disabled(newBlockedKeyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    if !settings.contentFilterConfig.blockedKeywords.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: AppSpacing.xs) {
+                                ForEach(settings.contentFilterConfig.blockedKeywords, id: \.self) { keyword in
+                                    Button {
+                                        settings.contentFilterConfig.blockedKeywords.removeAll { $0 == keyword }
+                                    } label: {
+                                        HStack(spacing: AppSpacing.xs) {
+                                            Text(keyword)
+                                                .font(AppFont.caption(weight: .medium))
+                                            Image(systemName: "xmark")
+                                                .font(AppIconFont.xs(weight: .bold))
+                                        }
+                                        .padding(.horizontal, AppSpacing.md)
+                                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                                        .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove \(keyword)")
+                                }
+                            }
+                        }
+                    }
+                }
+                .disabled(!settings.contentFilterConfig.isEnabled)
+                .opacity(settings.contentFilterConfig.isEnabled ? 1.0 : 0.55)
             }
         }
         .formStyle(.grouped)
@@ -408,6 +548,82 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(.vertical, AppSpacing.xs)
+    }
+
+    @ViewBuilder
+    private var shortcutsTab: some View {
+        @Bindable var settings = coordinator.settings
+
+        Form {
+            Section("System-Wide Global Shortcuts") {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Toggle("Enable Global Shortcuts across all macOS apps", isOn: $settings.globalHotkeysEnabled)
+                    Text("Opt-in: registers Carbon global hotkeys cleanly without Accessibility permissions.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
+
+                ForEach(GlobalHotKeyAction.allCases) { action in
+                    HStack {
+                        Text(action.title)
+                            .font(AppFont.body)
+                        Spacer()
+                        Text(action.shortcutDisplay)
+                            .font(AppFont.caption(weight: .semibold, tabular: true))
+                            .foregroundStyle(settings.globalHotkeysEnabled ? AppleTheme.accentText : AppleTheme.textSecondary)
+                            .padding(.horizontal, AppSpacing.md)
+                            .padding(.vertical, AppSpacing.xxs)
+                            .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+                    }
+                }
+            }
+
+            Section("In-App Shortcuts") {
+                shortcutRow("Command Palette & Search", "⌘K")
+                shortcutRow("Mini-Player / Float Grid", "⌘⇧M")
+                shortcutRow("Mini-Player Ghost Mode", "⌘⌥O")
+                shortcutRow("Bookmark Current Timestamp", "⌘⇧K")
+                shortcutRow("Multiview Grid", "⌘⇧G")
+                shortcutRow("Cycle Multiview Layout", "⌘⌥G")
+                shortcutRow("Solo / Expand Tile", "⌘⌥Z")
+                shortcutRow("Compact Single-Row Header", "⌘⌥\\")
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.vertical, AppSpacing.xs)
+    }
+
+    @ViewBuilder
+    private func shortcutRow(_ title: String, _ keys: String) -> some View {
+        HStack {
+            Text(title)
+                .font(AppFont.body)
+            Spacer()
+            Text(keys)
+                .font(AppFont.caption(weight: .semibold, tabular: true))
+                .foregroundStyle(AppleTheme.textSecondary)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.xxs)
+                .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+        }
+    }
+
+    private func addBlockedChannel() {
+        let trimmed = newBlockedChannel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !coordinator.settings.contentFilterConfig.blockedChannels.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            coordinator.settings.contentFilterConfig.blockedChannels.append(trimmed)
+        }
+        newBlockedChannel = ""
+    }
+
+    private func addBlockedKeyword() {
+        let trimmed = newBlockedKeyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !coordinator.settings.contentFilterConfig.blockedKeywords.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            coordinator.settings.contentFilterConfig.blockedKeywords.append(trimmed)
+        }
+        newBlockedKeyword = ""
     }
 
     private var updateStatusCaption: String {

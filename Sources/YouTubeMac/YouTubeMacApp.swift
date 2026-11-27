@@ -265,8 +265,6 @@ struct YouTubeMacApp: App {
         }
 
         MenuBarExtra(
-            "GlassGrid You",
-            systemImage: (coordinator.nowPlayingController?.nowPlayingStatus.isPlaying ?? false) ? "play.circle.fill" : "play.rectangle.fill",
             isInserted: Binding(
                 get: { coordinator.settings.showMenuBarControls },
                 set: { coordinator.settings.showMenuBarControls = $0 }
@@ -276,6 +274,15 @@ struct YouTubeMacApp: App {
                 .preferredColorScheme(coordinator.settings.preferredColorScheme)
                 .environment(\.font, AppFont.body)
                 .tint(AppleTheme.accent)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: (coordinator.nowPlayingController?.nowPlayingStatus.isPlaying ?? false) ? "play.circle.fill" : "play.rectangle.fill")
+                if coordinator.settings.livePulseEnabled,
+                   coordinator.settings.livePulseMenuBarPin,
+                   let scoreText = coordinator.livePulseStore.menuBarPinnedScoreText {
+                    Text(scoreText)
+                }
+            }
         }
         .menuBarExtraStyle(.window)
 
@@ -517,6 +524,18 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("m", modifiers: [.command, .shift])
             .disabled(targetSnapshot == nil || (!(targetSnapshot?.isMiniPlayer ?? false) && !(targetSnapshot?.canPopOutActiveContent ?? false)))
 
+            Button(coordinator.floatingMiniPlayer.isGhostMode ? "Disable Mini-Player Ghost Mode" : "Mini-Player Ghost Mode") {
+                _ = coordinator.commandTarget?.toggleMiniPlayerGhostMode()
+            }
+            .keyboardShortcut("o", modifiers: [.command, .option])
+            .disabled(!(targetSnapshot?.isMiniPlayer ?? false))
+
+            Button("Add Timestamp Bookmark") {
+                _ = coordinator.commandTarget?.addCurrentTimestampBookmark(note: "")
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
+            .disabled(!activeMediaStatus.hasVideo)
+
             Button((targetSnapshot?.alwaysOnTop ?? false) ? "Disable Always on Top" : "Always on Top") {
                 coordinator.commandTarget?.toggleAlwaysOnTop()
             }
@@ -575,6 +594,16 @@ struct YouTubeMacApp: App {
                 coordinator.commandTarget?.openYouTubeTVInMultiview()
             }
             .disabled(targetSnapshot == nil || ((targetSnapshot?.isMultiviewActive ?? false) && !(targetSnapshot?.canAddMultiviewTile ?? false)) || anyFullscreen)
+
+            Button("Sync All Multiview Streams") {
+                coordinator.commandTarget?.syncAllMultiviewTilesToLive()
+            }
+            .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
+
+            Button("Copy Shareable Multiview Link") {
+                _ = coordinator.commandTarget?.copyMultiviewShareLink()
+            }
+            .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
 
             Menu("Multiview Audio Focus") {
                 ForEach(1...MultiviewGridLayout.maxTiles, id: \.self) { slot in

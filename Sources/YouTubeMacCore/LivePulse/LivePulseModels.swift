@@ -3,34 +3,65 @@ import Foundation
 
 // MARK: - Sports & Live Score Models
 
-/// Supported major North American sports leagues for Live Pulse scoreboards, fantasy, and markets.
+/// Supported sports leagues for Live Pulse scoreboards, fantasy, play-by-play, and markets.
 public enum SportsLeague: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
     case nfl
     case nba
     case mlb
     case nhl
+    case ncaaf
+    case ncaab
+    case mls
+    case epl
+    case f1
+
+    /// Core 4 pro leagues enabled by default (preserving opt-in privacy/network budget for expanded leagues).
+    public static let primaryLeagues: [SportsLeague] = [.nfl, .nba, .mlb, .nhl]
+    public static let defaultEnabledLeagues: [SportsLeague] = [.nfl, .nba, .mlb, .nhl]
 
     public var id: String { rawValue }
 
     public var espnSportPath: String {
         switch self {
-        case .nfl: return "football"
-        case .nba: return "basketball"
+        case .nfl, .ncaaf: return "football"
+        case .nba, .ncaab: return "basketball"
         case .mlb: return "baseball"
         case .nhl: return "hockey"
+        case .mls, .epl: return "soccer"
+        case .f1: return "racing"
         }
     }
 
     public var espnLeaguePath: String {
-        rawValue
+        switch self {
+        case .nfl: return "nfl"
+        case .nba: return "nba"
+        case .mlb: return "mlb"
+        case .nhl: return "nhl"
+        case .ncaaf: return "college-football"
+        case .ncaab: return "mens-college-basketball"
+        case .mls: return "usa.1"
+        case .epl: return "eng.1"
+        case .f1: return "f1"
+        }
     }
 
     public var espnFantasyGameCode: String {
         switch self {
-        case .nfl: return "ffl"
-        case .nba: return "fba"
+        case .nfl, .ncaaf: return "ffl"
+        case .nba, .ncaab: return "fba"
         case .mlb: return "flb"
         case .nhl: return "fhl"
+        case .mls: return "mls"
+        case .epl: return "epl"
+        case .f1: return "f1"
+        }
+    }
+
+    public var supportsESPNFantasy: Bool {
+        switch self {
+        case .nfl, .nba, .mlb, .nhl: return true
+        case .ncaaf, .ncaab, .mls, .epl, .f1: return false
         }
     }
 
@@ -38,7 +69,7 @@ public enum SportsLeague: String, CaseIterable, Codable, Identifiable, Hashable,
         switch self {
         case .nfl: return "nfl"
         case .nba: return "nba"
-        case .mlb, .nhl: return nil
+        case .mlb, .nhl, .ncaaf, .ncaab, .mls, .epl, .f1: return nil
         }
     }
 
@@ -48,19 +79,30 @@ public enum SportsLeague: String, CaseIterable, Codable, Identifiable, Hashable,
         case .nba: return "KXNBAGAME"
         case .mlb: return "KXMLBGAME"
         case .nhl: return "KXNHLGAME"
+        case .ncaaf: return "KXNCAAFGAME"
+        case .ncaab: return "KXNCAABGAME"
+        case .mls: return "KXMLSGAME"
+        case .epl: return "KXEPLGAME"
+        case .f1: return "KXF1RACE"
         }
     }
 
     public var displayName: String {
-        rawValue.uppercased()
+        switch self {
+        case .ncaaf: return "NCAAFB"
+        case .ncaab: return "NCAAB"
+        default: return rawValue.uppercased()
+        }
     }
 
     public var symbolName: String {
         switch self {
-        case .nfl: return "football.fill"
-        case .nba: return "basketball.fill"
+        case .nfl, .ncaaf: return "football.fill"
+        case .nba, .ncaab: return "basketball.fill"
         case .mlb: return "baseball.fill"
         case .nhl: return "hockey.puck.fill"
+        case .mls, .epl: return "soccerball"
+        case .f1: return "flag.checkered"
         }
     }
 }
@@ -90,7 +132,7 @@ public enum GameStatus: String, Codable, Equatable, Hashable, Sendable {
     case postponed
 }
 
-/// Scoreboard line for a single competing team.
+/// Scoreboard line for a single competing team or F1 driver.
 public struct TeamScore: Equatable, Hashable, Codable, Sendable {
     public let espnTeamID: String
     public let abbreviation: String
@@ -99,6 +141,7 @@ public struct TeamScore: Equatable, Hashable, Codable, Sendable {
     public let score: Int
     public let record: String?
     public let isPossession: Bool
+    public let rank: Int?
 
     public init(
         espnTeamID: String,
@@ -107,7 +150,8 @@ public struct TeamScore: Equatable, Hashable, Codable, Sendable {
         shortName: String,
         score: Int,
         record: String? = nil,
-        isPossession: Bool = false
+        isPossession: Bool = false,
+        rank: Int? = nil
     ) {
         self.espnTeamID = espnTeamID
         self.abbreviation = abbreviation
@@ -116,6 +160,7 @@ public struct TeamScore: Equatable, Hashable, Codable, Sendable {
         self.score = score
         self.record = record
         self.isPossession = isPossession
+        self.rank = rank
     }
 }
 
@@ -449,6 +494,7 @@ public enum LivePulseDrawerTab: String, CaseIterable, Codable, Identifiable, Has
     case players
     case scores
     case markets
+    case chat
 
     public var id: String { rawValue }
 
@@ -458,6 +504,7 @@ public enum LivePulseDrawerTab: String, CaseIterable, Codable, Identifiable, Has
         case .players: return "Players"
         case .scores: return "Scores"
         case .markets: return "Markets"
+        case .chat: return "Chat"
         }
     }
 
@@ -467,7 +514,163 @@ public enum LivePulseDrawerTab: String, CaseIterable, Codable, Identifiable, Has
         case .players: return "person.2.fill"
         case .scores: return "sportscourt.fill"
         case .markets: return "chart.line.uptrend.xyaxis"
+        case .chat: return "bubble.left.and.bubble.right.fill"
         }
+    }
+}
+
+/// Normalized play-by-play or key match event parsed from ESPN game summaries and gated by `SpoilerDelayBuffer`.
+public struct PlayByPlayEvent: Identifiable, Equatable, Hashable, Codable, Sendable {
+    public let id: String
+    public let gameID: String
+    public let periodText: String
+    public let clock: String?
+    public let teamAbbreviation: String?
+    public let text: String
+    public let isScoringPlay: Bool
+    public let awayScore: Int?
+    public let homeScore: Int?
+    public let wallclock: Date?
+
+    public init(
+        id: String,
+        gameID: String,
+        periodText: String = "",
+        clock: String? = nil,
+        teamAbbreviation: String? = nil,
+        text: String,
+        isScoringPlay: Bool = false,
+        awayScore: Int? = nil,
+        homeScore: Int? = nil,
+        wallclock: Date? = nil
+    ) {
+        self.id = id
+        self.gameID = gameID
+        self.periodText = periodText
+        self.clock = clock
+        self.teamAbbreviation = teamAbbreviation
+        self.text = text
+        self.isScoringPlay = isScoringPlay
+        self.awayScore = awayScore
+        self.homeScore = homeScore
+        self.wallclock = wallclock
+    }
+}
+
+public typealias LivePlayEvent = PlayByPlayEvent
+
+/// Spoiler-delayed scoring alert badge surfaced when a watched or pinned game changes score.
+public struct LivePulseScoringAlert: Identifiable, Equatable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public let gameID: String
+    public let league: SportsLeague
+    public let headline: String
+    public let detail: String
+    public let timestamp: Date
+
+    public init(
+        id: UUID = UUID(),
+        gameID: String,
+        league: SportsLeague,
+        headline: String,
+        detail: String,
+        timestamp: Date = Date()
+    ) {
+        self.id = id
+        self.gameID = gameID
+        self.league = league
+        self.headline = headline
+        self.detail = detail
+        self.timestamp = timestamp
+    }
+}
+
+/// Strict HTTPS allowlist & URL builder for the lazy Companion Drawer Live Chat tab (`twitch.tv/popout/.../chat` and `youtube.com/live_chat`).
+public enum CompanionChatURLValidator {
+    public static func isAllowedChatURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "https",
+              let rawHost = url.host?.lowercased(), !rawHost.isEmpty else {
+            return false
+        }
+        let segments = url.path.split(separator: "/", omittingEmptySubsequences: true).map { String($0).lowercased() }
+        if rawHost == "www.twitch.tv" || rawHost == "twitch.tv" {
+            return segments.count == 3 && segments[0] == "popout" && !segments[1].isEmpty && segments[2] == "chat"
+        }
+        if rawHost == "www.youtube.com" || rawHost == "youtube.com" {
+            guard url.path.lowercased() == "/live_chat",
+                  let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let vid = components.queryItems?.first(where: { $0.name == "v" })?.value,
+                  !vid.isEmpty else {
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
+    public static func twitchPopoutChatURL(channel: String, darkMode: Bool = true) -> URL? {
+        let trimmed = channel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...25).contains(trimmed.count),
+              trimmed.unicodeScalars.allSatisfy({ s in
+                  (s.value >= 48 && s.value <= 57)
+                      || (s.value >= 65 && s.value <= 90)
+                      || (s.value >= 97 && s.value <= 122)
+                      || s == "_"
+              }) else {
+            return nil
+        }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.twitch.tv"
+        components.path = "/popout/\(trimmed)/chat"
+        if darkMode {
+            components.queryItems = [URLQueryItem(name: "darkpopout", value: nil)]
+        }
+        return components.url
+    }
+
+    public static func youtubeLiveChatURL(videoID: String, darkMode: Bool = true) -> URL? {
+        let trimmed = videoID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 6, trimmed.count <= 20,
+              trimmed.unicodeScalars.allSatisfy({ s in
+                  (s.value >= 48 && s.value <= 57)
+                      || (s.value >= 65 && s.value <= 90)
+                      || (s.value >= 97 && s.value <= 122)
+                      || s == "-" || s == "_"
+              }) else {
+            return nil
+        }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.youtube.com"
+        components.path = "/live_chat"
+        var items = [
+            URLQueryItem(name: "v", value: trimmed),
+            URLQueryItem(name: "is_popout", value: "1")
+        ]
+        if darkMode {
+            items.append(URLQueryItem(name: "dark_theme", value: "1"))
+        }
+        components.queryItems = items
+        return components.url
+    }
+
+    public static func chatURL(forStreamURL streamURL: URL, darkMode: Bool = true) -> URL? {
+        guard let host = streamURL.host?.lowercased() else { return nil }
+        if host == "www.twitch.tv" || host == "twitch.tv" {
+            if CleanBoxRules.classifyRoute(streamURL) == .watch {
+                let segments = streamURL.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+                if segments.count == 1 {
+                    return twitchPopoutChatURL(channel: segments[0], darkMode: darkMode)
+                }
+            }
+            return nil
+        }
+        if YouTubeURLRouter.isStandardYouTubeHost(host),
+           let videoID = YouTubeURLRouter.extractVideoID(from: streamURL) {
+            return youtubeLiveChatURL(videoID: videoID, darkMode: darkMode)
+        }
+        return nil
     }
 }
 
@@ -685,6 +888,9 @@ public struct LivePulseSnapshot: Equatable, Sendable {
     public let activeGameIDs: Set<String>
     public let providerStatus: [String: String]
     public let lastUpdatedAt: Date?
+    public let playsByGameID: [String: [PlayByPlayEvent]]
+    public let scoringAlerts: [LivePulseScoringAlert]
+    public let scoringFlashGameIDs: Set<String>
 
     public init(
         games: [LiveGame] = [],
@@ -695,7 +901,10 @@ public struct LivePulseSnapshot: Equatable, Sendable {
         primaryContext: StreamSportContext = .none,
         activeGameIDs: Set<String> = [],
         providerStatus: [String: String] = [:],
-        lastUpdatedAt: Date? = nil
+        lastUpdatedAt: Date? = nil,
+        playsByGameID: [String: [PlayByPlayEvent]] = [:],
+        scoringAlerts: [LivePulseScoringAlert] = [],
+        scoringFlashGameIDs: Set<String> = []
     ) {
         self.games = games
         self.matchups = matchups
@@ -706,6 +915,9 @@ public struct LivePulseSnapshot: Equatable, Sendable {
         self.activeGameIDs = activeGameIDs
         self.providerStatus = providerStatus
         self.lastUpdatedAt = lastUpdatedAt
+        self.playsByGameID = playsByGameID
+        self.scoringAlerts = scoringAlerts
+        self.scoringFlashGameIDs = scoringFlashGameIDs
     }
 
     public static let empty = LivePulseSnapshot()

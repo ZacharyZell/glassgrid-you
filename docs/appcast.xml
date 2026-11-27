@@ -6,6 +6,29 @@
     <description>Most recent releases of GlassGrid You for macOS.</description>
     <language>en</language>
     <item>
+      <title>Version 1.4.0</title>
+      <pubDate>Fri, 27 Nov 2026 20:39:47 +0000</pubDate>
+      <sparkle:version>8</sparkle:version>
+      <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.4.0</h2>
+        <ul>
+          <li><strong>Ghost Mode (&#8984;&#8997;O) &amp; Top-Bar Opacity Wheel:</strong> Make the Floating Mini-Player click-through with temporary Option-hold (&#8997;) peek to adjust controls, plus smooth two-finger scroll-wheel opacity (40%&ndash;100%) on the drag bar.</li>
+          <li><strong>Multiview 1-Click Sync, Soft Auto-Sync, Stalled-Tile Watchdog &amp; Shareable Links:</strong> Jump all streams to the live edge in one click, turn on subtle master-clock soft-rate catchup (<code>0.92&times;</code>/<code>1.08&times;</code>), recover frozen live feeds, and share grids via <code>glassgridyou://multiview?...</code>.</li>
+          <li><strong>On-Demand Transcripts, DeArrow &amp; 5-Category SponsorBlock Undo:</strong> Browse searchable timestamped captions on demand, opt into clickbait-free DeArrow titles (4-char SHA-256 prefix), choose exact SponsorBlock categories with 4s <em>Un-skip</em> undo toasts, and apply local Keyword &amp; Channel filters.</li>
+          <li><strong>Timestamped Bookmarks (&#8984;&#8679;K), Channel Atom RSS Inbox &amp; Cross-Service Search:</strong> Save timestamped video notes, follow creator uploads via cookieless Atom feeds, and use <code>twitch:</code> / <code>yt:</code> / <code>yttv:</code> or cross-service search right inside &#8984;K.</li>
+          <li><strong>Expanded Live Pulse (9 Leagues, Play-by-Play, Menu Bar Pin &amp; Lazy Chat):</strong> Opt into NCAAF (Top 25), NCAAB, MLS, EPL, and F1 alongside NFL/NBA/MLB/NHL; filter play-by-play to your fantasy roster with live Win%; pin a spoiler-delayed score to the macOS Menu Bar; and open lazy popout Twitch/YouTube live chat.</li>
+          <li><strong>Opt-In Global Carbon Hotkeys, Notch Media HUD Pill, Raycast Pack &amp; 32 MCP Tools:</strong> Control playback across all macOS apps, enable an opt-in Notch/Top-Edge Media HUD, trigger 7 Raycast script commands, and automate transcripts, bookmarks, sync, and Ghost Mode via MCP/CLI/Siri.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://updates.glassgridyou.com/GlassGrid-You-1.4.0.dmg"
+        sparkle:edSignature="Y1+FD2JZ8yWdU9rTsu0n9sswP1Vk0t1tBxwgatX2qKeU6iIvIWb1HcoH2DG4pHEe4f3olfRibP44kNLqcQKUBw=="
+        length="9616685"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.3.1</title>
       <pubDate>Fri, 27 Nov 2026 08:05:33 +0000</pubDate>
       <sparkle:version>7</sparkle:version>

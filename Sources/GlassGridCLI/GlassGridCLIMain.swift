@@ -295,6 +295,36 @@ enum GlassGridCLIMain {
         case "sleep-timer":
             let opt = (args.first ?? "30m").lowercased()
             mapped = .success(("set_sleep_timer", ["option": .string(opt)]))
+        case "transcript":
+            let query = args.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            var toolArgs: [String: JSONValue] = [:]
+            if !query.isEmpty {
+                toolArgs["query"] = .string(query)
+            }
+            mapped = .success(("get_transcript", toolArgs))
+        case "sync-all", "sync_all":
+            mapped = .success(("sync_multiview_all", [:]))
+        case "ghost-mode", "ghost_mode":
+            if let arg = args.first?.lowercased() {
+                if arg == "on" || arg == "true" {
+                    mapped = .success(("toggle_ghost_mode", ["enabled": .bool(true)]))
+                } else if arg == "off" || arg == "false" {
+                    mapped = .success(("toggle_ghost_mode", ["enabled": .bool(false)]))
+                } else if arg == "toggle" {
+                    mapped = .success(("toggle_ghost_mode", [:]))
+                } else {
+                    mapped = .failure(CLIUsageError("Usage: glassgrid ghost-mode [on|off|toggle]"))
+                }
+            } else {
+                mapped = .success(("toggle_ghost_mode", [:]))
+            }
+        case "bookmark":
+            let note = args.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            var toolArgs: [String: JSONValue] = [:]
+            if !note.isEmpty {
+                toolArgs["note"] = .string(note)
+            }
+            mapped = .success(("add_bookmark", toolArgs))
         default:
             mapped = .failure(CLIUsageError("Unknown command '\(command)'. Run 'glassgrid --help' for usage."))
         }
@@ -321,7 +351,17 @@ enum GlassGridCLIMain {
                     if jsonOutput {
                         print(outcome.toJSONValue().encodedString(prettyPrinted: true))
                     } else if outcome.ok {
-                        print(outcome.message)
+                        if command == "transcript",
+                           let cues = outcome.data?.objectValue?["cues"]?.arrayValue,
+                           !cues.isEmpty {
+                            for cue in cues {
+                                let ts = cue.objectValue?["timestamp"]?.stringValue ?? "0:00"
+                                let text = cue.objectValue?["text"]?.stringValue ?? ""
+                                print("[\(ts)] \(text)")
+                            }
+                        } else {
+                            print(outcome.message)
+                        }
                     } else {
                         fputs("Error (\(outcome.errorCode ?? "failed")): \(outcome.message)\n", stderr)
                     }
@@ -365,6 +405,10 @@ enum GlassGridCLIMain {
           focus-mode [on|off|toggle]               Control Focus Mode
           appearance <system|light|dark|toggle>    Set Day / Night appearance
           sleep-timer <15m|30m|45m|60m|end_of_video|off>
+          transcript [query]                       Extract on-demand video captions (optionally filtered)
+          sync-all                                 Sync all Multiview streams to live edge or primary
+          ghost-mode [on|off|toggle]               Toggle Floating Mini-Player click-through Ghost Mode
+          bookmark [note...]                       Save a timestamped bookmark for the active video
 
         OPTIONS:
           --json                                   Print structured JSON output

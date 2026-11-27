@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
+import WebKit
 import YouTubeMacCore
 
 /// Trailing Liquid Glass Live Companion Drawer displaying fantasy matchups, active-in-stream players,
-/// live scores with 1-click stream pinning, read-only prediction markets, and quick web-tile launchers.
+/// live scores with 1-click stream pinning, read-only prediction markets, lazy live chat, and quick web-tile launchers.
 struct LiveCompanionDrawerView: View {
     @Bindable var controller: AppController
     @Bindable var store: LivePulseStore
@@ -14,8 +16,12 @@ struct LiveCompanionDrawerView: View {
     @State private var showOpponentStarters: Bool = false
     @State private var showBenchInPlayers: Bool = true
     @State private var showUpcomingPlayers: Bool = false
+    @State private var showRosterPlaysInMatchup: Bool = true
+    @State private var showRosterPlaysInScores: Bool = false
+    @State private var expandedPlayGameIDs: Set<String> = []
     @State private var isPinEmptyStatePopoverPresented: Bool = false
     @State private var isSpoilerPopoverPresented: Bool = false
+    @State private var manualChatTabID: UUID?
 
     private var isResolvedDark: Bool {
         switch controller.settings.appearance {
@@ -155,20 +161,27 @@ struct LiveCompanionDrawerView: View {
             contextAndFiltersBar
             Divider().opacity(0.28)
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 10) {
-                    switch store.selectedDrawerTab {
-                    case .matchup:
-                        matchupTabContent
-                    case .players:
-                        playersTabContent
-                    case .scores:
-                        scoresTabContent
-                    case .markets:
-                        marketsTabContent
+            if store.selectedDrawerTab == .chat {
+                chatTabContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        switch store.selectedDrawerTab {
+                        case .matchup:
+                            matchupTabContent
+                        case .players:
+                            playersTabContent
+                        case .scores:
+                            scoresTabContent
+                        case .markets:
+                            marketsTabContent
+                        case .chat:
+                            EmptyView()
+                        }
                     }
+                    .padding(10)
                 }
-                .padding(10)
             }
 
             Divider().opacity(0.35)
@@ -192,32 +205,14 @@ struct LiveCompanionDrawerView: View {
     @ViewBuilder
     private var drawerHeader: some View {
         HStack(spacing: AppSpacing.xxs) {
-            // Segmented Mode Picker
-            HStack(spacing: 0) {
-                ForEach(LivePulseDrawerTab.allCases) { tab in
-                    let isSelected = store.selectedDrawerTab == tab
-                    Button {
-                        store.selectedDrawerTab = tab
-                    } label: {
-                        Text(tab.title)
-                            .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.78))
-                            .padding(.horizontal, AppSpacing.xs)
-                            .frame(height: 24)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : .clear)
-                            )
-                            .contentShape(Capsule(style: .continuous))
-                    }
-                    .buttonStyle(.plain)
+            // Segmented Mode Picker (overflow-safe at 280–440pt across 5 tabs)
+            ViewThatFits(in: .horizontal) {
+                drawerTabSegmentedStrip(compactIcons: false)
+                drawerTabSegmentedStrip(compactIcons: true)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    drawerTabSegmentedStrip(compactIcons: false)
                 }
             }
-            .padding(.horizontal, AppSpacing.xxs)
-            .frame(height: 28)
-            .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
 
             Spacer(minLength: AppSpacing.xxs)
 
@@ -248,9 +243,58 @@ struct LiveCompanionDrawerView: View {
                 .disabled(isFrozen)
                 .help("Close Live Companion Drawer (⌘⌥I)")
             }
+            .fixedSize()
         }
         .padding(.horizontal, AppSpacing.sm)
         .frame(height: LivePulseLayout.drawerHeaderHeight)
+    }
+
+    @ViewBuilder
+    private func drawerTabSegmentedStrip(compactIcons: Bool) -> some View {
+        HStack(spacing: compactIcons ? 1 : 0) {
+            ForEach(LivePulseDrawerTab.allCases) { tab in
+                let isSelected = store.selectedDrawerTab == tab
+                Button {
+                    store.selectedDrawerTab = tab
+                } label: {
+                    Group {
+                        if compactIcons {
+                            HStack(spacing: 3) {
+                                Image(systemName: tab.symbolName)
+                                    .font(AppIconFont.xs(weight: isSelected ? .semibold : .medium))
+                                if isSelected {
+                                    Text(tab.title)
+                                        .font(AppFont.caption(weight: .semibold))
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+                            }
+                            .padding(.horizontal, isSelected ? AppSpacing.sm : AppSpacing.xs)
+                            .frame(minWidth: 24, minHeight: 24)
+                        } else {
+                            Text(tab.title)
+                                .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, AppSpacing.xs)
+                                .frame(minWidth: 24, minHeight: 24)
+                        }
+                    }
+                    .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.78))
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : .clear)
+                    )
+                    .contentShape(Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help(tab.title)
+                .accessibilityLabel(tab.title)
+            }
+        }
+        .padding(.horizontal, AppSpacing.xxs)
+        .frame(height: 28)
+        .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
     }
 
     // MARK: - Stream Context, Disambiguation & Filters
@@ -559,7 +603,67 @@ struct LiveCompanionDrawerView: View {
             ForEach(filteredMatchups) { matchup in
                 matchupCard(matchup)
             }
+
+            let targetGameID: String? = {
+                if case .matchedGame(let gid, _, _, _) = snapshot.primaryContext,
+                   snapshot.playsByGameID[gid]?.isEmpty == false {
+                    return gid
+                }
+                return nil
+            }()
+            let allAvailablePlays = store.filteredPlays(for: targetGameID, rosterOnly: false)
+            if !allAvailablePlays.isEmpty {
+                let displayedPlays = store.filteredPlays(for: targetGameID, rosterOnly: showRosterPlaysInMatchup)
+                matchupPlayByPlayCard(
+                    gameID: targetGameID,
+                    plays: displayedPlays,
+                    hasAnyPlays: !allAvailablePlays.isEmpty
+                )
+            }
         }
+    }
+
+    @ViewBuilder
+    private func matchupPlayByPlayCard(
+        gameID: String?,
+        plays: [PlayByPlayEvent],
+        hasAnyPlays: Bool
+    ) -> some View {
+        let gameLabel: String = {
+            if let gameID, let g = snapshot.games.first(where: { $0.id == gameID }) {
+                return "\(g.away.abbreviation) @ \(g.home.abbreviation)"
+            }
+            return "Active Games"
+        }()
+
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                Text("Play-by-Play · \(gameLabel)")
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .lineLimit(1)
+                Spacer()
+                rosterPlaysToggleChip(isOn: $showRosterPlaysInMatchup)
+            }
+
+            if plays.isEmpty && hasAnyPlays && showRosterPlaysInMatchup {
+                Text("No recent plays involving your fantasy roster.")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textMuted)
+                    .padding(.vertical, AppSpacing.xs)
+            } else {
+                VStack(spacing: AppSpacing.xs) {
+                    ForEach(plays.prefix(8)) { play in
+                        playByPlayRow(play)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            Color.primary.opacity(isResolvedDark ? 0.06 : 0.04),
+            in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
+        )
     }
 
     @ViewBuilder
@@ -915,7 +1019,7 @@ struct LiveCompanionDrawerView: View {
                 icon: "sportscourt",
                 title: "No Scoreboard Games",
                 subtitle: controller.settings.livePulseEnabledLeagues.isEmpty
-                    ? "Enable NFL, NBA, MLB, or NHL in Settings -> Live Pulse."
+                    ? "Enable sports leagues in Settings -> Live Pulse."
                     : "No games returned for the selected league filter right now."
             )
         } else {
@@ -929,6 +1033,10 @@ struct LiveCompanionDrawerView: View {
     private func scoreCard(_ game: LiveGame) -> some View {
         let isPinnedToActive = isGamePinned(game)
         let isStreamMatch = snapshot.activeGameIDs.contains(game.id)
+        let isFlashing = controller.settings.livePulseScoringFlashes && snapshot.scoringFlashGameIDs.contains(game.id)
+        let allGamePlays = store.filteredPlays(for: game.id, rosterOnly: false)
+        let displayedPlays = store.filteredPlays(for: game.id, rosterOnly: showRosterPlaysInScores)
+        let isPlaysExpanded = expandedPlayGameIDs.contains(game.id)
 
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: 5) {
@@ -983,14 +1091,23 @@ struct LiveCompanionDrawerView: View {
                 .disabled(isFrozen)
             }
 
-            teamScoreRow(game.away)
-            teamScoreRow(game.home)
+            teamScoreRow(game.away, league: game.league)
+            teamScoreRow(game.home, league: game.league)
 
             if let sit = game.situation, let summary = situationSummary(sit), !summary.isEmpty {
                 Text(summary)
                     .font(AppFont.caption(weight: .medium, tabular: true))
                     .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
+            }
+
+            if let awayWin = game.espnAwayWinProb, let homeWin = game.espnHomeWinProb {
+                winProbabilityBar(
+                    awayAbbreviation: game.away.abbreviation,
+                    homeAbbreviation: game.home.abbreviation,
+                    awayProb: awayWin,
+                    homeProb: homeWin
+                )
             }
 
             HStack(spacing: AppSpacing.md) {
@@ -1004,34 +1121,111 @@ struct LiveCompanionDrawerView: View {
                         .font(AppFont.caption(tabular: true))
                         .foregroundStyle(AppleTheme.textSecondary)
                 }
-                if let awayWin = game.espnAwayWinProb, let homeWin = game.espnHomeWinProb {
-                    let awayPct = Int((awayWin * 100).rounded())
-                    let homePct = Int((homeWin * 100).rounded())
-                    Text("Win \(game.away.abbreviation) \(awayPct)% / \(game.home.abbreviation) \(homePct)%")
-                        .font(AppFont.caption(tabular: true))
-                        .foregroundStyle(AppleTheme.textSecondary)
-                }
                 Spacer()
+                if !allGamePlays.isEmpty {
+                    Button {
+                        if isPlaysExpanded {
+                            expandedPlayGameIDs.remove(game.id)
+                        } else {
+                            expandedPlayGameIDs.insert(game.id)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: isPlaysExpanded ? "chevron.up" : "list.bullet")
+                                .font(AppIconFont.xs(weight: .semibold))
+                            Text("Plays (\(allGamePlays.count))")
+                                .font(AppFont.caption(weight: .semibold, tabular: true))
+                        }
+                        .foregroundStyle(isPlaysExpanded ? AppleTheme.accentText : AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.sm)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(isPlaysExpanded ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isFrozen)
+                }
                 if let network = game.broadcasts.first {
                     Text(network)
                         .font(AppFont.caption(weight: .semibold))
                         .foregroundStyle(AppleTheme.textMuted)
                 }
             }
+
+            if isPlaysExpanded && !allGamePlays.isEmpty {
+                Divider().opacity(0.25)
+                HStack(spacing: AppSpacing.sm) {
+                    Text("Play-by-Play")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.textSecondary)
+                    Spacer()
+                    rosterPlaysToggleChip(isOn: $showRosterPlaysInScores)
+                }
+
+                if displayedPlays.isEmpty && showRosterPlaysInScores {
+                    Text("No recent plays involving your fantasy roster.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textMuted)
+                        .padding(.vertical, AppSpacing.xxs)
+                } else {
+                    VStack(spacing: AppSpacing.xs) {
+                        ForEach(displayedPlays.prefix(6)) { play in
+                            playByPlayRow(play)
+                        }
+                    }
+                }
+            }
         }
         .padding(9)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-                .fill(isStreamMatch ? AppleTheme.accentText.opacity(0.08) : Color.primary.opacity(isResolvedDark ? 0.06 : 0.04))
+                .fill(
+                    isFlashing
+                        ? AppleTheme.positive.opacity(0.14)
+                        : (isStreamMatch ? AppleTheme.accentText.opacity(0.08) : Color.primary.opacity(isResolvedDark ? 0.06 : 0.04))
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-                .strokeBorder(isStreamMatch ? AppleTheme.accentText.opacity(0.32) : Color.clear, lineWidth: 1)
+                .strokeBorder(
+                    isFlashing
+                        ? AppleTheme.positive.opacity(0.55)
+                        : (isStreamMatch ? AppleTheme.accentText.opacity(0.32) : Color.clear),
+                    lineWidth: 1
+                )
         )
+        .contextMenu {
+            Button {
+                if isPinnedToActive, let tabID = activeTargetTab?.id {
+                    store.clearManualPin(tabID: tabID)
+                } else {
+                    pinGameToActiveTab(game)
+                }
+            } label: {
+                Label(isPinnedToActive ? "Unpin from Stream" : "Pin to Stream", systemImage: isPinnedToActive ? "pin.slash" : "pin")
+            }
+
+            let isMenuBarPinned = store.menuBarPinnedGame?.id == game.id
+            Button {
+                if isMenuBarPinned {
+                    store.pinGameToMenuBar(nil)
+                } else {
+                    controller.settings.livePulseMenuBarPin = true
+                    store.pinGameToMenuBar(game.id)
+                }
+            } label: {
+                Label(
+                    isMenuBarPinned ? "Unpin from Menu Bar" : "Pin to Menu Bar",
+                    systemImage: isMenuBarPinned ? "pin.slash" : "menubar.rectangle"
+                )
+            }
+        }
     }
 
     @ViewBuilder
-    private func teamScoreRow(_ team: TeamScore) -> some View {
+    private func teamScoreRow(_ team: TeamScore, league: SportsLeague) -> some View {
         HStack(spacing: AppSpacing.sm) {
             Circle()
                 .fill(team.isPossession ? AppleTheme.accentFill : Color.clear)
@@ -1041,11 +1235,20 @@ struct LiveCompanionDrawerView: View {
                 .font(AppFont.callout(weight: .bold))
                 .frame(width: 40, alignment: .leading)
 
+            if let rank = team.rank, rank > 0 {
+                Text("#\(rank)")
+                    .font(AppFont.micro(weight: .bold, tabular: true))
+                    .foregroundStyle(AppleTheme.accentText)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(AppleTheme.accentText.opacity(0.12), in: Capsule(style: .continuous))
+            }
+
             Text(team.shortName)
                 .font(AppFont.callout(weight: .medium))
                 .lineLimit(1)
 
-            if let record = team.record, !record.isEmpty {
+            if let record = team.record, !record.isEmpty, league != .f1 {
                 Text(record)
                     .font(AppFont.caption(tabular: true))
                     .foregroundStyle(AppleTheme.textMuted)
@@ -1053,10 +1256,136 @@ struct LiveCompanionDrawerView: View {
 
             Spacer()
 
-            Text("\(team.score)")
+            Text(league == .f1 ? "P\(team.score)" : "\(team.score)")
                 .font(AppFont.subhead(weight: .bold, tabular: true))
                 .liveNumericTransition(enabled: animationsEnabled, value: team.score)
         }
+    }
+
+    @ViewBuilder
+    private func winProbabilityBar(
+        awayAbbreviation: String,
+        homeAbbreviation: String,
+        awayProb: Double,
+        homeProb: Double
+    ) -> some View {
+        let clampedAway = max(0.0, min(1.0, awayProb))
+        let clampedHome = max(0.0, min(1.0, homeProb))
+        let total = clampedAway + clampedHome
+        let normalizedAway = total > 0 ? clampedAway / total : 0.5
+        let awayPct = Int((normalizedAway * 100.0).rounded())
+        let homePct = max(0, 100 - awayPct)
+        let awayFavored = awayPct >= homePct
+
+        VStack(spacing: 3) {
+            HStack(spacing: AppSpacing.xs) {
+                Text("\(awayAbbreviation) \(awayPct)%")
+                    .font(AppFont.micro(weight: awayFavored ? .bold : .medium, tabular: true))
+                    .foregroundStyle(awayFavored ? Color.primary : AppleTheme.textSecondary)
+                Spacer()
+                Text("Win Prob")
+                    .font(AppFont.micro(weight: .medium))
+                    .foregroundStyle(AppleTheme.textMuted)
+                Spacer()
+                Text("\(homePct)% \(homeAbbreviation)")
+                    .font(AppFont.micro(weight: awayFavored ? .medium : .bold, tabular: true))
+                    .foregroundStyle(awayFavored ? AppleTheme.textSecondary : Color.primary)
+            }
+
+            GeometryReader { geo in
+                let width = max(1, geo.size.width)
+                let awayWidth = max(2, width * normalizedAway)
+                HStack(spacing: 1) {
+                    Capsule(style: .continuous)
+                        .fill(awayFavored ? AppleTheme.accentFill : Color.primary.opacity(0.20))
+                        .frame(width: awayWidth, height: 4)
+                    Capsule(style: .continuous)
+                        .fill(awayFavored ? Color.primary.opacity(0.20) : AppleTheme.positive)
+                        .frame(maxWidth: .infinity, maxHeight: 4)
+                }
+            }
+            .frame(height: 4)
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func rosterPlaysToggleChip(isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: isOn.wrappedValue ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                    .font(AppIconFont.xs(weight: .semibold))
+                Text("My Roster Plays")
+                    .font(AppFont.micro(weight: .semibold))
+            }
+            .foregroundStyle(isOn.wrappedValue ? AppleTheme.accentText : AppleTheme.textSecondary)
+            .padding(.horizontal, AppSpacing.sm)
+            .minHitTarget(24, shape: Capsule(style: .continuous))
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isOn.wrappedValue ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Filter play-by-play to players on your fantasy roster")
+    }
+
+    @ViewBuilder
+    private func playByPlayRow(_ play: PlayByPlayEvent) -> some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                let clockLabel = [play.periodText, play.clock ?? ""]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                HStack(spacing: AppSpacing.xs) {
+                    if !clockLabel.isEmpty {
+                        Text(clockLabel)
+                            .font(AppFont.micro(weight: .semibold, tabular: true))
+                            .foregroundStyle(play.isScoringPlay ? AppleTheme.positive : AppleTheme.textMuted)
+                    }
+                    if let abbr = play.teamAbbreviation, !abbr.isEmpty {
+                        Text(abbr)
+                            .font(AppFont.micro(weight: .bold))
+                            .foregroundStyle(play.isScoringPlay ? AppleTheme.positive : AppleTheme.accentText)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill((play.isScoringPlay ? AppleTheme.positive : AppleTheme.accentText).opacity(0.12))
+                            )
+                    }
+                    if play.isScoringPlay {
+                        Text("SCORE")
+                            .font(AppFont.micro(weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(AppleTheme.positive, in: Capsule(style: .continuous))
+                    }
+                    Spacer(minLength: 0)
+                    if let away = play.awayScore, let home = play.homeScore {
+                        Text("\(away)–\(home)")
+                            .font(AppFont.micro(weight: .semibold, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                }
+
+                Text(play.text)
+                    .font(AppFont.caption(weight: play.isScoringPlay ? .medium : .regular))
+                    .foregroundStyle(play.isScoringPlay ? Color.primary : Color.primary.opacity(0.86))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, AppSpacing.sm)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+                .fill(play.isScoringPlay ? AppleTheme.positive.opacity(0.08) : Color.primary.opacity(0.035))
+        )
     }
 
     // MARK: - Tab 4: Markets (Strictly Read-Only Informational)
@@ -1170,6 +1499,64 @@ struct LiveCompanionDrawerView: View {
             .padding(.horizontal, 5)
             .padding(.vertical, AppSpacing.xxs)
             .background(color.opacity(0.14), in: Capsule(style: .continuous))
+    }
+
+    // MARK: - Tab 5: Chat (Strictly Lazy & HTTPS Allowlisted)
+
+    @ViewBuilder
+    private var chatTabContent: some View {
+        let tab = activeTargetTab
+        let streamURL = tab.map { $0.pendingLazyURL ?? $0.url }
+        let chatURL = streamURL.flatMap {
+            CompanionChatURLValidator.chatURL(forStreamURL: $0, darkMode: isResolvedDark)
+        }
+        let isLiveOrTwitch: Bool = {
+            guard let tab, let streamURL else { return false }
+            let host = (streamURL.host ?? "").lowercased()
+            let isTwitch = host == "twitch.tv" || host == "www.twitch.tv" || host.hasSuffix(".twitch.tv")
+            let isYouTubeLive = streamURL.path.hasPrefix("/live/")
+                || (tab.mediaStatus.hasVideo && tab.timeline.duration == 0 && !tab.isLoading)
+            return isTwitch || isYouTubeLive
+        }()
+
+        if let tab,
+           let chatURL,
+           CompanionChatURLValidator.isAllowedChatURL(chatURL),
+           (isLiveOrTwitch || manualChatTabID == tab.id) {
+            LazyCompanionChatWebView(url: chatURL, isResolvedDark: isResolvedDark)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(isFrozen ? 0.7 : 1.0)
+                .allowsHitTesting(!isFrozen)
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: AppSpacing.md) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(AppIconFont.hero(weight: .medium))
+                        .foregroundStyle(AppleTheme.accentText)
+                    Text("Live Chat Unavailable")
+                        .font(AppFont.callout(weight: .semibold))
+                        .multilineTextAlignment(.center)
+                    Text("Focus an active YouTube live stream or Twitch channel to load its popout chat here.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+
+                    if let tab,
+                       let chatURL,
+                       CompanionChatURLValidator.isAllowedChatURL(chatURL) {
+                        Button("Load YouTube Live Chat") {
+                            manualChatTabID = tab.id
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(AppSpacing.xl)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+                .padding(10)
+            }
+        }
     }
 
     // MARK: - Footer: 1-Click "Open in Tile" Quick-Launcher
@@ -1587,6 +1974,100 @@ private extension View {
                 .animation(.snappy(duration: 0.28), value: value)
         } else {
             self
+        }
+    }
+}
+
+// MARK: - Strictly Lazy Companion Live Chat WebView
+
+/// Isolated `WKWebView` for YouTube Live Chat and Twitch Popout Chat.
+/// Strictly lazy (mounts only when `.chat` is active), enforces `CompanionChatURLValidator`,
+/// never touches `TabWebViewHost`, and tears down navigation delegates and content on dismantle.
+private struct LazyCompanionChatWebView: NSViewRepresentable {
+    let url: URL
+    let isResolvedDark: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.applicationNameForUserAgent = BrowserTab.safariUserAgentSuffix
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.allowsBackForwardNavigationGestures = false
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = context.coordinator
+        applyUnderPageColor(to: webView, isDark: isResolvedDark)
+
+        if CompanionChatURLValidator.isAllowedChatURL(url) {
+            context.coordinator.loadedURL = url
+            webView.load(URLRequest(url: url))
+        }
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        applyUnderPageColor(to: webView, isDark: isResolvedDark)
+        guard CompanionChatURLValidator.isAllowedChatURL(url) else { return }
+        if context.coordinator.loadedURL != url {
+            context.coordinator.loadedURL = url
+            webView.load(URLRequest(url: url))
+        }
+    }
+
+    static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.navigationDelegate = nil
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        coordinator.loadedURL = nil
+    }
+
+    private func applyUnderPageColor(to webView: WKWebView, isDark: Bool) {
+        webView.underPageBackgroundColor = isDark
+            ? NSColor(calibratedRed: 0.059, green: 0.059, blue: 0.059, alpha: 1.0)
+            : .white
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var loadedURL: URL?
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let targetURL = navigationAction.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+
+            if navigationAction.targetFrame == nil {
+                decisionHandler(.cancel)
+                return
+            }
+
+            if navigationAction.targetFrame?.isMainFrame == true {
+                if CompanionChatURLValidator.isAllowedChatURL(targetURL)
+                    || targetURL.absoluteString == "about:blank" {
+                    decisionHandler(.allow)
+                } else {
+                    decisionHandler(.cancel)
+                }
+                return
+            }
+
+            let scheme = targetURL.scheme?.lowercased() ?? ""
+            if scheme == "https" || scheme == "about" {
+                decisionHandler(.allow)
+            } else {
+                decisionHandler(.cancel)
+            }
         }
     }
 }

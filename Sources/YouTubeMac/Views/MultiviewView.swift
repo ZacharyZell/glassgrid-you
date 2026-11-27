@@ -174,6 +174,89 @@ struct MultiviewControlBar: View {
 
                     savePresetButton
 
+                    Button {
+                        controller.syncAllMultiviewTilesToLive()
+                    } label: {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                Text("Sync All")
+                                    .font(AppFont.caption(weight: .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, AppSpacing.md)
+
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.86))
+                        .frame(height: 28)
+                        .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Sync All Streams to Live Edge")
+
+                    Button {
+                        controller.toggleMultiviewAutoSync()
+                    } label: {
+                        let autoSyncOn = controller.isMultiviewAutoSyncEnabled
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: autoSyncOn ? "waveform.path.ecg.rectangle.fill" : "waveform.path.ecg.rectangle")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                Text("Auto-Sync")
+                                    .font(AppFont.caption(weight: autoSyncOn ? .semibold : .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, AppSpacing.md)
+
+                            Image(systemName: autoSyncOn ? "waveform.path.ecg.rectangle.fill" : "waveform.path.ecg.rectangle")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+                        }
+                        .foregroundStyle(autoSyncOn ? AppleTheme.accentText : Color.primary.opacity(0.86))
+                        .frame(height: 28)
+                        .appleGlass(
+                            in: Capsule(style: .continuous),
+                            tint: autoSyncOn ? AppleTheme.accentText.opacity(0.16) : nil,
+                            interactive: true
+                        )
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help(controller.isMultiviewAutoSyncEnabled ? "Disable Multiview Auto-Sync" : "Enable Soft Rate Auto-Sync")
+
+                    Button {
+                        _ = controller.copyMultiviewShareLink()
+                    } label: {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "link")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                Text("Share Link")
+                                    .font(AppFont.caption(weight: .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, AppSpacing.md)
+
+                            Image(systemName: "link")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.86))
+                        .frame(height: 28)
+                        .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy Shareable Multiview Link")
+
                     addStreamMenu
 
                     Button {
@@ -516,6 +599,27 @@ struct MultiviewOverlayView: View {
                     maxWidth: max(90, tileWidth - 200)
                 )
 
+                if controller.stalledMultiviewTabIDs.contains(tab.id) {
+                    Button {
+                        controller.recoverStalledMultiviewTile(id: tab.id)
+                    } label: {
+                        HStack(spacing: AppSpacing.xs) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(AppIconFont.xs(weight: .semibold))
+                            Text("Stream Stalled · Recover")
+                                .font(AppFont.micro(weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, AppSpacing.md)
+                        .frame(height: 24)
+                        .background(AppleTheme.warning.opacity(0.92), in: Capsule(style: .continuous))
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Recover stalled stream")
+                }
+
                 Spacer(minLength: AppSpacing.sm)
 
                 if showActions {
@@ -584,7 +688,7 @@ struct MultiviewOverlayView: View {
                 }
 
                 if tileTitleVisible(maxWidth: maxWidth) {
-                    Text(tab.displayTitle)
+                    Text(controller.effectiveTitle(for: tab))
                         .font(AppFont.caption(weight: .medium))
                         .foregroundStyle(.white.opacity(0.95))
                         .lineLimit(1)
@@ -814,7 +918,7 @@ struct MultiviewOverlayView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(tab.displayTitle)
+                    Text(controller.effectiveTitle(for: tab))
                         .font(AppFont.callout(weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)

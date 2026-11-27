@@ -65,7 +65,23 @@ public final class AppCoordinator {
     public let sponsorBlockClient = SponsorBlockClient()
 
     @ObservationIgnored
+    public let deArrowClient = DeArrowClient()
+
+    @ObservationIgnored
+    public let channelInboxClient = ChannelInboxClient()
+
+    @ObservationIgnored
     public let suggestClient = YouTubeSuggestClient()
+
+    @ObservationIgnored
+    private let globalHotKeyManager = GlobalHotKeyManager()
+
+    @ObservationIgnored
+    let notchHUD = NotchMediaHUDController()
+
+    public var livePulse: LivePulseStore {
+        livePulseStore
+    }
 
     @ObservationIgnored
     public var initialThemeCookieSyncTask: Task<Void, Never>?
@@ -124,6 +140,10 @@ public final class AppCoordinator {
         }
         scheduleMidnightRolloverTask()
         updateSystemPlaybackGuard(enabled: settings.autoPauseOnSystemEvents)
+        updateGlobalHotKeys(enabled: settings.globalHotkeysEnabled)
+        if NSApp != nil {
+            refreshNotchMediaHUD()
+        }
 
         // Sync YouTube's PREF cookie once before the first window sends its initial HTTP request.
         self.initialThemeCookieSyncTask = Task { @MainActor [weak self] in
@@ -149,11 +169,11 @@ public final class AppCoordinator {
     /// Active command target for macOS menu shortcuts, Dock actions, and incoming URLs.
     /// Optional so a 0-window state (all windows closed while app stays running) never crashes.
     public var commandTarget: AppController? {
-        if let key = NSApp.keyWindow,
+        if let key = NSApp?.keyWindow,
            let match = openWindows.first(where: { $0.mainWindow === key }) {
             return match
         }
-        if let main = NSApp.mainWindow,
+        if let main = NSApp?.mainWindow,
            let match = openWindows.first(where: { $0.mainWindow === main }) {
             return match
         }
@@ -250,6 +270,7 @@ public final class AppCoordinator {
         guard controllersByID[windowID] != nil else { return }
         if activeWindowID != windowID {
             activeWindowID = windowID
+            refreshNotchMediaHUD()
         }
     }
 
@@ -276,6 +297,7 @@ public final class AppCoordinator {
 
         livePulseStore.removeWindowSignals(windowID: windowID)
         livePulseStore.reconcileLifecycle()
+        refreshNotchMediaHUD()
     }
 
     /// Enforces single shared `FloatingMiniPlayerController` ownership across all windows,
@@ -383,11 +405,21 @@ public final class AppCoordinator {
             self.calendarDayObserver = nil
         }
         systemPlaybackGuard.stop()
+        globalHotKeyManager.unregisterAll()
+        notchHUD.shutdown()
         livePulseStore.shutdown()
         agentBridge.shutdown()
     }
 
     public func handleIncomingURL(_ url: URL) {
+        if MultiviewShareLinkCodec.isMultiviewShareURL(url) {
+            if let payload = MultiviewShareLinkCodec.decode(url, tier: .playbackAndNavigation) {
+                launchMultiviewSharePayload(payload)
+            } else {
+                commandTarget?.showHUD(icon: "exclamationmark.triangle", message: "Invalid Multiview Share Link")
+            }
+            return
+        }
         if AgentURLActionParser.isActionURL(url) {
             agentBridge.handleActionURL(url)
             return
@@ -399,6 +431,20 @@ public final class AppCoordinator {
                 ? (YouTubeURLRouter.rewriteShortsURL(resolved) ?? resolved)
                 : resolved
             openURLInNewWindow(finalURL)
+        }
+    }
+
+    public func launchMultiviewSharePayload(_ payload: MultiviewSharePayload) {
+        if let target = commandTarget {
+            target.launchMultiviewSharePayload(payload)
+            target.focusMainWindow()
+        } else {
+            let preset = MultiviewPreset(
+                name: "Shared Multiview",
+                urlStrings: payload.urls.map(\.absoluteString),
+                layoutMode: payload.layoutMode
+            )
+            launchPresetInNewWindow(preset)
         }
     }
 
@@ -642,6 +688,24 @@ public final class AppCoordinator {
                 controller.handleSponsorBlockSettingChanged(enabled: enabled)
             }
         }
+        settings.onSponsorBlockCategoriesDidChange = { [weak self] in
+            guard let self, self.settings.sponsorBlockEnabled else { return }
+            for controller in self.openWindows {
+                controller.handleSponsorBlockSettingChanged(enabled: true)
+            }
+        }
+        settings.onDeArrowSettingDidChange = { [weak self] enabled in
+            guard let self else { return }
+            for controller in self.openWindows {
+                controller.handleDeArrowSettingChanged(enabled: enabled)
+            }
+        }
+        settings.onGlobalHotkeysSettingDidChange = { [weak self] enabled in
+            self?.updateGlobalHotKeys(enabled: enabled)
+        }
+        settings.onNotchMediaHUDSettingDidChange = { [weak self] _ in
+            self?.refreshNotchMediaHUD()
+        }
         settings.onSystemPlaybackGuardSettingDidChange = { [weak self] enabled in
             self?.updateSystemPlaybackGuard(enabled: enabled)
         }
@@ -666,6 +730,7 @@ public final class AppCoordinator {
                 controller.syncLivePulseVisibilityFromSettings()
             }
             self.livePulseStore.reconcileLifecycle()
+            self.refreshNotchMediaHUD()
         }
         settings.onCompactHeaderModeDidChange = { [weak self] _ in
             guard let self else { return }
@@ -710,6 +775,57 @@ public final class AppCoordinator {
             systemPlaybackGuard.stop()
             refreshAudioOutputStatus()
         }
+    }
+
+    private func updateGlobalHotKeys(enabled: Bool) {
+        globalHotKeyManager.configure(enabled: enabled) { [weak self] action in
+            self?.handleGlobalHotKey(action)
+        }
+    }
+
+    private func handleGlobalHotKey(_ action: GlobalHotKeyAction) {
+        switch action {
+        case .playPause:
+            (nowPlayingController ?? commandTarget)?.togglePlayPause()
+        case .toggleMiniPlayer:
+            (nowPlayingController ?? commandTarget)?.toggleMiniPlayer()
+        case .toggleGhostMode:
+            let target = floatingMiniPlayerOwnerWindowID.flatMap { controllersByID[$0] }
+                ?? nowPlayingController
+                ?? commandTarget
+            _ = target?.toggleMiniPlayerGhostMode()
+        case .addBookmark:
+            _ = (nowPlayingController ?? commandTarget)?.addCurrentTimestampBookmark()
+        case .toggleMute:
+            (nowPlayingController ?? commandTarget)?.toggleMute()
+        }
+    }
+
+    public func refreshNotchMediaHUD() {
+        let target = nowPlayingController
+        let status = target?.nowPlayingStatus ?? .empty
+        let timeline = target?.activeTimeline
+        let isSuppressed = hasAnyWindowInLiveFullscreen || floatingMiniPlayer.isVisible || !status.hasVideo
+        let scoreText = (settings.livePulseEnabled && settings.livePulseMenuBarPin)
+            ? livePulse.menuBarPinnedScoreText
+            : nil
+
+        notchHUD.update(
+            status: status,
+            timeline: timeline,
+            isEnabled: settings.notchMediaHUDEnabled,
+            isSuppressed: isSuppressed,
+            scoreText: scoreText,
+            onTogglePlayPause: { [weak self] in
+                (self?.nowPlayingController ?? self?.commandTarget)?.togglePlayPause()
+            },
+            onSeekBy: { [weak self] delta in
+                (self?.nowPlayingController ?? self?.commandTarget)?.seek(by: delta)
+            },
+            onFocusWindow: { [weak self] in
+                (self?.nowPlayingController ?? self?.commandTarget)?.focusMainWindow()
+            }
+        )
     }
 
     private func handleCalendarDayDidChange() {

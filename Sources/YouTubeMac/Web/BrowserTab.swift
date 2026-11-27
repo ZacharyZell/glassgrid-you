@@ -87,6 +87,7 @@ public final class BrowserTab: NSObject, Identifiable {
     public var videoDescriptionWasTruncated: Bool = false
     public var isSleeping: Bool = false
     public var isCleanBoxBypassed: Bool = false
+    public private(set) var lastSkippedSponsorSegment: SponsorSegment?
     public var pageZoom: CGFloat = 1.0 {
         didSet {
             webView.pageZoom = pageZoom
@@ -161,6 +162,12 @@ public final class BrowserTab: NSObject, Identifiable {
 
     @ObservationIgnored
     var onSponsorSkipped: ((String) -> Void)?
+
+    @ObservationIgnored
+    var onSponsorSegmentSkipped: ((SponsorSegment) -> Void)?
+
+    @ObservationIgnored
+    var onMediaStatusChanged: ((UUID) -> Void)?
 
     @ObservationIgnored
     var onDidClickContent: ((UUID) -> Void)?
@@ -328,6 +335,8 @@ public final class BrowserTab: NSObject, Identifiable {
         chapters = []
         videoDescription = ""
         videoDescriptionWasTruncated = false
+        lastSkippedSponsorSegment = nil
+        lastAppliedSponsorPayload = nil
         mainFrameMediaStatus = .empty
         clearSubframeMediaState()
         documentLoadedOnCompanionAuthPage = false
@@ -366,6 +375,8 @@ public final class BrowserTab: NSObject, Identifiable {
         chapters = []
         videoDescription = ""
         videoDescriptionWasTruncated = false
+        lastSkippedSponsorSegment = nil
+        lastAppliedSponsorPayload = nil
         loadError = nil
         timeline.update(currentTime: 0, duration: 0)
         if let blankURL = URL(string: "about:blank") {
@@ -712,7 +723,127 @@ public final class BrowserTab: NSObject, Identifiable {
 
     public func clearSponsorSegments() {
         lastAppliedSponsorPayload = nil
+        lastSkippedSponsorSegment = nil
         evaluate(EnhancementScript.setSponsorSegmentsScript(videoID: "", segments: []))
+    }
+
+    public func unskipSponsorSegment(_ segment: SponsorSegment) {
+        guard !isTornDown, !isSleeping, pendingLazyURL == nil else { return }
+        let script = EnhancementScript.suppressSponsorTimeScript(fromTime: segment.start, seekBack: true)
+        webView.evaluateJavaScript(script, completionHandler: nil)
+        if lastSkippedSponsorSegment == segment {
+            lastSkippedSponsorSegment = nil
+        }
+    }
+
+    /// Extracts an on-demand transcript from the active YouTube watch tab with a 5s timeout,
+    /// `<= 64 KB` / `<= 1000` cue bounds, sanitization, and `untrusted_web_page` trust tagging.
+    public func fetchOnDemandTranscript() async -> YouTubeTranscript? {
+        let currentURL = webView.url ?? url
+        guard !isTornDown,
+              !isSleeping,
+              pendingLazyURL == nil,
+              YouTubeURLRouter.isStandardYouTubeHost(currentURL.host) else {
+            return nil
+        }
+        let fallbackVideoID = YouTubeURLRouter.extractVideoID(from: currentURL) ?? ""
+        let fallbackTitle = mediaStatus.title.isEmpty ? displayTitle : mediaStatus.title
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<YouTubeTranscript?, Never>) in
+            var resumed = false
+            let timeoutTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: nil)
+            }
+            Task { @MainActor [weak self] in
+                guard let self, !self.isTornDown else {
+                    if !resumed {
+                        resumed = true
+                        timeoutTask.cancel()
+                        continuation.resume(returning: nil)
+                    }
+                    return
+                }
+                let result = try? await self.webView.callAsyncJavaScript(
+                    EnhancementScript.extractTranscriptScript,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: .page
+                )
+                guard !resumed else { return }
+                resumed = true
+                timeoutTask.cancel()
+                let transcript = Self.parseTranscriptResult(
+                    result,
+                    fallbackVideoID: fallbackVideoID,
+                    fallbackTitle: fallbackTitle
+                )
+                continuation.resume(returning: transcript)
+            }
+        }
+    }
+
+    private static func parseTranscriptResult(
+        _ rawResult: Any?,
+        fallbackVideoID: String,
+        fallbackTitle: String
+    ) -> YouTubeTranscript? {
+        guard let dict = rawResult as? [String: Any],
+              (dict["status"] as? String) == "ok" else {
+            return nil
+        }
+
+        let rawVideoID = (dict["videoId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let videoID = rawVideoID.isEmpty ? fallbackVideoID : rawVideoID
+        let rawTitle = (dict["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = rawTitle.isEmpty ? fallbackTitle : rawTitle
+        let languageCode = dict["languageCode"] as? String ?? ""
+        let source = dict["source"] as? String ?? "on_demand"
+
+        if let rawSegments = dict["segments"] as? [[String: Any]], !rawSegments.isEmpty {
+            let tuples: [(startSeconds: Double, durationSeconds: Double, text: String)] = rawSegments
+                .prefix(YouTubeTranscript.maxCues)
+                .compactMap { seg in
+                    guard let text = seg["text"] as? String else { return nil }
+                    let start = (seg["startSeconds"] as? NSNumber)?.doubleValue ?? 0
+                    let duration = (seg["durationSeconds"] as? NSNumber)?.doubleValue ?? 0
+                    return (start, duration, text)
+                }
+            let transcript = YouTubeTranscript.fromRawSegments(
+                tuples,
+                videoID: videoID,
+                title: title,
+                languageCode: languageCode,
+                source: source
+            )
+            return transcript.cues.isEmpty ? nil : transcript
+        }
+
+        if let json3String = dict["json3"] as? String,
+           let json3Data = json3String.data(using: .utf8),
+           let parsed = YouTubeTranscript.parseJSON3(
+               from: json3Data,
+               videoID: videoID,
+               title: title,
+               languageCode: languageCode
+           ) {
+            return parsed
+        }
+
+        if let xmlString = dict["xml"] as? String,
+           let xmlData = xmlString.data(using: .utf8),
+           let parsed = YouTubeTranscript.parseTimedTextXML(
+               from: xmlData,
+               videoID: videoID,
+               title: title,
+               languageCode: languageCode
+           ) {
+            return parsed
+        }
+
+        return nil
     }
 
     public func teardown() {
@@ -739,12 +870,15 @@ public final class BrowserTab: NSObject, Identifiable {
         onURLDidChange = nil
         onEffectiveURLChanged = nil
         onSponsorSkipped = nil
+        onSponsorSegmentSkipped = nil
+        onMediaStatusChanged = nil
         onDidClickContent = nil
         onUnmutedByUser = nil
         onFullscreenDidChange = nil
         onVideoEnded = nil
         onWatchProgress = nil
         onDidFinishNavigation = nil
+        lastSkippedSponsorSegment = nil
         authFlowServiceID = nil
         lastKnownServiceID = nil
         documentLoadedOnCompanionAuthPage = false
@@ -863,6 +997,7 @@ public final class BrowserTab: NSObject, Identifiable {
         }
         if mediaStatus != resolved {
             mediaStatus = resolved
+            onMediaStatusChanged?(id)
         }
     }
 
@@ -877,6 +1012,8 @@ public final class BrowserTab: NSObject, Identifiable {
                     chapters = []
                     videoDescription = ""
                     videoDescriptionWasTruncated = false
+                    lastSkippedSponsorSegment = nil
+                    lastAppliedSponsorPayload = nil
                 }
                 let oldPathKey = (url.host ?? "").lowercased() + "|" + url.path.lowercased() + "|" + (oldVideoID ?? "")
                 let newPathKey = (webURL.host ?? "").lowercased() + "|" + webURL.path.lowercased() + "|" + (newVideoID ?? "")
@@ -1305,8 +1442,18 @@ extension BrowserTab: WKScriptMessageHandler {
 
         if let event = body["event"] as? String {
             if event == "sponsorSkipped" {
-                let category = body["category"] as? String ?? "sponsor"
-                onSponsorSkipped?(category)
+                let category = (body["category"] as? String ?? "sponsor")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                let resolvedCategory = category.isEmpty ? "sponsor" : category
+                let fromTime = (body["fromTime"] as? NSNumber)?.doubleValue ?? 0
+                let toTime = (body["toTime"] as? NSNumber)?.doubleValue ?? fromTime
+                let safeStart = fromTime.isFinite && fromTime >= 0 ? fromTime : 0
+                let safeEnd = (toTime.isFinite && toTime >= safeStart) ? toTime : safeStart
+                let segment = SponsorSegment(start: safeStart, end: safeEnd, category: resolvedCategory)
+                lastSkippedSponsorSegment = segment
+                onSponsorSkipped?(resolvedCategory)
+                onSponsorSegmentSkipped?(segment)
             } else if event == "userUnmuted" {
                 let eventURL = body["urlString"] as? String ?? ""
                 if mediaStatus.hasVideo && mediaStatus.isMuted && mediaStatus.urlString == eventURL {

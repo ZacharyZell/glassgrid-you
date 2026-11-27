@@ -15,8 +15,23 @@ public final class LivePulseStore {
     public private(set) var sleeperLookupStatus: String?
     public private(set) var discoveredSleeperLeagues: [FantasyLeagueConfig] = []
     public private(set) var manualPinsByTab: [UUID: ManualGamePin] = [:]
+    public private(set) var menuBarPinnedGame: LiveGame?
+    public private(set) var activeScoringFlashAlert: LivePulseScoringAlert?
     public private(set) var sleeperCacheLastUpdated: Date?
     public private(set) var lastManualRefreshCompletedAt: Date?
+
+    public var menuBarPinnedScoreText: String? {
+        guard settings.livePulseEnabled, !isShutDown, let game = menuBarPinnedGame else {
+            return nil
+        }
+        let clockOrStatus = (game.clock ?? game.statusDetail).trimmingCharacters(in: .whitespacesAndNewlines)
+        if game.league == .f1 {
+            let base = "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
+            return clockOrStatus.isEmpty ? base : "\(base) · \(clockOrStatus)"
+        }
+        let score = "\(game.away.abbreviation) \(game.away.score)–\(game.home.score) \(game.home.abbreviation)"
+        return clockOrStatus.isEmpty ? score : "\(score) · \(clockOrStatus)"
+    }
 
     @ObservationIgnored
     private let settings: AppSettings
@@ -122,12 +137,18 @@ public final class LivePulseStore {
     private var activeGameIDs: Set<String> = []
 
     @ObservationIgnored
+    private var pinnedMenuBarGameID: String?
+
+    @ObservationIgnored
+    private var scoringFlashDismissTask: Task<Void, Never>?
+
+    @ObservationIgnored
     private var resolvedSleeperUserIDByUsername: [String: String] = [:]
 
     @ObservationIgnored
     private var sleeperSportStateBySport: [String: (state: SleeperSportState, fetchedAt: Date)] = [:]
 
-    // Spoiler delay buffers gating live scores, matchups, markets, and deltas
+    // Spoiler delay buffers gating live scores, matchups, markets, plays, scoring flashes, and deltas
     @ObservationIgnored
     private var gamesSpoilerBuffer = SpoilerDelayBuffer<[LiveGame]>()
 
@@ -141,6 +162,12 @@ public final class LivePulseStore {
     private var deltaSpoilerBuffer = SpoilerDelayBuffer<LivePulseDeltaEvent>()
 
     @ObservationIgnored
+    private var playsSpoilerBuffer = SpoilerDelayBuffer<[String: [PlayByPlayEvent]]>()
+
+    @ObservationIgnored
+    private var scoringAlertsSpoilerBuffer = SpoilerDelayBuffer<LivePulseScoringAlert>()
+
+    @ObservationIgnored
     private var displayedGames: [LiveGame] = []
 
     @ObservationIgnored
@@ -151,6 +178,15 @@ public final class LivePulseStore {
 
     @ObservationIgnored
     private var displayedDeltas: [LivePulseDeltaEvent] = []
+
+    @ObservationIgnored
+    private var displayedPlaysByGameID: [String: [PlayByPlayEvent]] = [:]
+
+    @ObservationIgnored
+    private var displayedScoringAlerts: [LivePulseScoringAlert] = []
+
+    @ObservationIgnored
+    private var activeScoringFlashGameIDs: Set<String> = []
 
     public init(
         settings: AppSettings,
@@ -179,6 +215,10 @@ public final class LivePulseStore {
             return
         }
 
+        if !settings.livePulseScoringFlashes {
+            clearScoringFlashState()
+        }
+
         let shouldBeActive = hasVisibleActiveSurface
         if shouldBeActive {
             if !isPollingActive {
@@ -191,6 +231,49 @@ public final class LivePulseStore {
             }
         } else {
             pausePollingLoops()
+        }
+    }
+
+    public func pinGameToMenuBar(_ gameID: String?) {
+        let trimmed = gameID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard settings.livePulseEnabled, !isShutDown, let targetID = trimmed, !targetID.isEmpty else {
+            pinnedMenuBarGameID = nil
+            menuBarPinnedGame = nil
+            return
+        }
+        pinnedMenuBarGameID = targetID
+        menuBarPinnedGame = snapshot.games.first(where: { $0.id == targetID })
+    }
+
+    public func filteredPlays(for gameID: String?, rosterOnly: Bool) -> [PlayByPlayEvent] {
+        guard settings.livePulseEnabled, !isShutDown else { return [] }
+
+        let basePlays: [PlayByPlayEvent]
+        if let gameID, !gameID.isEmpty {
+            basePlays = snapshot.playsByGameID[gameID] ?? []
+        } else if !snapshot.activeGameIDs.isEmpty {
+            basePlays = snapshot.activeGameIDs
+                .flatMap { snapshot.playsByGameID[$0] ?? [] }
+                .sorted { ($0.wallclock ?? .distantPast) > ($1.wallclock ?? .distantPast) }
+        } else {
+            basePlays = snapshot.playsByGameID.values
+                .flatMap { $0 }
+                .sorted { ($0.wallclock ?? .distantPast) > ($1.wallclock ?? .distantPast) }
+        }
+
+        guard rosterOnly else { return basePlays }
+
+        let userPlayers: [(league: SportsLeague, player: FantasyPlayerLine)] = snapshot.matchups.flatMap { matchup in
+            (matchup.starters + matchup.bench)
+                .filter(\.isUserRoster)
+                .map { (matchup.league, $0) }
+        }
+        guard !userPlayers.isEmpty else { return [] }
+
+        return basePlays.filter { play in
+            userPlayers.contains { entry in
+                playMatchesUserPlayer(play: play, player: entry.player, league: entry.league)
+            }
         }
     }
 
@@ -543,11 +626,17 @@ public final class LivePulseStore {
         matchupsSpoilerBuffer.clear()
         marketsSpoilerBuffer.clear()
         deltaSpoilerBuffer.clear()
+        playsSpoilerBuffer.clear()
+        clearScoringFlashState()
 
         displayedGames.removeAll()
         displayedMatchups.removeAll()
         displayedMarkets.removeAll()
         displayedDeltas.removeAll()
+        displayedPlaysByGameID.removeAll()
+
+        pinnedMenuBarGameID = nil
+        menuBarPinnedGame = nil
 
         isRefreshing = false
         isFetchingSummaries = false
@@ -625,6 +714,7 @@ public final class LivePulseStore {
         providerStatus["espnScoreboard"] = hadSuccess ? "OK" : "Unavailable"
         recomputeStreamContexts(now: now)
         enqueueScoreboardState(now: now)
+        enqueuePlaysState(now: now)
         if !rawMatchups.isEmpty {
             let enriched = sortMatchupsByPriority(rawMatchups.map { enrichMatchup($0, now: now) })
             rawMatchups = enriched
@@ -666,6 +756,7 @@ public final class LivePulseStore {
 
         let now = Date()
         enqueueScoreboardState(now: now)
+        enqueuePlaysState(now: now)
         if !rawMatchups.isEmpty {
             let enriched = sortMatchupsByPriority(rawMatchups.map { enrichMatchup($0, now: now) })
             rawMatchups = enriched
@@ -944,6 +1035,16 @@ public final class LivePulseStore {
         gamesSpoilerBuffer.enqueue(combinedRawGames(), at: now)
     }
 
+    private func enqueuePlaysState(now: Date) {
+        var playsMap: [String: [PlayByPlayEvent]] = [:]
+        for game in combinedRawGames() {
+            if let plays = summariesByEventID[game.id]?.recentPlays, !plays.isEmpty {
+                playsMap[game.id] = plays
+            }
+        }
+        playsSpoilerBuffer.enqueue(playsMap, at: now)
+    }
+
     private func applyCachedSummary(to game: LiveGame) -> LiveGame {
         guard let summary = summariesByEventID[game.id] else { return game }
         return applySummary(summary, to: game)
@@ -976,6 +1077,14 @@ public final class LivePulseStore {
             if let prev = previousGameScores[game.id] {
                 let awayDiff = current.away - prev.away
                 let homeDiff = current.home - prev.home
+                let isRelevantForFlash = settings.livePulseScoringFlashes
+                    && game.league != .f1
+                    && (activeGameIDs.contains(game.id)
+                        || game.id == pinnedMenuBarGameID
+                        || hasUserFantasyPlayer(in: game))
+                let clockSuffix = (game.clock ?? game.statusDetail).trimmingCharacters(in: .whitespacesAndNewlines)
+                let formattedClock = clockSuffix.isEmpty ? "" : " · \(clockSuffix)"
+
                 if awayDiff > 0 {
                     deltaSpoilerBuffer.enqueue(
                         LivePulseDeltaEvent(
@@ -988,6 +1097,18 @@ public final class LivePulseStore {
                         ),
                         at: now
                     )
+                    if isRelevantForFlash {
+                        scoringAlertsSpoilerBuffer.enqueue(
+                            LivePulseScoringAlert(
+                                gameID: game.id,
+                                league: game.league,
+                                headline: "\(game.away.abbreviation) \(current.away)–\(current.home) \(game.home.abbreviation)",
+                                detail: "\(game.away.abbreviation) +\(awayDiff)\(formattedClock)",
+                                timestamp: now
+                            ),
+                            at: now
+                        )
+                    }
                 }
                 if homeDiff > 0 {
                     deltaSpoilerBuffer.enqueue(
@@ -1001,10 +1122,39 @@ public final class LivePulseStore {
                         ),
                         at: now
                     )
+                    if isRelevantForFlash {
+                        scoringAlertsSpoilerBuffer.enqueue(
+                            LivePulseScoringAlert(
+                                gameID: game.id,
+                                league: game.league,
+                                headline: "\(game.away.abbreviation) \(current.away)–\(current.home) \(game.home.abbreviation)",
+                                detail: "\(game.home.abbreviation) +\(homeDiff)\(formattedClock)",
+                                timestamp: now
+                            ),
+                            at: now
+                        )
+                    }
                 }
             }
             previousGameScores[game.id] = current
         }
+    }
+
+    private func hasUserFantasyPlayer(in game: LiveGame) -> Bool {
+        let awayCode = SportsEntityMatcher.canonicalESPNCode(game.away.abbreviation, league: game.league)
+        let homeCode = SportsEntityMatcher.canonicalESPNCode(game.home.abbreviation, league: game.league)
+        for matchup in rawMatchups where matchup.league == game.league {
+            for player in (matchup.starters + matchup.bench) where player.isUserRoster {
+                if player.matchedGameID == game.id {
+                    return true
+                }
+                let teamCode = SportsEntityMatcher.canonicalESPNCode(player.nflOrProTeam, league: matchup.league)
+                if !teamCode.isEmpty && (teamCode == awayCode || teamCode == homeCode) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private func enrichMatchup(_ matchup: FantasyMatchup, now: Date) -> FantasyMatchup {
@@ -1069,18 +1219,40 @@ public final class LivePulseStore {
                     recentPlayerDeltas[player.id] = (diff, now)
                     if player.isUserRoster {
                         let sign = diff >= 0 ? "+" : ""
+                        let deltaText = String(format: "%@%.1f pts", sign, diff)
                         deltaSpoilerBuffer.enqueue(
                             LivePulseDeltaEvent(
                                 timestamp: now,
                                 kind: .fantasyPoints,
                                 gameID: matchedGame?.id,
                                 headline: player.name,
-                                deltaText: String(format: "%@%.1f pts", sign, diff),
+                                deltaText: deltaText,
                                 isPositive: diff >= 0,
                                 isBench: !player.isStarter
                             ),
                             at: now
                         )
+                        if settings.livePulseScoringFlashes && diff >= 1.0 {
+                            let detailText: String = {
+                                if let stat = player.liveStatLine, !stat.isEmpty {
+                                    return stat
+                                }
+                                if let g = matchedGame {
+                                    return "\(g.away.abbreviation) @ \(g.home.abbreviation)"
+                                }
+                                return "\(matchup.league.displayName) Fantasy"
+                            }()
+                            scoringAlertsSpoilerBuffer.enqueue(
+                                LivePulseScoringAlert(
+                                    gameID: matchedGame?.id ?? "fantasy:\(matchup.id)",
+                                    league: matchup.league,
+                                    headline: "\(abbreviatedName(player.name)) \(deltaText)",
+                                    detail: detailText,
+                                    timestamp: now
+                                ),
+                                at: now
+                            )
+                        }
                     }
                 }
             }
@@ -1392,9 +1564,26 @@ public final class LivePulseStore {
             displayedMarkets = readyMarkets
             changed = true
         }
+        if let readyPlays = playsSpoilerBuffer.drainReady(at: now, delay: delay).last {
+            displayedPlaysByGameID = readyPlays
+            changed = true
+        }
         let readyDeltas = deltaSpoilerBuffer.drainReady(at: now, delay: delay)
         if !readyDeltas.isEmpty {
             displayedDeltas = Array((readyDeltas.reversed() + displayedDeltas).prefix(20))
+            changed = true
+        }
+
+        if settings.livePulseEnabled && settings.livePulseScoringFlashes {
+            let readyAlerts = scoringAlertsSpoilerBuffer.drainReady(at: now, delay: delay)
+            if !readyAlerts.isEmpty {
+                displayedScoringAlerts = Array((readyAlerts.reversed() + displayedScoringAlerts).prefix(10))
+                activeScoringFlashGameIDs.formUnion(readyAlerts.map(\.gameID))
+                scheduleScoringFlashAutoDismiss(readyAlerts.last)
+                changed = true
+            }
+        } else if !displayedScoringAlerts.isEmpty || activeScoringFlashAlert != nil || !scoringAlertsSpoilerBuffer.isEmpty {
+            clearScoringFlashState()
             changed = true
         }
 
@@ -1413,10 +1602,116 @@ public final class LivePulseStore {
         if let readyMarkets = marketsSpoilerBuffer.drainReady(at: now, delay: .off).last {
             displayedMarkets = readyMarkets
         }
+        if let readyPlays = playsSpoilerBuffer.drainReady(at: now, delay: .off).last {
+            displayedPlaysByGameID = readyPlays
+        }
         let readyDeltas = deltaSpoilerBuffer.drainReady(at: now, delay: .off)
         if !readyDeltas.isEmpty {
             displayedDeltas = Array((readyDeltas.reversed() + displayedDeltas).prefix(20))
         }
+        if settings.livePulseEnabled && settings.livePulseScoringFlashes {
+            let readyAlerts = scoringAlertsSpoilerBuffer.drainReady(at: now, delay: .off)
+            if !readyAlerts.isEmpty {
+                displayedScoringAlerts = Array((readyAlerts.reversed() + displayedScoringAlerts).prefix(10))
+                activeScoringFlashGameIDs.formUnion(readyAlerts.map(\.gameID))
+                scheduleScoringFlashAutoDismiss(readyAlerts.last)
+            }
+        } else {
+            clearScoringFlashState()
+        }
+    }
+
+    private func scheduleScoringFlashAutoDismiss(_ alert: LivePulseScoringAlert?) {
+        guard let alert else { return }
+        activeScoringFlashAlert = alert
+        scoringFlashDismissTask?.cancel()
+        scoringFlashDismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled, let self else { return }
+            if self.activeScoringFlashAlert?.id == alert.id {
+                self.activeScoringFlashAlert = nil
+            }
+            self.activeScoringFlashGameIDs.removeAll()
+            if self.settings.livePulseEnabled && !self.isShutDown {
+                self.commitSnapshotNow()
+            }
+        }
+    }
+
+    private func clearScoringFlashState() {
+        scoringFlashDismissTask?.cancel()
+        scoringFlashDismissTask = nil
+        scoringAlertsSpoilerBuffer.clear()
+        displayedScoringAlerts.removeAll()
+        activeScoringFlashGameIDs.removeAll()
+        activeScoringFlashAlert = nil
+    }
+
+    private func abbreviatedName(_ fullName: String) -> String {
+        let parts = fullName.split(separator: " ")
+        guard parts.count >= 2, let firstChar = parts.first?.first else {
+            return fullName
+        }
+        return "\(firstChar). \(parts.dropFirst().joined(separator: " "))"
+    }
+
+    private func playMatchesUserPlayer(
+        play: PlayByPlayEvent,
+        player: FantasyPlayerLine,
+        league: SportsLeague
+    ) -> Bool {
+        let playerTeamCode = SportsEntityMatcher.canonicalESPNCode(player.nflOrProTeam, league: league)
+        let playTeamCode = play.teamAbbreviation.map {
+            SportsEntityMatcher.canonicalESPNCode($0, league: league)
+        }
+        let teamMatches = !playerTeamCode.isEmpty && playTeamCode == playerTeamCode
+        let gameMatches = player.matchedGameID == play.gameID
+
+        if let matchedGameID = player.matchedGameID, matchedGameID != play.gameID {
+            return false
+        }
+
+        let playLower = play.text.lowercased()
+        let normalizedName = player.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !normalizedName.isEmpty && playLower.contains(normalizedName) {
+            return true
+        }
+
+        let normalizedPos = player.position.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if (normalizedPos == "DEF" || normalizedPos == "DST" || normalizedPos == "D/ST") && teamMatches {
+            if play.isScoringPlay
+                || playLower.contains("sack")
+                || playLower.contains("intercept")
+                || playLower.contains("fumble")
+                || playLower.contains("safety")
+                || playLower.contains("blocked") {
+                return true
+            }
+        }
+
+        let nameParts = normalizedName.split(separator: " ").map(String.init)
+        guard let first = nameParts.first, let firstInitial = first.first, nameParts.count >= 2 else {
+            return false
+        }
+        let surnameParts = nameParts.dropFirst().filter {
+            $0 != "jr." && $0 != "jr" && $0 != "sr." && $0 != "sr" && $0 != "ii" && $0 != "iii" && $0 != "iv"
+        }
+        let lastName = (surnameParts.isEmpty ? Array(nameParts.dropFirst()) : Array(surnameParts)).joined(separator: " ")
+        guard !lastName.isEmpty else { return false }
+
+        if playLower.contains("\(firstInitial). \(lastName)") || playLower.contains("\(firstInitial).\(lastName)") {
+            return true
+        }
+
+        if (teamMatches || gameMatches) && lastName.count >= 4 {
+            let tokens = playLower.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+            if let lastWord = lastName.split(separator: " ").last.map(String.init),
+               tokens.contains(lastWord) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func scheduleCoalescedCommit(immediateIfContextChanged: Bool = false) {
@@ -1450,6 +1745,11 @@ public final class LivePulseStore {
     private func commitSnapshotNow() {
         let now = Date()
         lastSnapshotCommitAt = now
+        if let pinnedID = pinnedMenuBarGameID, settings.livePulseEnabled, !isShutDown {
+            menuBarPinnedGame = displayedGames.first(where: { $0.id == pinnedID })
+        } else {
+            menuBarPinnedGame = nil
+        }
         let nextSnapshot = LivePulseSnapshot(
             games: displayedGames,
             matchups: displayedMatchups,
@@ -1459,7 +1759,10 @@ public final class LivePulseStore {
             primaryContext: primaryContext,
             activeGameIDs: activeGameIDs,
             providerStatus: providerStatus,
-            lastUpdatedAt: now
+            lastUpdatedAt: now,
+            playsByGameID: displayedPlaysByGameID,
+            scoringAlerts: settings.livePulseScoringFlashes ? displayedScoringAlerts : [],
+            scoringFlashGameIDs: settings.livePulseScoringFlashes ? activeScoringFlashGameIDs : []
         )
         if snapshot != nextSnapshot {
             snapshot = nextSnapshot

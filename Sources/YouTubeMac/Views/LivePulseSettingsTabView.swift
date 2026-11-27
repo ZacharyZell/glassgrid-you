@@ -39,6 +39,18 @@ struct LivePulseSettingsTabView: View {
                 Toggle("Show Live Companion Drawer (⌘⌥I)", isOn: $settings.livePulseShowDrawer)
                     .disabled(!settings.livePulseEnabled)
 
+                Toggle("Pin Live Score in macOS Menu Bar", isOn: $settings.livePulseMenuBarPin)
+                    .disabled(!settings.livePulseEnabled)
+                Text("Shows your pinned game's spoiler-delayed score beside the GlassGrid You menu bar icon.")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
+
+                Toggle("Spoiler-Delayed Fantasy Scoring Flashes", isOn: $settings.livePulseScoringFlashes)
+                    .disabled(!settings.livePulseEnabled)
+                Text("Briefly highlights scoring plays and fantasy roster point spikes after your configured spoiler delay.")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
+
                 Picker("Spoiler Delay Buffer", selection: $settings.livePulseSpoilerDelay) {
                     ForEach(SpoilerDelayOption.allCases) { option in
                         Text(option.displayName).tag(option)
@@ -47,79 +59,81 @@ struct LivePulseSettingsTabView: View {
                 .disabled(!settings.livePulseEnabled)
             }
 
-            Section("Sport Priority & Leagues") {
-                let orderedLeagues = settings.livePulseLeaguePriority
-                ForEach(Array(orderedLeagues.enumerated()), id: \.element) { index, league in
-                    let isLeagueEnabled = settings.livePulseEnabledLeagues.contains(league)
-                    HStack(spacing: AppSpacing.md) {
-                        Text("#\(index + 1)")
-                            .font(AppFont.micro(weight: .bold, tabular: true))
-                            .foregroundStyle(index == 0 ? AppleTheme.accentText : AppleTheme.textSecondary)
-                            .frame(width: 24, height: 20)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(index == 0 ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
-                            )
+            Section("Primary Leagues") {
+                ForEach(SportsLeague.primaryLeagues) { league in
+                    leagueToggleRow(league: league, settings: settings)
+                }
+            }
 
-                        Image(systemName: league.symbolName)
-                            .font(AppIconFont.md(weight: .semibold))
-                            .foregroundStyle(isLeagueEnabled ? AppleTheme.accentText : AppleTheme.textSecondary)
-                            .frame(width: 16)
+            Section("Secondary Leagues (College, Soccer & F1)") {
+                let secondaryLeagues = SportsLeague.allCases.filter { !SportsLeague.primaryLeagues.contains($0) }
+                ForEach(secondaryLeagues) { league in
+                    leagueToggleRow(league: league, settings: settings)
+                }
+                Text("Disabled by default to keep background scoreboard polling minimal. Enable only the leagues you follow.")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
+            }
 
-                        Text(league.displayName)
-                            .font(AppFont.body(weight: index == 0 ? .semibold : .regular))
-                            .foregroundStyle(isLeagueEnabled ? Color.primary : AppleTheme.textSecondary)
+            Section("Sport Priority & Stream Focus") {
+                let enabledPriorityLeagues = settings.orderedEnabledLivePulseLeagues
+                if enabledPriorityLeagues.isEmpty {
+                    Text("Enable at least one league above to configure sport priority.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                } else {
+                    ForEach(Array(enabledPriorityLeagues.enumerated()), id: \.element) { index, league in
+                        HStack(spacing: AppSpacing.md) {
+                            Text("#\(index + 1)")
+                                .font(AppFont.micro(weight: .bold, tabular: true))
+                                .foregroundStyle(index == 0 ? AppleTheme.accentText : AppleTheme.textSecondary)
+                                .frame(width: 24, height: 20)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(index == 0 ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
+                                )
 
-                        Spacer()
+                            Image(systemName: league.symbolName)
+                                .font(AppIconFont.md(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .frame(width: 16)
 
-                        HStack(spacing: AppSpacing.xxs) {
-                            Button {
-                                settings.moveLivePulseLeague(league, direction: -1)
-                            } label: {
-                                Image(systemName: "chevron.up")
-                                    .font(AppIconFont.xs(weight: .semibold))
-                                    .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(index == 0)
-                            .accessibilityLabel("Move \(league.displayName) up in priority")
-                            .help("Move \(league.displayName) up")
+                            Text(league.displayName)
+                                .font(AppFont.body(weight: index == 0 ? .semibold : .regular))
+                                .foregroundStyle(Color.primary)
 
-                            Button {
-                                settings.moveLivePulseLeague(league, direction: 1)
-                            } label: {
-                                Image(systemName: "chevron.down")
-                                    .font(AppIconFont.xs(weight: .semibold))
-                                    .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(index == orderedLeagues.count - 1)
-                            .accessibilityLabel("Move \(league.displayName) down in priority")
-                            .help("Move \(league.displayName) down")
-                        }
+                            Spacer()
 
-                        Toggle(
-                            league.displayName,
-                            isOn: Binding(
-                                get: { settings.livePulseEnabledLeagues.contains(league) },
-                                set: { enabled in
-                                    var updated = settings.livePulseEnabledLeagues
-                                    if enabled {
-                                        if !updated.contains(league) {
-                                            updated.append(league)
-                                        }
-                                    } else {
-                                        updated.removeAll { $0 == league }
-                                    }
-                                    settings.livePulseEnabledLeagues = updated
+                            HStack(spacing: AppSpacing.xxs) {
+                                Button {
+                                    moveEnabledLeague(league, direction: -1, in: enabledPriorityLeagues, settings: settings)
+                                } label: {
+                                    Image(systemName: "chevron.up")
+                                        .font(AppIconFont.xs(weight: .semibold))
+                                        .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
                                 }
-                            )
-                        )
-                        .labelsHidden()
+                                .buttonStyle(.borderless)
+                                .disabled(index == 0)
+                                .accessibilityLabel("Move \(league.displayName) up in priority")
+                                .help("Move \(league.displayName) up")
+
+                                Button {
+                                    moveEnabledLeague(league, direction: 1, in: enabledPriorityLeagues, settings: settings)
+                                } label: {
+                                    Image(systemName: "chevron.down")
+                                        .font(AppIconFont.xs(weight: .semibold))
+                                        .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(index == enabledPriorityLeagues.count - 1)
+                                .accessibilityLabel("Move \(league.displayName) down in priority")
+                                .help("Move \(league.displayName) down")
+                            }
+                        }
                     }
                 }
 
-                Text("Smart Priority ranks your watched stream first, then orders live scores, fantasy players, and markets by #1–#4 Sport Priority.")
+                Text("Smart Priority ranks your watched stream first, then orders live scores, fantasy players, and markets by priority.")
                     .font(AppFont.caption)
                     .foregroundStyle(AppleTheme.textSecondary)
 
@@ -202,7 +216,7 @@ struct LivePulseSettingsTabView: View {
 
             Section("ESPN Public Fantasy League") {
                 Picker("League", selection: $espnLeagueSelection) {
-                    ForEach(SportsLeague.allCases) { league in
+                    ForEach(SportsLeague.primaryLeagues) { league in
                         Text(league.displayName).tag(league)
                     }
                 }
@@ -305,6 +319,55 @@ struct LivePulseSettingsTabView: View {
                 espnSeasonDraft = String(Calendar.current.component(.year, from: Date()))
             }
         }
+    }
+
+    @ViewBuilder
+    private func leagueToggleRow(league: SportsLeague, settings: AppSettings) -> some View {
+        let isLeagueEnabled = settings.livePulseEnabledLeagues.contains(league)
+        HStack(spacing: AppSpacing.md) {
+            Image(systemName: league.symbolName)
+                .font(AppIconFont.md(weight: .semibold))
+                .foregroundStyle(isLeagueEnabled ? AppleTheme.accentText : AppleTheme.textSecondary)
+                .frame(width: 18)
+
+            Toggle(
+                league.displayName,
+                isOn: Binding(
+                    get: { settings.livePulseEnabledLeagues.contains(league) },
+                    set: { enabled in
+                        var updated = settings.livePulseEnabledLeagues
+                        if enabled {
+                            if !updated.contains(league) {
+                                updated.append(league)
+                            }
+                        } else {
+                            updated.removeAll { $0 == league }
+                        }
+                        settings.livePulseEnabledLeagues = updated
+                    }
+                )
+            )
+            .toggleStyle(.checkbox)
+            .font(AppFont.body(weight: isLeagueEnabled ? .medium : .regular))
+        }
+    }
+
+    private func moveEnabledLeague(
+        _ league: SportsLeague,
+        direction: Int,
+        in enabledOrdered: [SportsLeague],
+        settings: AppSettings
+    ) {
+        guard let currentEnabledIdx = enabledOrdered.firstIndex(of: league) else { return }
+        let targetEnabledIdx = currentEnabledIdx + direction
+        guard targetEnabledIdx >= 0 && targetEnabledIdx < enabledOrdered.count else { return }
+        let neighbor = enabledOrdered[targetEnabledIdx]
+
+        var full = SportsLeague.normalizedPriority(settings.livePulseLeaguePriority)
+        guard let fromFullIdx = full.firstIndex(of: league),
+              let neighborFullIdx = full.firstIndex(of: neighbor) else { return }
+        full.swapAt(fromFullIdx, neighborFullIdx)
+        settings.livePulseLeaguePriority = full
     }
 
     private var sleeperCacheCaption: String {

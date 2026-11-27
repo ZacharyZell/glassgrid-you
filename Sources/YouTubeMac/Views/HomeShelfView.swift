@@ -267,7 +267,9 @@ struct HomeShelfBarView: View {
     @Bindable var controller: AppController
 
     private var continueItems: [ContinueWatchingItem] {
-        controller.settings.continueWatching
+        controller.settings.continueWatching.filter {
+            !controller.settings.contentFilterConfig.matches(title: $0.title, channel: $0.channel)
+        }
     }
 
     private var topChannels: [WatchedChannelStat] {
@@ -400,7 +402,21 @@ struct PopulatedHomeDashboardView: View {
     @Bindable var controller: AppController
 
     private var continueItems: [ContinueWatchingItem] {
-        controller.settings.continueWatching
+        controller.settings.continueWatching.filter {
+            !controller.settings.contentFilterConfig.matches(title: $0.title, channel: $0.channel)
+        }
+    }
+
+    private var filteredChannelInbox: [ChannelInboxEntry] {
+        controller.channelInboxEntries.filter {
+            !controller.settings.contentFilterConfig.matches(title: $0.title, channel: $0.channelName)
+        }
+    }
+
+    private var filteredBookmarks: [VideoBookmark] {
+        controller.settings.videoBookmarks.filter {
+            !controller.settings.contentFilterConfig.matches(title: $0.title, channel: $0.channel)
+        }
     }
 
     private var topChannels: [WatchedChannelStat] {
@@ -520,6 +536,144 @@ struct PopulatedHomeDashboardView: View {
                                             }
                                         }
                                     )
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
+                // Channel Inbox (Opt-in Cookieless RSS Strip)
+                if !filteredChannelInbox.isEmpty {
+                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                        HStack {
+                            Label("Channel Inbox", systemImage: "tray.full.fill")
+                                .font(AppFont.subhead(weight: .semibold))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Button {
+                                Task { @MainActor in
+                                    await controller.refreshChannelInbox()
+                                }
+                            } label: {
+                                Text(controller.isLoadingChannelInbox ? "Refreshing…" : "Refresh")
+                                    .font(AppFont.callout(weight: .medium))
+                                    .foregroundStyle(AppleTheme.accentText)
+                                    .padding(.horizontal, AppSpacing.md)
+                                    .minHitTarget(24, shape: Capsule(style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(controller.isLoadingChannelInbox)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
+                                ForEach(filteredChannelInbox) { entry in
+                                    VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                        CachedThumbnailImage(url: entry.thumbnailURL, placeholderIconSize: 18)
+                                            .frame(width: 212, height: 119)
+                                            .clipped()
+                                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+                                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+                                            )
+
+                                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                                            Text(entry.title)
+                                                .font(AppFont.callout(weight: .medium))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+
+                                            Text(entry.channelName)
+                                                .font(AppFont.caption)
+                                                .foregroundStyle(AppleTheme.textSecondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                        }
+                                        .frame(width: 212, alignment: .leading)
+                                    }
+                                    .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
+                                    .onTapGesture {
+                                        if let url = entry.watchURL {
+                                            controller.navigateSelectedTab(to: url)
+                                        }
+                                    }
+                                    .contextMenu {
+                                        if let url = entry.watchURL {
+                                            Button("Open in New Tab") {
+                                                controller.createTab(url: url, select: true)
+                                            }
+                                            Button("Open in Multiview") {
+                                                controller.addTileToMultiview(url: url)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
+                // Saved Timestamp Bookmarks Shelf
+                if !filteredBookmarks.isEmpty {
+                    VStack(alignment: .leading, spacing: AppSpacing.md) {
+                        HStack {
+                            Label("Timestamp Bookmarks", systemImage: "bookmark.fill")
+                                .font(AppFont.subhead(weight: .semibold))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text("⌘⇧K")
+                                .font(AppFont.caption(weight: .medium, tabular: true))
+                                .foregroundStyle(AppleTheme.textSecondary)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(filteredBookmarks) { bookmark in
+                                    Button {
+                                        controller.jumpToBookmark(bookmark)
+                                    } label: {
+                                        HStack(spacing: AppSpacing.md) {
+                                            Text(bookmark.formattedTimestamp)
+                                                .font(AppFont.micro(weight: .bold, tabular: true))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, AppSpacing.sm)
+                                                .padding(.vertical, AppSpacing.xs)
+                                                .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
+
+                                            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                                                Text(bookmark.title)
+                                                    .font(AppFont.callout(weight: .medium))
+                                                    .foregroundStyle(.primary)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.tail)
+                                                if !bookmark.note.isEmpty {
+                                                    Text(bookmark.note)
+                                                        .font(AppFont.caption)
+                                                        .foregroundStyle(AppleTheme.textSecondary)
+                                                        .lineLimit(1)
+                                                        .truncationMode(.tail)
+                                                }
+                                            }
+                                        }
+                                        .padding(.horizontal, AppSpacing.lg)
+                                        .padding(.vertical, AppSpacing.md)
+                                        .frame(maxWidth: 260, alignment: .leading)
+                                        .appleGlass(in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous), interactive: true)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button("Jump to Timestamp") {
+                                            controller.jumpToBookmark(bookmark)
+                                        }
+                                        Divider()
+                                        Button("Remove Bookmark", role: .destructive) {
+                                            controller.removeVideoBookmark(id: bookmark.id)
+                                        }
+                                    }
                                 }
                             }
                             .padding(.vertical, 2)
