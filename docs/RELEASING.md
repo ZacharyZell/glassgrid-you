@@ -105,7 +105,7 @@ Every pushed update that changes user-facing features, services, shortcuts, or p
 2. **At release cut time (after Step 4 notarization succeeds):**
    - Bump `APP_VERSION` / `APP_BUILD` in [`scripts/bundle.sh`](../scripts/bundle.sh), [`scripts/release-dmg.sh`](../scripts/release-dmg.sh), and `MCPProtocol.serverVersion` in [`Sources/YouTubeMacCore/Agent/MCPProtocol.swift`](../Sources/YouTubeMacCore/Agent/MCPProtocol.swift).
    - Promote the top entry in [`docs/changelog.html`](changelog.html) from `Preview · Source (main)` to **`Latest Signed .dmg · Build <N>`** (and downgrade the prior latest card to `Signed .dmg`), update version labels on [`docs/index.html`](index.html), and replace `/commits/main` with the verified commit range or pushed tag URL.
-   - Upload `GlassGrid-You-<version>.dmg` to Polar and host it at `https://glassgridyou.com/updates/GlassGrid-You-<version>.dmg` matching the `<enclosure url="...">` in [`docs/appcast.xml`](appcast.xml), then paste `build/release/appcast-item-<version>.xml` into [`docs/appcast.xml`](appcast.xml) and validate with `xmllint --noout docs/appcast.xml`.
+   - Upload `GlassGrid-You-<version>.dmg` to Polar and host it at `https://updates.glassgridyou.com/GlassGrid-You-<version>.dmg` matching the `<enclosure url="...">` in [`docs/appcast.xml`](appcast.xml), then paste `build/release/appcast-item-<version>.xml` into [`docs/appcast.xml`](appcast.xml) and validate with `xmllint --noout docs/appcast.xml`.
 3. **Verify before pushing `main`:**
    - Confirm zero `<script>`, zero external fonts, zero trackers, zero CSS `:has(`, zero broken links or nonexistent tags, and zero horizontal overflow in a real browser at `1440px`, `900px`, and `390px`.
 
