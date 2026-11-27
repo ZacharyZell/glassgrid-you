@@ -1,5 +1,115 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import YouTubeMacCore
+
+@MainActor
+private final class LocalHotKeyMonitor {
+    nonisolated(unsafe) private var monitor: Any?
+
+    deinit {
+        removeMonitor()
+    }
+
+    func start(handler: @escaping @MainActor (UInt16, NSEvent.ModifierFlags) -> Bool) {
+        stop()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let keyCode = event.keyCode
+            let flags = event.modifierFlags
+            let consumed = MainActor.assumeIsolated {
+                handler(keyCode, flags)
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    func stop() {
+        removeMonitor()
+    }
+
+    nonisolated private func removeMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}
+
+private struct GlobalHotKeyRecorderRow: View {
+    let action: GlobalHotKeyAction
+    let binding: GlobalHotKeyBinding
+    let isCustom: Bool
+    let isRecording: Bool
+    let isGlobalEnabled: Bool
+    let errorMessage: String?
+    let onToggleRecording: () -> Void
+    let onResetSingle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+            HStack(spacing: AppSpacing.sm) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(action.title)
+                        .font(AppFont.body)
+                    if isCustom {
+                        Text("Default: \(action.shortcutDisplay)")
+                            .font(AppFont.micro(tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                if isCustom && !isRecording {
+                    Button {
+                        onResetSingle()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(AppIconFont.xs(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reset \(action.title) to \(action.shortcutDisplay)")
+                    .accessibilityLabel("Reset \(action.title) Shortcut")
+                }
+
+                Button(action: onToggleRecording) {
+                    Text(isRecording ? "Press Shortcut…" : binding.displayString)
+                        .font(AppFont.caption(weight: .semibold, tabular: true))
+                        .foregroundStyle(
+                            isRecording
+                                ? Color.white
+                                : (isGlobalEnabled ? AppleTheme.accentText : AppleTheme.textSecondary)
+                        )
+                        .padding(.horizontal, AppSpacing.md)
+                        .padding(.vertical, AppSpacing.xxs)
+                        .frame(minWidth: 88)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(isRecording ? AppleTheme.accentFill : Color.primary.opacity(0.08))
+                        )
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(
+                                    isRecording ? AppleTheme.accentFill : Color.primary.opacity(isCustom ? 0.18 : 0.08),
+                                    lineWidth: 0.75
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(isRecording ? "Press new modifier + key (Esc to cancel, Delete to reset)" : "Click to record a new global shortcut")
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.warning)
+            }
+        }
+    }
+}
 
 /// Native macOS Preferences window organized per Apple HIG: General, Playback, Distraction-Free, and Account & Data.
 struct SettingsView: View {
@@ -10,6 +120,9 @@ struct SettingsView: View {
     @State private var statusClearTask: Task<Void, Never>?
     @State private var newBlockedChannel = ""
     @State private var newBlockedKeyword = ""
+    @State private var recordingHotKeyAction: GlobalHotKeyAction?
+    @State private var hotKeyErrorByAction: [GlobalHotKeyAction: String] = [:]
+    @State private var hotKeyMonitor = LocalHotKeyMonitor()
 
     private static let speedPresets: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
@@ -163,6 +276,12 @@ struct SettingsView: View {
             Section("Mini-Player & Window") {
                 Toggle("Auto pop-out Mini-Player or Multiview Grid when leaving or covered by another app", isOn: $settings.autoMiniPlayerOnLeave)
                 Toggle("Keep Mini-Player visible across all Spaces", isOn: $settings.miniPlayerAllSpaces)
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("Peek-Away Auto-Fade on Mini-Player hover", isOn: $settings.miniPlayerPeekAwayEnabled)
+                    Text("Fades the Mini-Player body to click-through on hover; move onto the top drag bar or hold ⌥ to keep it opaque.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
                 VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                     Toggle("Show Notch Media HUD pill around MacBook notch", isOn: $settings.notchMediaHUDEnabled)
                     Text("Opt-in: displays compact playback controls near the notch (or top edge on external displays), automatically hidden in fullscreen.")
@@ -334,6 +453,17 @@ struct SettingsView: View {
                         .foregroundStyle(AppleTheme.textSecondary)
                 }
 
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("Replace clickbait thumbnails with video frames (DeArrow)", isOn: $settings.deArrowThumbnailsEnabled)
+                        .disabled(!settings.deArrowEnabled)
+                        .opacity(settings.deArrowEnabled ? 1.0 : 0.55)
+                    Text("Opt-in: fetches community-submitted video frames from dearrow-thumb.ajay.app (zero cookies) and falls back automatically when unavailable.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .opacity(settings.deArrowEnabled ? 1.0 : 0.55)
+                }
+                .padding(.leading, AppSpacing.lg)
+
                 Toggle("Enable Content Filter (hide matching channels & keywords)", isOn: $settings.contentFilterConfig.isEnabled)
 
                 VStack(alignment: .leading, spacing: AppSpacing.sm) {
@@ -471,6 +601,23 @@ struct SettingsView: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                        Text("Multiview Presets Backup")
+                        Text("Export or import saved Multiview layouts as portable .json files.")
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                    Spacer()
+                    Button("Export Presets (.json)…") {
+                        exportMultiviewPresetsFromPanel()
+                    }
+                    .disabled(coordinator.settings.savedMultiviewPresets.isEmpty)
+                    Button("Import Presets (.json)…") {
+                        importMultiviewPresetsFromPanel()
+                    }
+                }
+
+                HStack {
+                    VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                         Text("Clear Local History & Presets")
                         Text("Clears Continue Watching, Most Watched Channels & saved Multiview presets without signing you out.")
                             .font(AppFont.caption)
@@ -553,33 +700,53 @@ struct SettingsView: View {
     @ViewBuilder
     private var shortcutsTab: some View {
         @Bindable var settings = coordinator.settings
+        let hasCustomHotKeys = GlobalHotKeyAction.allCases.contains { settings.isCustomGlobalHotKeyBinding($0) }
 
         Form {
-            Section("System-Wide Global Shortcuts") {
+            Section {
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     Toggle("Enable Global Shortcuts across all macOS apps", isOn: $settings.globalHotkeysEnabled)
-                    Text("Opt-in: registers Carbon global hotkeys cleanly without Accessibility permissions.")
+                    Text("Opt-in: registers Carbon global hotkeys cleanly without Accessibility permissions. Click any shortcut to record (Esc cancels, Delete resets to default).")
                         .font(AppFont.caption)
                         .foregroundStyle(AppleTheme.textSecondary)
                 }
 
                 ForEach(GlobalHotKeyAction.allCases) { action in
-                    HStack {
-                        Text(action.title)
-                            .font(AppFont.body)
-                        Spacer()
-                        Text(action.shortcutDisplay)
-                            .font(AppFont.caption(weight: .semibold, tabular: true))
-                            .foregroundStyle(settings.globalHotkeysEnabled ? AppleTheme.accentText : AppleTheme.textSecondary)
-                            .padding(.horizontal, AppSpacing.md)
-                            .padding(.vertical, AppSpacing.xxs)
-                            .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+                    let binding = settings.effectiveGlobalHotKeyBinding(for: action)
+                    GlobalHotKeyRecorderRow(
+                        action: action,
+                        binding: binding,
+                        isCustom: settings.isCustomGlobalHotKeyBinding(action),
+                        isRecording: recordingHotKeyAction == action,
+                        isGlobalEnabled: settings.globalHotkeysEnabled,
+                        errorMessage: hotKeyErrorByAction[action],
+                        onToggleRecording: {
+                            toggleHotKeyRecording(for: action)
+                        },
+                        onResetSingle: {
+                            hotKeyErrorByAction.removeValue(forKey: action)
+                            settings.setGlobalHotKeyBinding(nil, for: action)
+                        }
+                    )
+                }
+            } header: {
+                HStack {
+                    Text("System-Wide Global Shortcuts")
+                    Spacer()
+                    Button("Reset Defaults") {
+                        stopHotKeyRecording()
+                        hotKeyErrorByAction.removeAll()
+                        settings.resetAllGlobalHotKeyBindings()
                     }
+                    .buttonStyle(.link)
+                    .font(AppFont.caption(weight: .medium))
+                    .disabled(!hasCustomHotKeys)
                 }
             }
 
             Section("In-App Shortcuts") {
                 shortcutRow("Command Palette & Search", "⌘K")
+                shortcutRow("Always on Top", "⌘⌥P")
                 shortcutRow("Mini-Player / Float Grid", "⌘⇧M")
                 shortcutRow("Mini-Player Ghost Mode", "⌘⌥O")
                 shortcutRow("Bookmark Current Timestamp", "⌘⇧K")
@@ -591,6 +758,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding(.vertical, AppSpacing.xs)
+        .onDisappear {
+            stopHotKeyRecording()
+        }
     }
 
     @ViewBuilder
@@ -645,6 +815,133 @@ struct SettingsView: View {
             return "No GitHub Releases published yet."
         case .failed(let reason):
             return reason
+        }
+    }
+
+    private func toggleHotKeyRecording(for action: GlobalHotKeyAction) {
+        if recordingHotKeyAction == action {
+            stopHotKeyRecording()
+            return
+        }
+        hotKeyErrorByAction.removeValue(forKey: action)
+        recordingHotKeyAction = action
+        hotKeyMonitor.start { keyCode, modifierFlags in
+            handleHotKeyMonitorEvent(keyCode: keyCode, modifierFlags: modifierFlags, for: action)
+        }
+    }
+
+    private func stopHotKeyRecording() {
+        hotKeyMonitor.stop()
+        recordingHotKeyAction = nil
+    }
+
+    private func handleHotKeyMonitorEvent(
+        keyCode rawKeyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        for action: GlobalHotKeyAction
+    ) -> Bool {
+        let keyCode = UInt32(rawKeyCode)
+        // Escape (0x35) cancels recording cleanly without dismissing Preferences.
+        if keyCode == 0x35 {
+            hotKeyErrorByAction.removeValue(forKey: action)
+            stopHotKeyRecording()
+            return true
+        }
+        // Delete (0x33) or ForwardDelete (0x75) resets the action back to its default shortcut.
+        if keyCode == 0x33 || keyCode == 0x75 {
+            coordinator.settings.setGlobalHotKeyBinding(nil, for: action)
+            hotKeyErrorByAction.removeValue(forKey: action)
+            stopHotKeyRecording()
+            return true
+        }
+
+        let carbonModifiers = GlobalHotKeyBinding.carbonModifiers(fromAppKitFlags: modifierFlags.rawValue)
+        let binding = GlobalHotKeyBinding(keyCode: keyCode, carbonModifiers: carbonModifiers)
+        guard binding.isValid else {
+            hotKeyErrorByAction[action] = "Include ⌃, ⌥, or ⌘ with a supported key (Esc to cancel)."
+            return true
+        }
+
+        if let conflictingAction = coordinator.settings.globalHotKeyConflict(for: binding, excluding: action) {
+            hotKeyErrorByAction[action] = "Conflicts with \"\(conflictingAction.title)\" (\(binding.displayString))."
+            return true
+        }
+
+        coordinator.settings.setGlobalHotKeyBinding(binding, for: action)
+        hotKeyErrorByAction.removeValue(forKey: action)
+        stopHotKeyRecording()
+        return true
+    }
+
+    private func exportMultiviewPresetsFromPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "GlassGrid-Multiview-Presets.json"
+        panel.title = "Export Multiview Presets"
+        panel.message = "Save a portable JSON backup of your Multiview presets."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let controller = coordinator.commandTarget ?? coordinator.openWindows.first
+        do {
+            let data: Data
+            if let controller {
+                data = try controller.exportMultiviewPresetsData()
+            } else {
+                data = try MultiviewPresetTransferCodec.encode(coordinator.settings.savedMultiviewPresets)
+            }
+            try data.write(to: url, options: .atomic)
+            let count = coordinator.settings.savedMultiviewPresets.count
+            showTransientStatus("Exported \(count) Multiview \(count == 1 ? "preset" : "presets").")
+            controller?.showHUD(icon: "square.and.arrow.up", message: "Exported \(count) Multiview \(count == 1 ? "Preset" : "Presets")")
+        } catch {
+            showTransientStatus(error.localizedDescription)
+            controller?.showHUD(icon: "exclamationmark.triangle", message: error.localizedDescription)
+        }
+    }
+
+    private func importMultiviewPresetsFromPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.title = "Import Multiview Presets"
+        panel.message = "Select a GlassGrid You Multiview preset JSON file."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let controller = coordinator.commandTarget ?? coordinator.openWindows.first
+        do {
+            let data = try Data(contentsOf: url)
+            if let controller {
+                let importedCount = try controller.importMultiviewPresets(from: data)
+                showTransientStatus("Imported \(importedCount) Multiview \(importedCount == 1 ? "preset" : "presets").")
+            } else {
+                let decoded = try MultiviewPresetTransferCodec.decode(from: data, tier: .fullControl)
+                var existing = coordinator.settings.savedMultiviewPresets
+                var usedIDs = Set(existing.map(\.id))
+                var importedCount = 0
+                for preset in decoded {
+                    guard existing.count < MultiviewPresetTransferCodec.maxImportedPresets else { break }
+                    let uniqueID = usedIDs.contains(preset.id) ? UUID() : preset.id
+                    usedIDs.insert(uniqueID)
+                    existing.append(
+                        MultiviewPreset(
+                            id: uniqueID,
+                            name: preset.name,
+                            urlStrings: preset.urlStrings,
+                            layoutMode: preset.layoutMode,
+                            splitRatios: preset.splitRatios
+                        )
+                    )
+                    importedCount += 1
+                }
+                coordinator.settings.savedMultiviewPresets = existing
+                showTransientStatus("Imported \(importedCount) Multiview \(importedCount == 1 ? "preset" : "presets").")
+            }
+        } catch {
+            showTransientStatus(error.localizedDescription)
+            controller?.showHUD(icon: "exclamationmark.triangle", message: error.localizedDescription)
         }
     }
 

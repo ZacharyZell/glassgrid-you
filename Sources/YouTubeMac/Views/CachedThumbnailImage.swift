@@ -61,12 +61,33 @@ final class ThumbnailImageCache {
     }
 }
 
-/// Drop-in cached SwiftUI thumbnail view with zero flicker on Home re-entry.
+private struct ThumbnailCacheKey: Hashable {
+    let primary: URL?
+    let fallback: URL?
+}
+
+/// Drop-in cached SwiftUI thumbnail view with zero flicker on Home re-entry and automatic fallback URL recovery.
 struct CachedThumbnailImage: View {
     let url: URL?
+    public let fallbackURL: URL?
     var placeholderIconSize: CGFloat = 20
 
     @State private var loadedImage: NSImage?
+    @State private var loadedKey: ThumbnailCacheKey?
+
+    init(
+        url: URL?,
+        fallbackURL: URL? = nil,
+        placeholderIconSize: CGFloat = 20
+    ) {
+        self.url = url
+        self.fallbackURL = fallbackURL
+        self.placeholderIconSize = placeholderIconSize
+    }
+
+    private var cacheKey: ThumbnailCacheKey {
+        ThumbnailCacheKey(primary: url, fallback: fallbackURL)
+    }
 
     var body: some View {
         Group {
@@ -84,25 +105,52 @@ struct CachedThumbnailImage: View {
                     )
             }
         }
-        .task(id: url) {
-            guard let url else {
-                loadedImage = nil
+        .task(id: cacheKey) {
+            let key = cacheKey
+            loadedImage = nil
+            loadedKey = nil
+
+            if let primaryURL = key.primary {
+                if let cached = ThumbnailImageCache.shared.cachedImage(for: primaryURL) {
+                    loadedKey = key
+                    loadedImage = cached
+                    return
+                }
+                if let fetched = await ThumbnailImageCache.shared.loadImage(for: primaryURL) {
+                    guard !Task.isCancelled else { return }
+                    loadedKey = key
+                    loadedImage = fetched
+                    return
+                }
+            }
+
+            guard !Task.isCancelled,
+                  let fallback = key.fallback,
+                  fallback != key.primary else {
                 return
             }
-            if let cached = ThumbnailImageCache.shared.cachedImage(for: url) {
-                loadedImage = cached
+
+            if let cachedFallback = ThumbnailImageCache.shared.cachedImage(for: fallback) {
+                loadedKey = key
+                loadedImage = cachedFallback
                 return
             }
-            loadedImage = await ThumbnailImageCache.shared.loadImage(for: url)
+            let fetchedFallback = await ThumbnailImageCache.shared.loadImage(for: fallback)
+            guard !Task.isCancelled else { return }
+            loadedKey = key
+            loadedImage = fetchedFallback
         }
     }
 
     private var displayedImage: NSImage? {
-        if let loadedImage {
+        if let loadedImage, loadedKey == cacheKey {
             return loadedImage
         }
-        if let url {
-            return ThumbnailImageCache.shared.cachedImage(for: url)
+        if let url, let cached = ThumbnailImageCache.shared.cachedImage(for: url) {
+            return cached
+        }
+        if url == nil, let fallbackURL, let cachedFallback = ThumbnailImageCache.shared.cachedImage(for: fallbackURL) {
+            return cachedFallback
         }
         return nil
     }

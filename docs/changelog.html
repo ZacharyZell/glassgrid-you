@@ -76,12 +76,16 @@
         <span class="section-label">Release Log &amp; Version Diffs</span>
         <h1>What changed in every update.</h1>
         <p class="changelog-sub">
-          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.4.0</strong>, Build 8).
+          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.4.1</strong>, Build 9).
         </p>
 
         <nav class="release-jump-strip" aria-label="Jump to version">
-          <a class="release-jump-pill" href="#v1-4-0">
+          <a class="release-jump-pill" href="#v1-4-1">
             <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span>v1.4.1</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-4-0">
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
             <span>v1.4.0</span>
           </a>
           <a class="release-jump-pill" href="#v1-3-1">
@@ -142,11 +146,57 @@
       -->
 
       <div class="changelog-timeline">
-        <article class="release-card release-card--latest" id="v1-4-0">
+        <article class="release-card release-card--latest" id="v1-4-1">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.4.1</h2>
+              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 9</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-27">Nov 27, 2026</time>
+              <span>DMG: 10,607,160 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/cc19d44...main" target="_blank" rel="noopener noreferrer">Diff v1.4.0 &rarr; v1.4.1 &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.4.0:</strong> Completes full competitive parity across all 6 pillars: adds opt-in Floating Mini-Player cursor <strong>Peek-Away Auto-Fade</strong> and a FairPlay-safe <strong>Night Dimmer (<code>0%&ndash;40%</code>)</strong> scrim; upgrades <strong>Settings &rarr; Shortcuts</strong> into a live click-to-record hotkey customizer adding <strong>Multiview Audio 1&ndash;4</strong> (<code>⌃⌥1</code>&ndash;<code>⌃⌥4</code>) and moving Global Play/Pause to <code>⌃⌥P</code>; adds opt-in <strong>DeArrow clickbait-free thumbnails</strong>; adds bounded <strong>Multiview Preset <code>.json</code> Export/Import</strong>; and ships a full TypeScript <strong>Raycast Extension</strong> under <code>extras/raycast-extension/</code>.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">+Peek-Away Auto-Fade &amp; Night Dimmer</span>
+              <span class="delta-pill">+Custom Shortcut Recorder &amp; ⌃⌥1–4</span>
+              <span class="delta-pill">+DeArrow Thumbnails</span>
+              <span class="delta-pill">+Preset .json Export/Import</span>
+              <span class="delta-pill">+TypeScript Raycast Extension</span>
+              <span class="delta-pill">143 &rarr; 147 Unit Tests</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>Floating Mini-Player Peek-Away Auto-Fade &amp; Night Dimmer (<code>0%&ndash;40%</code>):</strong> Opt-in cursor Peek-Away drops the Mini-Player body opacity to <code>0.15</code> and enables temporary click-through while hovering the video body (keeping the top drag bar, <code>8pt</code> resize edges, popovers, and Option-hold <code>⌥</code> solid), plus a pass-through <code>0%&ndash;40%</code> Night Dimmer scrim that automatically pauses on FairPlay strict-DRM streams (Disney+, Netflix, Hulu, Prime Video, HBO Max, Apple TV+, Crunchyroll, YouTube TV).</li>
+                <li><strong>Customizable Carbon Global Hotkeys &amp; Multiview Audio 1&ndash;4:</strong> Interactive click-to-record shortcut customization across all 9 global actions in <strong>Settings &rarr; Shortcuts</strong> (supporting <code>Esc</code> cancel, <code>Delete</code> per-action reset, modifier validation, 9-way conflict detection, and <em>Reset Defaults</em>) alongside new global <strong>Multiview Audio: Stream 1&ndash;4</strong> shortcuts (<code>⌃⌥1</code>&ndash;<code>⌃⌥4</code>).</li>
+                <li><strong>Opt-In DeArrow Video-Frame Thumbnails:</strong> Extends k-anonymous <code>DeArrowClient</code> branding parsing to replace clickbait thumbnails with community timestamp stills (<code>dearrow-thumb.ajay.app</code>) across Home Shelf, Channel Inbox, and Menu Bar Now Playing with automatic fallback on 404s.</li>
+                <li><strong>Multiview Preset <code>.json</code> Export &amp; Import:</strong> Added bounded <code>MultiviewPresetTransferCodec</code> (schema v1, max 32 presets, HTTPS/SSRF validation via <code>AgentSecurity</code>, split-ratio normalization) accessible from the Sidebar presets menu and <strong>Settings &rarr; Account &amp; Data</strong>.</li>
+                <li><strong>Official TypeScript Raycast Store Extension:</strong> Added a 9-command React/TypeScript extension under <code>extras/raycast-extension/</code> communicating safely with <code>glassgrid</code> CLI via <code>execFile</code> (zero shell execution).</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--changed">Changed &amp; Fixed</span>
+              <ul class="diff-list">
+                <li><strong>Global Play/Pause Default Moved to <code>⌃⌥P</code>:</strong> Eliminated the default hotkey overlap with GlassGrid You&rsquo;s in-app <code>⌘⌥P</code> (<em>Always on Top</em>) shortcut, and expanded automated test coverage from <strong>143 &rarr; 147 tests</strong>.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="release-card" id="v1-4-0">
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.4.0</h2>
-              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 8</span>
+              <span class="release-status">Signed .dmg · Build 8</span>
             </div>
             <div class="release-meta-row">
               <time datetime="2026-11-27">Nov 27, 2026</time>

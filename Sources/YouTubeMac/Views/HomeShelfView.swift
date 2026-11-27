@@ -5,6 +5,10 @@ import YouTubeMacCore
 /// Sleek collapsible Liquid Glass Continue Watching card shared between the compact Home Shelf and Populated Home Dashboard.
 private struct ContinueWatchingCardView: View {
     let item: ContinueWatchingItem
+    let thumbnailURL: URL?
+    let fallbackThumbnailURL: URL?
+    let deArrowTaskID: String
+    let onLoadDeArrowBranding: () -> Void
     let onResume: () -> Void
     let onOpenNewTab: () -> Void
     let onOpenInMultiview: () -> Void
@@ -16,7 +20,11 @@ private struct ContinueWatchingCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             ZStack(alignment: .bottomLeading) {
-                CachedThumbnailImage(url: item.thumbnailURL, placeholderIconSize: 20)
+                CachedThumbnailImage(
+                    url: thumbnailURL,
+                    fallbackURL: fallbackThumbnailURL,
+                    placeholderIconSize: 20
+                )
                     .frame(width: 212, height: 119)
                     .clipped()
 
@@ -126,12 +134,19 @@ private struct ContinueWatchingCardView: View {
                 isHovered = hovering
             }
         }
+        .task(id: deArrowTaskID) {
+            onLoadDeArrowBranding()
+        }
     }
 }
 
 /// Interactive Suggested Content card for the Populated Home Dashboard.
 private struct SuggestedVideoCardView: View {
     let video: SuggestedVideoItem
+    let thumbnailURL: URL?
+    let fallbackThumbnailURL: URL?
+    let deArrowTaskID: String
+    let onLoadDeArrowBranding: () -> Void
     let onPlay: () -> Void
     let onOpenNewTab: () -> Void
     let onOpenInMultiview: () -> Void
@@ -142,7 +157,11 @@ private struct SuggestedVideoCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
             ZStack(alignment: .bottomTrailing) {
-                CachedThumbnailImage(url: video.thumbnailURL, placeholderIconSize: 24)
+                CachedThumbnailImage(
+                    url: thumbnailURL,
+                    fallbackURL: fallbackThumbnailURL,
+                    placeholderIconSize: 24
+                )
                     .aspectRatio(16 / 9, contentMode: .fill)
                     .clipped()
 
@@ -213,6 +232,9 @@ private struct SuggestedVideoCardView: View {
             withAnimation(.easeOut(duration: 0.16)) {
                 isHovered = hovering
             }
+        }
+        .task(id: deArrowTaskID) {
+            onLoadDeArrowBranding()
         }
     }
 }
@@ -354,6 +376,12 @@ struct HomeShelfBarView: View {
                         ForEach(continueItems) { item in
                             ContinueWatchingCardView(
                                 item: item,
+                                thumbnailURL: controller.effectiveThumbnailURL(for: item.resumeURL, fallback: item.thumbnailURL),
+                                fallbackThumbnailURL: item.thumbnailURL,
+                                deArrowTaskID: "\(item.videoID)-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)",
+                                onLoadDeArrowBranding: {
+                                    controller.ensureDeArrowBrandingLoaded(forVideoID: item.videoID)
+                                },
                                 onResume: {
                                     if let url = item.resumeURL {
                                         controller.navigateSelectedTab(to: url)
@@ -507,6 +535,12 @@ struct PopulatedHomeDashboardView: View {
                                 ForEach(continueItems) { item in
                                     ContinueWatchingCardView(
                                         item: item,
+                                        thumbnailURL: controller.effectiveThumbnailURL(for: item.resumeURL, fallback: item.thumbnailURL),
+                                        fallbackThumbnailURL: item.thumbnailURL,
+                                        deArrowTaskID: "\(item.videoID)-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)",
+                                        onLoadDeArrowBranding: {
+                                            controller.ensureDeArrowBrandingLoaded(forVideoID: item.videoID)
+                                        },
                                         onResume: {
                                             if let url = item.resumeURL {
                                                 controller.navigateSelectedTab(to: url)
@@ -570,7 +604,11 @@ struct PopulatedHomeDashboardView: View {
                             HStack(spacing: 14) {
                                 ForEach(filteredChannelInbox) { entry in
                                     VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                                        CachedThumbnailImage(url: entry.thumbnailURL, placeholderIconSize: 18)
+                                        CachedThumbnailImage(
+                                            url: controller.effectiveThumbnailURL(for: entry.watchURL, fallback: entry.thumbnailURL),
+                                            fallbackURL: entry.thumbnailURL,
+                                            placeholderIconSize: 18
+                                        )
                                             .frame(width: 212, height: 119)
                                             .clipped()
                                             .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
@@ -599,6 +637,9 @@ struct PopulatedHomeDashboardView: View {
                                         if let url = entry.watchURL {
                                             controller.navigateSelectedTab(to: url)
                                         }
+                                    }
+                                    .task(id: "\(entry.videoID)-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)") {
+                                        controller.ensureDeArrowBrandingLoaded(forVideoID: entry.videoID)
                                     }
                                     .contextMenu {
                                         if let url = entry.watchURL {
@@ -767,6 +808,12 @@ struct PopulatedHomeDashboardView: View {
                         ForEach(filteredSuggestions) { video in
                             SuggestedVideoCardView(
                                 video: video,
+                                thumbnailURL: controller.effectiveThumbnailURL(for: video.watchURL, fallback: video.thumbnailURL),
+                                fallbackThumbnailURL: video.thumbnailURL,
+                                deArrowTaskID: "\(video.videoID)-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)",
+                                onLoadDeArrowBranding: {
+                                    controller.ensureDeArrowBrandingLoaded(forVideoID: video.videoID)
+                                },
                                 onPlay: {
                                     if let url = video.watchURL {
                                         controller.navigateSelectedTab(to: url)

@@ -5,7 +5,7 @@ import SwiftUI
 import WebKit
 import YouTubeMacCore
 
-/// Observable hover, mode, opacity, size-preset, and hosted Multiview state bridged from the floating panel.
+/// Observable hover, mode, opacity, peek-away, night dimmer, size-preset, and hosted Multiview state bridged from the floating panel.
 @MainActor
 @Observable
 private final class MiniPlayerHoverState {
@@ -15,9 +15,13 @@ private final class MiniPlayerHoverState {
     var panelSize: CGSize = MiniPlayerSizePreset.standard.size
     var currentSizePreset: MiniPlayerSizePreset = .standard
     var currentGridSizePreset: MiniPlayerGridSizePreset = .standard
-    var opacity: Double = 1.0
+    var opacity: Double = 0.96
     var isGhostMode: Bool = false
     var isOptionPeekActive: Bool = false
+    var isPeekAwayEnabled: Bool = false
+    var isPeekAwayFaded: Bool = false
+    var nightDimmerLevel: Double = 0.0
+    var isNightDimmerBypassedForDRM: Bool = false
     var hostedTabs: [BrowserTab] = []
     var audioTabID: UUID?
     var layoutMode: MultiviewLayoutMode = .auto
@@ -27,6 +31,11 @@ private final class MiniPlayerHoverState {
 
     var isHeaderVisible: Bool {
         isHovered || isPopoverPresented || isOptionPeekActive
+    }
+
+    var effectiveNightDimmerOpacity: Double {
+        guard !isNightDimmerBypassedForDRM else { return 0.0 }
+        return min(max(nightDimmerLevel.isFinite ? nightDimmerLevel : 0.0, 0.0), 0.40)
     }
 
     func effectiveVolume(for tab: BrowserTab) -> Int {
@@ -279,6 +288,25 @@ private final class PassThroughGridBorderHostView: NSView {
     }
 }
 
+/// Strictly non-hit-tested container hosting the FairPlay-bypassed Night Dimmer tint above `webContainer`.
+private final class PassThroughDimmerHostView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+/// Isolated Night Dimmer tint view reacting to `nightDimmerLevel` and `isNightDimmerBypassedForDRM`.
+private struct MiniPlayerNightDimmerOverlayView: View {
+    let hoverState: MiniPlayerHoverState
+
+    var body: some View {
+        Color.black
+            .opacity(hoverState.effectiveNightDimmerOpacity)
+            .ignoresSafeArea(.all)
+            .allowsHitTesting(false)
+    }
+}
+
 /// Flipped AppKit container positioning either 1 full-bleed `WKWebView` or 2–4 Multiview `WKWebView` tiles
 /// using `MultiviewGridLayout` top-left coordinates with zero Auto Layout thrash and strict fullscreen immutability.
 @MainActor
@@ -513,6 +541,8 @@ private struct FloatingMiniPlayerOverlayView: View {
     let onToggleMute: () -> Void
     let onSetPlaybackRate: (Double) -> Void
     let onSetOpacity: (Double) -> Void
+    let onSetNightDimmer: (Double) -> Void
+    let onSetPeekAway: (Bool) -> Void
     let onSelectSizePreset: (MiniPlayerSizePreset) -> Void
     let onStepSize: (Bool) -> Void
     let onPreparePopover: () -> Void
@@ -731,11 +761,11 @@ private struct FloatingMiniPlayerOverlayView: View {
                                     isDisplayOptionsPresented.toggle()
                                 } label: {
                                     Image(systemName: "slider.horizontal.3")
-                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 ? AppleTheme.accentText : .white)
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 || hoverState.nightDimmerLevel > 0.001 || hoverState.isPeekAwayEnabled ? AppleTheme.accentText : .white)
                                         .frame(width: 24, height: 24)
                                         .contentShape(Circle())
                                 }
-                                .help("Mini-Player Opacity, Speed & Size")
+                                .help("Mini-Player Opacity, Dimmer, Speed & Size")
                                 .accessibilityLabel("Mini-Player Display Options")
                                 .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
                                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
@@ -757,6 +787,36 @@ private struct FloatingMiniPlayerOverlayView: View {
                                                 step: 0.05
                                             )
                                             .controlSize(.small)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                            HStack {
+                                                Text("Night Dimmer")
+                                                    .font(AppFont.caption(weight: .semibold))
+                                                Spacer()
+                                                Text(
+                                                    hoverState.isNightDimmerBypassedForDRM
+                                                        ? "Paused"
+                                                        : "\(Int((hoverState.nightDimmerLevel * 100).rounded()))%"
+                                                )
+                                                .font(AppFont.caption(weight: .medium, tabular: true))
+                                                .foregroundStyle(AppleTheme.textSecondary)
+                                            }
+                                            Slider(
+                                                value: Binding(
+                                                    get: { hoverState.nightDimmerLevel },
+                                                    set: { onSetNightDimmer($0) }
+                                                ),
+                                                in: 0.0...0.40,
+                                                step: 0.05
+                                            )
+                                            .controlSize(.small)
+                                            .opacity(hoverState.isNightDimmerBypassedForDRM ? 0.55 : 1.0)
+                                            if hoverState.isNightDimmerBypassedForDRM {
+                                                Text("Paused on FairPlay DRM streams")
+                                                    .font(AppFont.micro)
+                                                    .foregroundStyle(AppleTheme.textSecondary)
+                                            }
                                         }
 
                                         Divider()
@@ -787,7 +847,7 @@ private struct FloatingMiniPlayerOverlayView: View {
 
                                         Divider()
 
-                                        HStack(spacing: AppSpacing.md) {
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             Button(action: onToggleGhostMode) {
                                                 HStack(spacing: AppSpacing.xs) {
                                                     Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
@@ -809,6 +869,23 @@ private struct FloatingMiniPlayerOverlayView: View {
                                                 .foregroundStyle(Color.primary)
                                             }
                                             .buttonStyle(.plain)
+
+                                            Toggle(
+                                                isOn: Binding(
+                                                    get: { hoverState.isPeekAwayEnabled },
+                                                    set: { onSetPeekAway($0) }
+                                                )
+                                            ) {
+                                                VStack(alignment: .leading, spacing: 1) {
+                                                    Text("Peek-Away Auto-Fade")
+                                                        .font(AppFont.caption(weight: .semibold))
+                                                    Text("Fades body on hover · drag bar or ⌥ keeps opaque")
+                                                        .font(AppFont.micro)
+                                                        .foregroundStyle(AppleTheme.textSecondary)
+                                                }
+                                            }
+                                            .toggleStyle(.switch)
+                                            .controlSize(.mini)
                                         }
 
                                         Divider()
@@ -920,6 +997,8 @@ private struct FloatingMultiviewHeaderOverlayView: View {
     let onSetTileVolume: (UUID, Int) -> Void
     let onResetMixer: () -> Void
     let onSetOpacity: (Double) -> Void
+    let onSetNightDimmer: (Double) -> Void
+    let onSetPeekAway: (Bool) -> Void
     let onSelectGridPreset: (MiniPlayerGridSizePreset) -> Void
     let onStepSize: (Bool) -> Void
     let onPreparePopover: () -> Void
@@ -1068,11 +1147,11 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                     isDisplayOptionsPresented.toggle()
                                 } label: {
                                     Image(systemName: "slider.horizontal.3")
-                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 || hoverState.hasCustomMix ? AppleTheme.accentText : .white)
+                                        .foregroundStyle(isDisplayOptionsPresented || hoverState.opacity < 0.99 || hoverState.nightDimmerLevel > 0.001 || hoverState.isPeekAwayEnabled || hoverState.hasCustomMix ? AppleTheme.accentText : .white)
                                         .frame(width: 24, height: 24)
                                         .contentShape(Circle())
                                 }
-                                .help("Grid Opacity, Stream Volumes, Layout & Size Presets")
+                                .help("Grid Opacity, Dimmer, Stream Volumes, Layout & Size Presets")
                                 .accessibilityLabel("Floating Grid Options")
                                 .popover(isPresented: $isDisplayOptionsPresented, arrowEdge: .bottom) {
                                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
@@ -1094,6 +1173,36 @@ private struct FloatingMultiviewHeaderOverlayView: View {
                                                 step: 0.05
                                             )
                                             .controlSize(.small)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                            HStack {
+                                                Text("Night Dimmer")
+                                                    .font(AppFont.caption(weight: .semibold))
+                                                Spacer()
+                                                Text(
+                                                    hoverState.isNightDimmerBypassedForDRM
+                                                        ? "Paused"
+                                                        : "\(Int((hoverState.nightDimmerLevel * 100).rounded()))%"
+                                                )
+                                                .font(AppFont.caption(weight: .medium, tabular: true))
+                                                .foregroundStyle(AppleTheme.textSecondary)
+                                            }
+                                            Slider(
+                                                value: Binding(
+                                                    get: { hoverState.nightDimmerLevel },
+                                                    set: { onSetNightDimmer($0) }
+                                                ),
+                                                in: 0.0...0.40,
+                                                step: 0.05
+                                            )
+                                            .controlSize(.small)
+                                            .opacity(hoverState.isNightDimmerBypassedForDRM ? 0.55 : 1.0)
+                                            if hoverState.isNightDimmerBypassedForDRM {
+                                                Text("Paused on FairPlay DRM streams")
+                                                    .font(AppFont.micro)
+                                                    .foregroundStyle(AppleTheme.textSecondary)
+                                            }
                                         }
 
                                         if !hoverState.hostedTabs.isEmpty {
@@ -1239,27 +1348,46 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                                         Divider()
 
-                                        Button(action: onToggleGhostMode) {
-                                            HStack(spacing: AppSpacing.xs) {
-                                                Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
-                                                    .font(AppIconFont.xs(weight: .semibold))
-                                                    .foregroundStyle(hoverState.isGhostMode ? AppleTheme.accentText : .primary)
-                                                Text("Ghost Mode")
-                                                    .font(AppFont.caption(weight: .semibold))
-                                                Spacer()
-                                                Text("Hold ⌥ · ⌘⌥O")
-                                                    .font(AppFont.micro(weight: .medium, tabular: true))
-                                                    .foregroundStyle(AppleTheme.textSecondary)
+                                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                            Button(action: onToggleGhostMode) {
+                                                HStack(spacing: AppSpacing.xs) {
+                                                    Image(systemName: hoverState.isGhostMode ? "eye.slash.fill" : "eye.slash")
+                                                        .font(AppIconFont.xs(weight: .semibold))
+                                                        .foregroundStyle(hoverState.isGhostMode ? AppleTheme.accentText : .primary)
+                                                    Text("Ghost Mode")
+                                                        .font(AppFont.caption(weight: .semibold))
+                                                    Spacer()
+                                                    Text("Hold ⌥ · ⌘⌥O")
+                                                        .font(AppFont.micro(weight: .medium, tabular: true))
+                                                        .foregroundStyle(AppleTheme.textSecondary)
+                                                }
+                                                .padding(.horizontal, AppSpacing.md)
+                                                .minHitTarget(26, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
+                                                        .fill(hoverState.isGhostMode ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.08))
+                                                )
+                                                .foregroundStyle(Color.primary)
                                             }
-                                            .padding(.horizontal, AppSpacing.md)
-                                            .minHitTarget(26, shape: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
-                                            .background(
-                                                RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
-                                                    .fill(hoverState.isGhostMode ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.08))
-                                            )
-                                            .foregroundStyle(Color.primary)
+                                            .buttonStyle(.plain)
+
+                                            Toggle(
+                                                isOn: Binding(
+                                                    get: { hoverState.isPeekAwayEnabled },
+                                                    set: { onSetPeekAway($0) }
+                                                )
+                                            ) {
+                                                VStack(alignment: .leading, spacing: 1) {
+                                                    Text("Peek-Away Auto-Fade")
+                                                        .font(AppFont.caption(weight: .semibold))
+                                                    Text("Fades body on hover · drag bar or ⌥ keeps opaque")
+                                                        .font(AppFont.micro)
+                                                        .foregroundStyle(AppleTheme.textSecondary)
+                                                }
+                                            }
+                                            .toggleStyle(.switch)
+                                            .controlSize(.mini)
                                         }
-                                        .buttonStyle(.plain)
 
                                         Divider()
 
@@ -1364,6 +1492,7 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     private var panel: MiniPlayerPanel?
     private var webContainer: FlippedMiniPlayerContainerView?
+    private var dimmerHostView: PassThroughDimmerHostView?
     private var gridBorderHostView: PassThroughGridBorderHostView?
     private var overlayHostingView: NSView?
     private var progressHostView: PassThroughProgressHostView?
@@ -1379,14 +1508,21 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     private var cornerSnapTask: Task<Void, Never>?
     private var hostedTabsResizeSyncTask: Task<Void, Never>?
     private var urlObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    private var fullscreenObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
 
     nonisolated(unsafe) private var globalGhostFlagsMonitor: Any?
     nonisolated(unsafe) private var localGhostFlagsMonitor: Any?
+    nonisolated(unsafe) private var globalPeekAwayMouseMonitor: Any?
+    nonisolated(unsafe) private var localPeekAwayMouseMonitor: Any?
+    nonisolated(unsafe) private var globalPeekAwayFlagsMonitor: Any?
+    nonisolated(unsafe) private var localPeekAwayFlagsMonitor: Any?
 
     var onFrameChanged: ((NSRect) -> Void)?
     var onGridFrameChanged: ((NSRect) -> Void)?
     var onWindowClosedExternally: (() -> Void)?
     var onOpacityChanged: ((Double) -> Void)?
+    public var onPeekAwayChanged: ((Bool) -> Void)?
+    public var onNightDimmerLevelChanged: ((Double) -> Void)?
 
     public var isGhostMode: Bool {
         hoverState.isGhostMode
@@ -1410,7 +1546,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     /// with any child popover window, preventing app-activation auto-dock mid-click, mid-scrub, or mid-resize.
     var isInteractingWithPanel: Bool {
         guard let panel, panel.isVisible else { return false }
-        if hoverState.isGhostMode && !hoverState.isOptionPeekActive {
+        if (hoverState.isGhostMode || hoverState.isPeekAwayFaded) && !hoverState.isOptionPeekActive {
             return false
         }
         if isLiveEdgeResizing || hoverState.isPopoverPresented {
@@ -1428,19 +1564,24 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         return false
     }
 
-    init(
+    public init(
         initialSavedFrame: NSRect? = nil,
         initialSavedGridFrame: NSRect? = nil,
-        initialOpacity: Double = 1.0
+        initialOpacity: Double = 0.96,
+        initialPeekAwayEnabled: Bool = false,
+        initialNightDimmerLevel: Double = 0.0
     ) {
         self.savedFrame = initialSavedFrame
         self.savedGridFrame = initialSavedGridFrame
-        self.hoverState.opacity = min(max(initialOpacity.isFinite ? initialOpacity : 1.0, 0.40), 1.0)
+        self.hoverState.opacity = min(max(initialOpacity.isFinite ? initialOpacity : 0.96, 0.40), 1.0)
+        self.hoverState.isPeekAwayEnabled = initialPeekAwayEnabled
+        self.hoverState.nightDimmerLevel = min(max(initialNightDimmerLevel.isFinite ? initialNightDimmerLevel : 0.0, 0.0), 0.40)
         super.init()
     }
 
     deinit {
         tearDownGhostMonitors()
+        tearDownPeekAwayMonitors()
     }
 
     nonisolated private func tearDownGhostMonitors() {
@@ -1454,11 +1595,48 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         }
     }
 
+    nonisolated private func tearDownPeekAwayMonitors() {
+        if let globalMouse = globalPeekAwayMouseMonitor {
+            NSEvent.removeMonitor(globalMouse)
+            globalPeekAwayMouseMonitor = nil
+        }
+        if let localMouse = localPeekAwayMouseMonitor {
+            NSEvent.removeMonitor(localMouse)
+            localPeekAwayMouseMonitor = nil
+        }
+        if let globalFlags = globalPeekAwayFlagsMonitor {
+            NSEvent.removeMonitor(globalFlags)
+            globalPeekAwayFlagsMonitor = nil
+        }
+        if let localFlags = localPeekAwayFlagsMonitor {
+            NSEvent.removeMonitor(localFlags)
+            localPeekAwayFlagsMonitor = nil
+        }
+    }
+
+    public func setPeekAwayEnabled(_ enabled: Bool) {
+        hoverState.isPeekAwayEnabled = enabled
+        reconcilePeekAwayMonitors()
+    }
+
+    public func setNightDimmerLevel(_ level: Double) {
+        let clamped = min(max(level.isFinite ? level : 0.0, 0.0), 0.40)
+        hoverState.nightDimmerLevel = clamped
+        if let panel {
+            installDimmerOverlayIfNeeded(in: panel)
+        }
+    }
+
     public func setGhostMode(_ enabled: Bool) {
         if enabled {
             guard let panel, panel.isVisible, !hasLiveFullscreenTab else {
                 setGhostMode(false)
                 return
+            }
+            tearDownPeekAwayMonitors()
+            if hoverState.isPeekAwayFaded {
+                hoverState.isPeekAwayFaded = false
+                panel.alphaValue = CGFloat(hoverState.opacity)
             }
             hoverState.isGhostMode = true
             if hoverState.opacity >= 0.99 {
@@ -1476,6 +1654,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             hoverState.isOptionPeekActive = false
             panel?.ignoresMouseEvents = false
             if let panel, panel.isVisible {
+                panel.alphaValue = CGFloat(hoverState.opacity)
                 let inside = panel.frame.contains(NSEvent.mouseLocation)
                 edgeResizeView?.isVisibleGrip = inside
                 hoverState.isHovered = inside
@@ -1483,6 +1662,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 edgeResizeView?.isVisibleGrip = false
                 hoverState.isHovered = false
             }
+            reconcilePeekAwayMonitors()
         }
     }
 
@@ -1490,6 +1670,157 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     public func toggleGhostMode() -> Bool {
         setGhostMode(!hoverState.isGhostMode)
         return hoverState.isGhostMode
+    }
+
+    private func reconcilePeekAwayMonitors() {
+        let shouldRunMonitors = hoverState.isPeekAwayEnabled
+            && !hoverState.isGhostMode
+            && !hasLiveFullscreenTab
+            && (panel?.isVisible ?? false)
+
+        if shouldRunMonitors {
+            hoverState.isOptionPeekActive = NSEvent.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.option)
+            installPeekAwayMonitorsIfNeeded()
+            evaluatePeekAwayState()
+        } else {
+            tearDownPeekAwayMonitors()
+            if !hoverState.isGhostMode {
+                hoverState.isOptionPeekActive = false
+            }
+            if hoverState.isPeekAwayFaded {
+                applyPeekAwayFade(false, animated: (panel?.isVisible ?? false) && !hasLiveFullscreenTab)
+            } else if let panel, !hoverState.isGhostMode {
+                panel.ignoresMouseEvents = false
+                panel.alphaValue = CGFloat(hoverState.opacity)
+            }
+        }
+    }
+
+    private func installPeekAwayMonitorsIfNeeded() {
+        if globalPeekAwayMouseMonitor == nil {
+            globalPeekAwayMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.evaluatePeekAwayState()
+                }
+            }
+        }
+        if localPeekAwayMouseMonitor == nil {
+            localPeekAwayMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+                Task { @MainActor [weak self] in
+                    self?.evaluatePeekAwayState()
+                }
+                return event
+            }
+        }
+        if globalPeekAwayFlagsMonitor == nil {
+            globalPeekAwayFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                let optionHeld = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
+                Task { @MainActor [weak self] in
+                    self?.updatePeekAwayOptionPeek(optionHeld)
+                }
+            }
+        }
+        if localPeekAwayFlagsMonitor == nil {
+            localPeekAwayFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                let optionHeld = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option)
+                Task { @MainActor [weak self] in
+                    self?.updatePeekAwayOptionPeek(optionHeld)
+                }
+                return event
+            }
+        }
+    }
+
+    private func updatePeekAwayOptionPeek(_ optionHeld: Bool) {
+        guard hoverState.isPeekAwayEnabled, !hoverState.isGhostMode else { return }
+        if hoverState.isOptionPeekActive != optionHeld {
+            hoverState.isOptionPeekActive = optionHeld
+        }
+        evaluatePeekAwayState()
+    }
+
+    private func evaluatePeekAwayState() {
+        guard let panel, panel.isVisible else {
+            if hoverState.isPeekAwayFaded {
+                hoverState.isPeekAwayFaded = false
+            }
+            return
+        }
+
+        if hasLiveFullscreenTab {
+            tearDownPeekAwayMonitors()
+            hoverState.isPeekAwayFaded = false
+            if hoverState.isGhostMode {
+                setGhostMode(false)
+            } else {
+                hoverState.isOptionPeekActive = false
+                panel.ignoresMouseEvents = false
+                panel.alphaValue = CGFloat(hoverState.opacity)
+            }
+            return
+        }
+
+        guard hoverState.isPeekAwayEnabled, !hoverState.isGhostMode else {
+            if hoverState.isPeekAwayFaded {
+                applyPeekAwayFade(false, animated: true)
+            }
+            return
+        }
+
+        let hasVisibleChildWindow = panel.childWindows?.contains(where: { $0.isVisible }) ?? false
+        let mouse = NSEvent.mouseLocation
+        let frame = panel.frame
+        let headerHeight: CGFloat = (hoverState.mode == .multiviewGrid) ? 44 : 50
+        let edgeInset: CGFloat = 8
+        let isInBodyBelowHeaderAndInsideResizeEdge =
+            mouse.x > frame.minX + edgeInset &&
+            mouse.x < frame.maxX - edgeInset &&
+            mouse.y > frame.minY + edgeInset &&
+            mouse.y < frame.maxY - headerHeight
+
+        let shouldFade = isInBodyBelowHeaderAndInsideResizeEdge
+            && !hoverState.isOptionPeekActive
+            && !hoverState.isPopoverPresented
+            && !isLiveEdgeResizing
+            && !hasVisibleChildWindow
+
+        if shouldFade != hoverState.isPeekAwayFaded {
+            applyPeekAwayFade(shouldFade, animated: true)
+        }
+    }
+
+    private func applyPeekAwayFade(_ faded: Bool, animated: Bool) {
+        hoverState.isPeekAwayFaded = faded
+        guard let panel else { return }
+
+        let isVisibleAndActive = panel.isVisible && !hasLiveFullscreenTab
+        let shouldIgnoreMouse = (hoverState.isGhostMode && !hoverState.isOptionPeekActive && isVisibleAndActive)
+            || (faded && !hoverState.isOptionPeekActive && isVisibleAndActive)
+        panel.ignoresMouseEvents = shouldIgnoreMouse
+
+        if faded {
+            edgeResizeView?.isVisibleGrip = false
+            hoverState.isHovered = false
+        } else if panel.isVisible {
+            let inside = panel.frame.contains(NSEvent.mouseLocation)
+            edgeResizeView?.isVisibleGrip = inside
+            withAnimation(.easeInOut(duration: 0.16)) {
+                hoverState.isHovered = inside
+            }
+        }
+
+        let targetAlpha = CGFloat(faded ? 0.15 : hoverState.opacity)
+        if animated && panel.isVisible && !hasLiveFullscreenTab {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = faded ? 0.18 : 0.14
+                context.allowsImplicitAnimation = true
+                panel.animator().alphaValue = targetAlpha
+            }
+        } else {
+            panel.alphaValue = targetAlpha
+        }
     }
 
     private func installGhostMonitorsIfNeeded() {
@@ -1545,7 +1876,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     func updateOpacity(_ opacity: Double) {
         let clamped = min(max(opacity.isFinite ? opacity : 1.0, 0.40), 1.0)
         hoverState.opacity = clamped
-        panel?.alphaValue = CGFloat(clamped)
+        if !hoverState.isPeekAwayFaded {
+            panel?.alphaValue = CGFloat(clamped)
+        }
     }
 
     func show(
@@ -1581,11 +1914,13 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.hasCustomMix = false
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
+        hoverState.isPeekAwayFaded = false
         hoverState.panelSize = panel.frame.size
         hoverState.currentSizePreset = MiniPlayerSizePreset.closest(to: panel.frame.size)
         edgeResizeView?.isVisibleGrip = false
         onDockHandler = onDock
         syncHostedTabURLObservations(for: [tab])
+        refreshNightDimmerDRMBypass()
 
         if let webContainer {
             webContainer.mode = .single
@@ -1594,6 +1929,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             webContainer.layoutSubtreeIfNeeded()
         }
 
+        installDimmerOverlayIfNeeded(in: panel)
         installSingleOverlay(
             in: panel,
             tab: tab,
@@ -1607,7 +1943,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onClose: onClose
         )
         installProgressHairline(in: panel, tab: tab)
+        panel.ignoresMouseEvents = false
+        panel.alphaValue = CGFloat(hoverState.opacity)
         panel.orderFrontRegardless()
+        reconcilePeekAwayMonitors()
         scheduleHostedTabsResizeSync()
     }
 
@@ -1656,11 +1995,13 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.hasCustomMix = hasCustomMix
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
+        hoverState.isPeekAwayFaded = false
         hoverState.panelSize = panel.frame.size
         hoverState.currentGridSizePreset = MiniPlayerGridSizePreset.closest(to: panel.frame.size)
         edgeResizeView?.isVisibleGrip = false
         onDockHandler = onDock
         syncHostedTabURLObservations(for: tabs)
+        refreshNightDimmerDRMBypass()
 
         if let webContainer {
             webContainer.mode = .multiviewGrid
@@ -1671,6 +2012,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             webContainer.layoutSubtreeIfNeeded()
         }
 
+        installDimmerOverlayIfNeeded(in: panel)
         installGridBorderOverlayIfNeeded(in: panel)
         installGridHeaderOverlay(
             in: panel,
@@ -1686,7 +2028,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onDock: onDock,
             onClose: onClose
         )
+        panel.ignoresMouseEvents = false
+        panel.alphaValue = CGFloat(hoverState.opacity)
         panel.orderFrontRegardless()
+        reconcilePeekAwayMonitors()
         scheduleHostedTabsResizeSync()
     }
 
@@ -1711,6 +2056,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.tileVolumes = tileVolumes
         hoverState.hasCustomMix = hasCustomMix
         syncHostedTabURLObservations(for: tabs)
+        refreshNightDimmerDRMBypass()
 
         if let webContainer {
             webContainer.mode = .multiviewGrid
@@ -1733,8 +2079,13 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
 
     @discardableResult
     func detachAndHide() -> [BrowserTab] {
+        tearDownPeekAwayMonitors()
+        hoverState.isPeekAwayFaded = false
+
         guard !hasLiveFullscreenTab else {
             setGhostMode(false)
+            panel?.ignoresMouseEvents = false
+            panel?.alphaValue = CGFloat(hoverState.opacity)
             return []
         }
 
@@ -1746,11 +2097,15 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hostedTabsResizeSyncTask?.cancel()
         hostedTabsResizeSyncTask = nil
 
-        if let panel, panel.isVisible {
-            flushPendingFrameSave(panel.frame, isGridMode: hoverState.mode == .multiviewGrid)
-            isProgrammaticallyHiding = true
-            panel.orderOut(nil)
-            isProgrammaticallyHiding = false
+        if let panel {
+            panel.ignoresMouseEvents = false
+            panel.alphaValue = CGFloat(hoverState.opacity)
+            if panel.isVisible {
+                flushPendingFrameSave(panel.frame, isGridMode: hoverState.mode == .multiviewGrid)
+                isProgrammaticallyHiding = true
+                panel.orderOut(nil)
+                isProgrammaticallyHiding = false
+            }
         }
 
         let previous = hoverState.hostedTabs
@@ -1771,8 +2126,11 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         progressHostView = nil
         onDockHandler = nil
         urlObservations.removeAll()
+        fullscreenObservations.removeAll()
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
+        hoverState.isOptionPeekActive = false
+        hoverState.isNightDimmerBypassedForDRM = false
         hoverState.hostedTabs = []
         hoverState.audioTabID = nil
         hoverState.tileVolumes = [:]
@@ -1781,22 +2139,53 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         return previous
     }
 
+    private func refreshNightDimmerDRMBypass() {
+        let urls = hoverState.hostedTabs.map { $0.webView.url ?? $0.url }
+        hoverState.isNightDimmerBypassedForDRM = MultiviewGridLayout.shouldBypassNightDimmer(for: urls)
+    }
+
     private func syncHostedTabURLObservations(for tabs: [BrowserTab]) {
         let activeIDs = Set(tabs.map { ObjectIdentifier($0.webView) })
         urlObservations = urlObservations.filter { activeIDs.contains($0.key) }
+        fullscreenObservations = fullscreenObservations.filter { activeIDs.contains($0.key) }
         for tab in tabs {
             let key = ObjectIdentifier(tab.webView)
-            guard urlObservations[key] == nil else { continue }
-            urlObservations[key] = tab.webView.observe(\.url, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor [weak self] in
-                    guard let self,
-                          self.hoverState.mode == .multiviewGrid,
-                          !self.hasLiveFullscreenTab else {
-                        return
+            if urlObservations[key] == nil {
+                urlObservations[key] = tab.webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, !self.hasLiveFullscreenTab else {
+                            return
+                        }
+                        self.refreshNightDimmerDRMBypass()
+                        if self.hoverState.mode == .multiviewGrid {
+                            self.webContainer?.applyLayout()
+                        }
                     }
-                    self.webContainer?.applyLayout()
                 }
             }
+            if fullscreenObservations[key] == nil {
+                fullscreenObservations[key] = tab.webView.observe(\.fullscreenState, options: [.new]) { [weak self] _, _ in
+                    Task { @MainActor [weak self] in
+                        self?.handleHostedFullscreenStateChanged()
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleHostedFullscreenStateChanged() {
+        if hasLiveFullscreenTab {
+            tearDownPeekAwayMonitors()
+            hoverState.isPeekAwayFaded = false
+            if hoverState.isGhostMode {
+                setGhostMode(false)
+            } else {
+                hoverState.isOptionPeekActive = false
+            }
+            panel?.ignoresMouseEvents = false
+            panel?.alphaValue = CGFloat(hoverState.opacity)
+        } else {
+            reconcilePeekAwayMonitors()
         }
     }
 
@@ -1912,6 +2301,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         isLiveEdgeResizing = true
         cornerSnapTask?.cancel()
         cornerSnapTask = nil
+        evaluatePeekAwayState()
     }
 
     private func handleEdgeResizeDelta(edge: MiniPlayerResizeEdge, initialFrame: CGRect, delta: CGSize) {
@@ -1946,6 +2336,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         webContainer?.layoutSubtreeIfNeeded()
         flushPendingFrameSave(panel.frame, isGridMode: isGrid)
         scheduleHostedTabsResizeSync()
+        evaluatePeekAwayState()
     }
 
     // MARK: - NSWindowDelegate
@@ -2026,7 +2417,11 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        tearDownPeekAwayMonitors()
+        hoverState.isPeekAwayFaded = false
         setGhostMode(false)
+        panel?.ignoresMouseEvents = false
+        panel?.alphaValue = CGFloat(hoverState.opacity)
         guard !isProgrammaticallyHiding else { return }
         edgeResizeView?.cancelDrag()
         isLiveEdgeResizing = false
@@ -2117,6 +2512,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         rootView.layer?.backgroundColor = NSColor.black.cgColor
         rootView.onHoverChanged = { [weak self] hovering in
             guard let self else { return }
+            if hovering && (self.hoverState.isGhostMode || (self.hoverState.isPeekAwayFaded && !self.hoverState.isOptionPeekActive)) {
+                return
+            }
             self.edgeResizeView?.isVisibleGrip = hovering
             withAnimation(.easeInOut(duration: 0.16)) {
                 self.hoverState.isHovered = hovering
@@ -2147,9 +2545,49 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         self.panel = panel
         self.webContainer = container
         self.edgeResizeView = edgeResizer
+        installDimmerOverlayIfNeeded(in: panel)
         configurePanelConstraints(for: mode, on: panel)
         updateCollectionBehavior(allSpaces: allSpaces)
         return panel
+    }
+
+    private func installDimmerOverlayIfNeeded(in panel: NSPanel) {
+        guard let rootView = panel.contentView, let webContainer else { return }
+        if let existing = dimmerHostView {
+            existing.frame = rootView.bounds
+            if existing.superview !== rootView {
+                rootView.addSubview(existing, positioned: .above, relativeTo: webContainer)
+            } else {
+                let subviews = rootView.subviews
+                if let webIdx = subviews.firstIndex(where: { $0 === webContainer }),
+                   let dimIdx = subviews.firstIndex(where: { $0 === existing }),
+                   dimIdx != webIdx + 1 {
+                    existing.removeFromSuperview()
+                    rootView.addSubview(existing, positioned: .above, relativeTo: webContainer)
+                }
+            }
+            bringEdgeResizeViewToFront()
+            return
+        }
+
+        let host = PassThroughDimmerHostView(frame: rootView.bounds)
+        host.autoresizingMask = [.width, .height]
+        let dimmerView = NSHostingView(
+            rootView: MiniPlayerNightDimmerOverlayView(hoverState: hoverState)
+                .environment(\.font, AppFont.body)
+        )
+        dimmerView.safeAreaRegions = []
+        dimmerView.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(dimmerView)
+        NSLayoutConstraint.activate([
+            dimmerView.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            dimmerView.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            dimmerView.topAnchor.constraint(equalTo: host.topAnchor),
+            dimmerView.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+        ])
+        rootView.addSubview(host, positioned: .above, relativeTo: webContainer)
+        dimmerHostView = host
+        bringEdgeResizeViewToFront()
     }
 
     private func bringEdgeResizeViewToFront() {
@@ -2197,10 +2635,12 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 hoverState.isHovered = inside
             }
         }
+        evaluatePeekAwayState()
     }
 
     private func prepareForPopoverPresentation() {
         hoverState.isPopoverPresented = true
+        evaluatePeekAwayState()
         panel?.makeKey()
     }
 
@@ -2230,6 +2670,14 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onSetOpacity: { [weak self] newOpacity in
                     self?.updateOpacity(newOpacity)
                     self?.onOpacityChanged?(newOpacity)
+                },
+                onSetNightDimmer: { [weak self] level in
+                    self?.setNightDimmerLevel(level)
+                    self?.onNightDimmerLevelChanged?(min(max(level.isFinite ? level : 0.0, 0.0), 0.40))
+                },
+                onSetPeekAway: { [weak self] enabled in
+                    self?.setPeekAwayEnabled(enabled)
+                    self?.onPeekAwayChanged?(enabled)
                 },
                 onSelectSizePreset: { [weak self] preset in
                     self?.applySizePreset(preset)
@@ -2273,6 +2721,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             overlay.heightAnchor.constraint(equalToConstant: 50)
         ])
         overlayHostingView = overlay
+        installDimmerOverlayIfNeeded(in: panel)
         bringEdgeResizeViewToFront()
     }
 
@@ -2341,6 +2790,14 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                     self?.updateOpacity(newOpacity)
                     self?.onOpacityChanged?(newOpacity)
                 },
+                onSetNightDimmer: { [weak self] level in
+                    self?.setNightDimmerLevel(level)
+                    self?.onNightDimmerLevelChanged?(min(max(level.isFinite ? level : 0.0, 0.0), 0.40))
+                },
+                onSetPeekAway: { [weak self] enabled in
+                    self?.setPeekAwayEnabled(enabled)
+                    self?.onPeekAwayChanged?(enabled)
+                },
                 onSelectGridPreset: { [weak self] preset in
                     self?.applyGridSizePreset(preset)
                 },
@@ -2381,6 +2838,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             overlay.heightAnchor.constraint(equalToConstant: 44)
         ])
         overlayHostingView = overlay
+        installDimmerOverlayIfNeeded(in: panel)
         bringEdgeResizeViewToFront()
     }
 

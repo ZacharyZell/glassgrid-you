@@ -575,8 +575,14 @@ final class V140FeaturesTests: XCTestCase {
 
     func testGlobalHotKeyActionUniquenessAndHUDToastEquatable() {
         let actions = GlobalHotKeyAction.allCases
-        XCTAssertEqual(actions.count, 5)
+        XCTAssertEqual(actions.count, 9)
         XCTAssertEqual(Set(actions.map(\.carbonHotKeyID)).count, actions.count)
+        XCTAssertEqual(Set(actions.map(\.carbonHotKeyID)), Set(1...9))
+        XCTAssertEqual(GlobalHotKeyAction.playPause.shortcutDisplay, "⌃⌥P")
+        XCTAssertEqual(GlobalHotKeyAction.multiviewAudio1.shortcutDisplay, "⌃⌥1")
+        XCTAssertEqual(GlobalHotKeyAction.multiviewAudio2.shortcutDisplay, "⌃⌥2")
+        XCTAssertEqual(GlobalHotKeyAction.multiviewAudio3.shortcutDisplay, "⌃⌥3")
+        XCTAssertEqual(GlobalHotKeyAction.multiviewAudio4.shortcutDisplay, "⌃⌥4")
 
         for action in actions {
             XCTAssertFalse(action.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

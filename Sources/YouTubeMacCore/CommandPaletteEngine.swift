@@ -25,6 +25,85 @@ public enum CommandPaletteSection: String, CaseIterable, Sendable {
     }
 }
 
+/// Pure Core value type representing a system-wide Carbon hotkey binding without Carbon/AppKit linkage.
+public struct GlobalHotKeyBinding: Codable, Equatable, Hashable, Sendable {
+    public static let cmdKeyMask: UInt32 = 0x0100
+    public static let shiftKeyMask: UInt32 = 0x0200
+    public static let optionKeyMask: UInt32 = 0x0800
+    public static let controlKeyMask: UInt32 = 0x1000
+    public static let supportedCarbonModifierMask: UInt32 = 0x1B00
+    public static let primaryModifierMask: UInt32 = 0x1900
+
+    public var keyCode: UInt32
+    public var carbonModifiers: UInt32
+
+    public init(keyCode: UInt32, carbonModifiers: UInt32) {
+        self.keyCode = keyCode
+        self.carbonModifiers = carbonModifiers
+    }
+
+    /// Requires a recognized key code, at least one primary modifier (`⌃`, `⌥`, or `⌘`),
+    /// and no unsupported Carbon modifier bits.
+    public var isValid: Bool {
+        Self.keyLabel(for: keyCode) != nil
+            && (carbonModifiers & Self.primaryModifierMask) != 0
+            && (carbonModifiers & ~Self.supportedCarbonModifierMask) == 0
+    }
+
+    public var displayString: String {
+        var prefix = ""
+        if (carbonModifiers & Self.controlKeyMask) != 0 { prefix += "⌃" }
+        if (carbonModifiers & Self.optionKeyMask) != 0 { prefix += "⌥" }
+        if (carbonModifiers & Self.shiftKeyMask) != 0 { prefix += "⇧" }
+        if (carbonModifiers & Self.cmdKeyMask) != 0 { prefix += "⌘" }
+        return prefix + (Self.keyLabel(for: keyCode) ?? "?")
+    }
+
+    /// Maps `NSEvent.ModifierFlags.rawValue` bits (`control`, `option`, `shift`, `command`) to Carbon modifier masks.
+    public static func carbonModifiers(fromAppKitFlags rawFlags: UInt) -> UInt32 {
+        var carbon: UInt32 = 0
+        if (rawFlags & (1 << 18)) != 0 { carbon |= controlKeyMask }
+        if (rawFlags & (1 << 19)) != 0 { carbon |= optionKeyMask }
+        if (rawFlags & (1 << 17)) != 0 { carbon |= shiftKeyMask }
+        if (rawFlags & (1 << 20)) != 0 { carbon |= cmdKeyMask }
+        return carbon
+    }
+
+    public static func keyLabel(for keyCode: UInt32) -> String? {
+        keyLabels[keyCode]
+    }
+
+    private static let keyLabels: [UInt32: String] = [
+        // ANSI Letters
+        0x00: "A", 0x01: "S", 0x02: "D", 0x03: "F", 0x04: "H",
+        0x05: "G", 0x06: "Z", 0x07: "X", 0x08: "C", 0x09: "V",
+        0x0B: "B", 0x0C: "Q", 0x0D: "W", 0x0E: "E", 0x0F: "R",
+        0x10: "Y", 0x11: "T", 0x1F: "O", 0x20: "U", 0x22: "I",
+        0x23: "P", 0x25: "L", 0x26: "J", 0x28: "K", 0x2D: "N",
+        0x2E: "M",
+        // ANSI Digits
+        0x12: "1", 0x13: "2", 0x14: "3", 0x15: "4", 0x17: "5",
+        0x16: "6", 0x1A: "7", 0x1C: "8", 0x19: "9", 0x1D: "0",
+        // ANSI Punctuation
+        0x1B: "-", 0x18: "=", 0x21: "[", 0x1E: "]", 0x2A: "\\",
+        0x29: ";", 0x27: "'", 0x2B: ",", 0x2F: ".", 0x2C: "/",
+        0x32: "`",
+        // Keypad
+        0x41: "KP.", 0x43: "KP*", 0x45: "KP+", 0x47: "KPClear",
+        0x4B: "KP/", 0x4C: "KPEnter", 0x4E: "KP-", 0x51: "KP=",
+        0x52: "KP0", 0x53: "KP1", 0x54: "KP2", 0x55: "KP3",
+        0x56: "KP4", 0x57: "KP5", 0x58: "KP6", 0x59: "KP7",
+        0x5B: "KP8", 0x5C: "KP9",
+        // Whitespace & Navigation
+        0x24: "Return", 0x30: "Tab", 0x31: "Space",
+        0x7B: "←", 0x7C: "→", 0x7D: "↓", 0x7E: "↑",
+        // Function Keys (F1-F12)
+        0x7A: "F1", 0x78: "F2", 0x63: "F3", 0x76: "F4",
+        0x60: "F5", 0x61: "F6", 0x62: "F7", 0x64: "F8",
+        0x65: "F9", 0x6D: "F10", 0x67: "F11", 0x6F: "F12"
+    ]
+}
+
 /// Pure Core descriptors for opt-in system-wide Carbon global hotkeys (zero Carbon framework linkage).
 public enum GlobalHotKeyAction: String, CaseIterable, Identifiable, Codable, Sendable {
     case playPause
@@ -32,6 +111,10 @@ public enum GlobalHotKeyAction: String, CaseIterable, Identifiable, Codable, Sen
     case toggleGhostMode
     case addBookmark
     case toggleMute
+    case multiviewAudio1
+    case multiviewAudio2
+    case multiviewAudio3
+    case multiviewAudio4
 
     public var id: String { rawValue }
 
@@ -42,6 +125,10 @@ public enum GlobalHotKeyAction: String, CaseIterable, Identifiable, Codable, Sen
         case .toggleGhostMode: return 3
         case .addBookmark: return 4
         case .toggleMute: return 5
+        case .multiviewAudio1: return 6
+        case .multiviewAudio2: return 7
+        case .multiviewAudio3: return 8
+        case .multiviewAudio4: return 9
         }
     }
 
@@ -52,6 +139,10 @@ public enum GlobalHotKeyAction: String, CaseIterable, Identifiable, Codable, Sen
         case .toggleGhostMode: return "Toggle Mini-Player Ghost Mode"
         case .addBookmark: return "Bookmark Current Timestamp"
         case .toggleMute: return "Mute / Unmute Active Video"
+        case .multiviewAudio1: return "Multiview Audio: Stream 1"
+        case .multiviewAudio2: return "Multiview Audio: Stream 2"
+        case .multiviewAudio3: return "Multiview Audio: Stream 3"
+        case .multiviewAudio4: return "Multiview Audio: Stream 4"
         }
     }
 
@@ -63,27 +154,43 @@ public enum GlobalHotKeyAction: String, CaseIterable, Identifiable, Codable, Sen
         case .toggleGhostMode: return 0x1F  // 'O'
         case .addBookmark: return 0x28      // 'K'
         case .toggleMute: return 0x2E       // 'M'
+        case .multiviewAudio1: return 0x12  // '1'
+        case .multiviewAudio2: return 0x13  // '2'
+        case .multiviewAudio3: return 0x14  // '3'
+        case .multiviewAudio4: return 0x15  // '4'
         }
     }
 
     /// Carbon modifier bitmask (`cmdKey = 0x0100`, `shiftKey = 0x0200`, `optionKey = 0x0800`, `controlKey = 0x1000`).
     public var defaultCarbonModifiers: UInt32 {
         switch self {
-        case .playPause: return 0x0900        // ⌘⌥P
+        case .playPause: return 0x1800        // ⌃⌥P
         case .toggleMiniPlayer: return 0x1800 // ⌃⌥I
         case .toggleGhostMode: return 0x0900  // ⌘⌥O
         case .addBookmark: return 0x0300      // ⌘⇧K
         case .toggleMute: return 0x1800       // ⌃⌥M
+        case .multiviewAudio1,
+             .multiviewAudio2,
+             .multiviewAudio3,
+             .multiviewAudio4: return 0x1800  // ⌃⌥1..4
         }
+    }
+
+    public var defaultBinding: GlobalHotKeyBinding {
+        GlobalHotKeyBinding(keyCode: defaultKeyCode, carbonModifiers: defaultCarbonModifiers)
     }
 
     public var shortcutDisplay: String {
         switch self {
-        case .playPause: return "⌘⌥P"
+        case .playPause: return "⌃⌥P"
         case .toggleMiniPlayer: return "⌃⌥I"
         case .toggleGhostMode: return "⌘⌥O"
         case .addBookmark: return "⌘⇧K"
         case .toggleMute: return "⌃⌥M"
+        case .multiviewAudio1: return "⌃⌥1"
+        case .multiviewAudio2: return "⌃⌥2"
+        case .multiviewAudio3: return "⌃⌥3"
+        case .multiviewAudio4: return "⌃⌥4"
         }
     }
 }

@@ -253,14 +253,31 @@ private struct MenuBarActiveControllerView: View {
         }
     }
 
-    private var nowPlayingThumbnailURL: URL? {
+    private var nowPlayingVideoID: String? {
         guard nowPlaying.hasVideo,
               let tab = controller.activeMediaTab,
-              !YouTubeURLRouter.isYouTubeTVHost(tab.url.host),
-              let videoID = YouTubeURLRouter.extractVideoID(from: tab.url) else {
+              !YouTubeURLRouter.isYouTubeTVHost(tab.url.host) else {
+            return nil
+        }
+        return YouTubeURLRouter.extractVideoID(from: tab.url)
+    }
+
+    private var nowPlayingFallbackThumbnailURL: URL? {
+        guard let videoID = nowPlayingVideoID else {
             return nil
         }
         return URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg")
+    }
+
+    private var nowPlayingThumbnailURL: URL? {
+        guard let fallbackURL = nowPlayingFallbackThumbnailURL else {
+            return nil
+        }
+        return controller.effectiveThumbnailURL(for: controller.activeMediaTab?.url, fallback: fallbackURL)
+    }
+
+    private var nowPlayingBrandingTaskID: String {
+        "\(nowPlayingVideoID ?? "")-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)"
     }
 
     var body: some View {
@@ -301,7 +318,11 @@ private struct MenuBarActiveControllerView: View {
             HStack(spacing: AppSpacing.md) {
                 if let thumbURL = nowPlayingThumbnailURL {
                     ZStack(alignment: .bottomTrailing) {
-                        CachedThumbnailImage(url: thumbURL, placeholderIconSize: 16)
+                        CachedThumbnailImage(
+                            url: thumbURL,
+                            fallbackURL: nowPlayingFallbackThumbnailURL,
+                            placeholderIconSize: 16
+                        )
                             .frame(width: 64, height: 36)
                             .clipShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
                             .overlay(
@@ -373,6 +394,11 @@ private struct MenuBarActiveControllerView: View {
 
             if let sleepOption = controller.sleepTimerOption {
                 sleepTimerCountdownPill(option: sleepOption)
+            }
+        }
+        .task(id: nowPlayingBrandingTaskID) {
+            if let videoID = nowPlayingVideoID {
+                controller.ensureDeArrowBrandingLoaded(forVideoID: videoID)
             }
         }
     }

@@ -48,6 +48,7 @@ public final class GlobalHotKeyManager {
 
     public func configure(
         enabled: Bool,
+        bindings: [GlobalHotKeyAction: GlobalHotKeyBinding] = [:],
         handler: @escaping @MainActor (GlobalHotKeyAction) -> Void
     ) {
         unregisterAll()
@@ -81,14 +82,16 @@ public final class GlobalHotKeyManager {
         eventHandlerRef = installedHandler
 
         for action in GlobalHotKeyAction.allCases {
+            let binding = bindings[action] ?? action.defaultBinding
+            guard binding.isValid else { continue }
             var hotKeyRef: EventHotKeyRef?
             let hotKeyID = EventHotKeyID(
                 signature: Self.hotKeySignature,
                 id: action.carbonHotKeyID
             )
             let registerStatus = RegisterEventHotKey(
-                action.defaultKeyCode,
-                action.defaultCarbonModifiers,
+                binding.keyCode,
+                binding.carbonModifiers,
                 hotKeyID,
                 GetApplicationEventTarget(),
                 0,

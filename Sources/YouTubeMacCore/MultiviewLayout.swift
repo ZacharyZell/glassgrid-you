@@ -451,6 +451,12 @@ public enum MultiviewGridLayout {
         return true
     }
 
+    /// Returns `true` if any hosted URL belongs to a strict-DRM streaming service or YouTube TV
+    /// so the Floating Mini-Player Night Dimmer is unconditionally bypassed for FairPlay DRM surfaces.
+    public static func shouldBypassNightDimmer(for urls: [URL]) -> Bool {
+        urls.contains { !shouldMaskWebViewLayer(for: $0) }
+    }
+
     /// Returns true if tile `index` is a large primary / 2-up slot eligible for up to 1080p quality.
     public static func isPrimarySlot(index: Int, count: Int, mode: MultiviewLayoutMode) -> Bool {
         guard count > 0, index >= 0, index < count else { return false }
@@ -1117,5 +1123,164 @@ public enum MultiviewShareLinkCodec {
             return nil
         }
         return MultiviewSharePayload(layoutMode: layoutMode, urls: validatedURLs)
+    }
+}
+
+/// Versioned `.json` transfer envelope for exporting and importing saved Multiview presets.
+public struct MultiviewPresetTransferDocument: Codable, Equatable, Sendable {
+    public var schemaVersion: Int
+    public var exportedAt: Date
+    public var presets: [MultiviewPreset]
+
+    public init(
+        schemaVersion: Int = MultiviewPresetTransferCodec.currentSchemaVersion,
+        exportedAt: Date = Date(),
+        presets: [MultiviewPreset]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.exportedAt = exportedAt
+        self.presets = presets
+    }
+}
+
+/// Typed validation errors raised by `MultiviewPresetTransferCodec`.
+public enum MultiviewPresetTransferError: Error, LocalizedError, Equatable, Sendable {
+    case emptyPayload
+    case payloadTooLarge(bytes: Int, limit: Int)
+    case invalidJSON
+    case unsupportedSchemaVersion(Int)
+    case tooManyPresets(count: Int, limit: Int)
+    case noValidPresets
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyPayload:
+            return "The selected preset file is empty."
+        case .payloadTooLarge(let bytes, let limit):
+            return "Preset file is too large (\(bytes) bytes; maximum allowed is \(limit) bytes)."
+        case .invalidJSON:
+            return "The preset file is not valid GlassGrid You Multiview JSON."
+        case .unsupportedSchemaVersion(let version):
+            return "Unsupported Multiview preset schema version (\(version))."
+        case .tooManyPresets(let count, let limit):
+            return "Preset file contains \(count) presets (maximum allowed is \(limit))."
+        case .noValidPresets:
+            return "No valid Multiview presets (2–4 safe HTTPS stream URLs) were found."
+        }
+    }
+}
+
+/// Pure, bounded encoder/decoder for portable Multiview preset `.json` backups.
+public enum MultiviewPresetTransferCodec {
+    public static let currentSchemaVersion = 1
+    public static let maxImportedPresets = 32
+    public static let maxPresetNameLength = 80
+    public static let maxPayloadBytes = 512 * 1024
+
+    public static func encode(_ presets: [MultiviewPreset], exportedAt: Date = Date()) throws -> Data {
+        guard presets.count <= maxImportedPresets else {
+            throw MultiviewPresetTransferError.tooManyPresets(count: presets.count, limit: maxImportedPresets)
+        }
+        let document = MultiviewPresetTransferDocument(
+            schemaVersion: currentSchemaVersion,
+            exportedAt: exportedAt,
+            presets: presets
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(document)
+        guard data.count <= maxPayloadBytes else {
+            throw MultiviewPresetTransferError.payloadTooLarge(bytes: data.count, limit: maxPayloadBytes)
+        }
+        return data
+    }
+
+    public static func decode(from data: Data, tier: AgentPermissionLevel = .fullControl) throws -> [MultiviewPreset] {
+        guard !data.isEmpty else {
+            throw MultiviewPresetTransferError.emptyPayload
+        }
+        guard data.count <= maxPayloadBytes else {
+            throw MultiviewPresetTransferError.payloadTooLarge(bytes: data.count, limit: maxPayloadBytes)
+        }
+
+        struct RawPreset: Decodable {
+            let id: UUID?
+            let name: String
+            let urlStrings: [String]
+            let layoutMode: MultiviewLayoutMode?
+            let splitRatios: MultiviewSplitRatios?
+        }
+
+        struct RawDocument: Decodable {
+            let schemaVersion: Int
+            let exportedAt: Date?
+            let presets: [RawPreset]
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let document: RawDocument
+        do {
+            document = try decoder.decode(RawDocument.self, from: data)
+        } catch {
+            throw MultiviewPresetTransferError.invalidJSON
+        }
+
+        guard document.schemaVersion == currentSchemaVersion else {
+            throw MultiviewPresetTransferError.unsupportedSchemaVersion(document.schemaVersion)
+        }
+        guard document.presets.count <= maxImportedPresets else {
+            throw MultiviewPresetTransferError.tooManyPresets(count: document.presets.count, limit: maxImportedPresets)
+        }
+
+        var sanitized: [MultiviewPreset] = []
+        sanitized.reserveCapacity(document.presets.count)
+
+        for preset in document.presets {
+            var validURLs: [String] = []
+            validURLs.reserveCapacity(MultiviewGridLayout.maxTiles)
+            for rawURL in preset.urlStrings {
+                if case .success(let validated) = AgentSecurity.validateURL(rawURL, tier: tier) {
+                    validURLs.append(validated.absoluteString)
+                    if validURLs.count >= MultiviewGridLayout.maxTiles {
+                        break
+                    }
+                }
+            }
+
+            guard validURLs.count >= 2 else {
+                continue
+            }
+
+            let cleanedName = AgentSecurity.sanitizeWebText(preset.name, maxLength: maxPresetNameLength)
+                .text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let finalName = cleanedName.isEmpty ? "Imported Grid" : cleanedName
+
+            let normalizedRatios = preset.splitRatios.map { ratios in
+                MultiviewSplitRatios(
+                    columnRatio: ratios.columnRatio,
+                    rowRatio: ratios.rowRatio,
+                    spotlightRatio: ratios.spotlightRatio,
+                    stackedWeights: ratios.stackedWeights
+                )
+            }
+
+            sanitized.append(
+                MultiviewPreset(
+                    id: preset.id ?? UUID(),
+                    name: finalName,
+                    urlStrings: validURLs,
+                    layoutMode: preset.layoutMode ?? .auto,
+                    splitRatios: normalizedRatios
+                )
+            )
+        }
+
+        guard !sanitized.isEmpty else {
+            throw MultiviewPresetTransferError.noValidPresets
+        }
+        return sanitized
     }
 }

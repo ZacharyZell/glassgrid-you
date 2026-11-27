@@ -16,7 +16,7 @@ public struct MCPProtocolHandler: Sendable {
     public let serverName: String
     public let serverVersion: String
 
-    public init(serverName: String = "glassgrid-you", serverVersion: String = "1.4.0") {
+    public init(serverName: String = "glassgrid-you", serverVersion: String = "1.4.1") {
         self.serverName = serverName
         self.serverVersion = serverVersion
     }

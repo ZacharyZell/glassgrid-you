@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import YouTubeMacCore
 
 /// macOS 26/27 Liquid Glass floating inset sidebar with concentric corners and adaptive crimson SF Symbols.
@@ -218,28 +219,58 @@ struct SidebarView: View {
                             }
                         }
 
-                        if !controller.settings.savedMultiviewPresets.isEmpty {
+                        if !controller.settings.savedMultiviewPresets.isEmpty || controller.isMultiviewActive {
                             VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                                Button {
-                                    withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
-                                        isPresetsExpanded.toggle()
+                                HStack(spacing: AppSpacing.xs) {
+                                    Button {
+                                        withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
+                                            isPresetsExpanded.toggle()
+                                        }
+                                    } label: {
+                                        HStack(spacing: AppSpacing.xs) {
+                                            sectionHeader("Multiview Presets")
+                                            Spacer()
+                                            Image(systemName: isPresetsExpanded ? "chevron.down" : "chevron.right")
+                                                .font(AppIconFont.xs(weight: .semibold))
+                                                .foregroundStyle(AppleTheme.textMuted)
+                                        }
+                                        .minHitTarget(24, shape: Rectangle())
                                     }
-                                } label: {
-                                    HStack(spacing: AppSpacing.xs) {
-                                        sectionHeader("Multiview Presets")
-                                        Spacer()
-                                        Image(systemName: isPresetsExpanded ? "chevron.down" : "chevron.right")
-                                            .font(AppIconFont.xs(weight: .semibold))
-                                            .foregroundStyle(AppleTheme.textMuted)
-                                            .padding(.trailing, AppSpacing.md)
+                                    .buttonStyle(.plain)
+
+                                    Menu {
+                                        Button("Import Presets (.json)…") {
+                                            importMultiviewPresetsFromPanel()
+                                        }
+                                        Button("Export All Presets (.json)…") {
+                                            exportMultiviewPresets(nil, suggestedFilename: "GlassGrid-Multiview-Presets.json")
+                                        }
+                                        .disabled(controller.settings.savedMultiviewPresets.isEmpty)
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .font(AppIconFont.sm(weight: .medium))
+                                            .foregroundStyle(AppleTheme.textSecondary)
+                                            .frame(width: 24, height: 24)
+                                            .contentShape(Circle())
                                     }
-                                    .minHitTarget(24, shape: Rectangle())
+                                    .menuStyle(.borderlessButton)
+                                    .menuIndicator(.hidden)
+                                    .fixedSize()
+                                    .padding(.trailing, AppSpacing.xs)
+                                    .help("Import or Export Multiview Presets (.json)")
                                 }
-                                .buttonStyle(.plain)
 
                                 if isPresetsExpanded {
-                                    ForEach(controller.settings.savedMultiviewPresets) { preset in
-                                        multiviewPresetRow(for: preset)
+                                    if controller.settings.savedMultiviewPresets.isEmpty {
+                                        Text("Save a grid or import presets (.json)")
+                                            .font(AppFont.caption)
+                                            .foregroundStyle(AppleTheme.textSecondary)
+                                            .padding(.horizontal, AppSpacing.lg)
+                                            .padding(.vertical, AppSpacing.xs)
+                                    } else {
+                                        ForEach(controller.settings.savedMultiviewPresets) { preset in
+                                            multiviewPresetRow(for: preset)
+                                        }
                                     }
                                 }
                             }
@@ -952,6 +983,13 @@ struct SidebarView: View {
                 renamePresetDraft = preset.name
                 renamingPresetID = preset.id
             }
+            Button("Export Preset (.json)…") {
+                let sanitizedFile = preset.name
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "/", with: "-")
+                let baseName = sanitizedFile.isEmpty ? "Multiview-Preset" : sanitizedFile
+                exportMultiviewPresets([preset], suggestedFilename: "\(baseName).json")
+            }
             Divider()
             Button("Delete Preset", role: .destructive) {
                 controller.deleteMultiviewPreset(id: preset.id)
@@ -985,6 +1023,44 @@ struct SidebarView: View {
             }
             .padding(AppSpacing.lg)
             .environment(\.font, AppFont.body)
+        }
+    }
+
+    private func exportMultiviewPresets(_ presets: [MultiviewPreset]?, suggestedFilename: String) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = suggestedFilename
+        panel.title = "Export Multiview Presets"
+        panel.message = "Save a portable JSON backup of your Multiview presets."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try controller.exportMultiviewPresetsData(presets: presets)
+            try data.write(to: url, options: .atomic)
+            let count = presets?.count ?? controller.settings.savedMultiviewPresets.count
+            controller.showHUD(
+                icon: "square.and.arrow.up",
+                message: "Exported \(count) Multiview \(count == 1 ? "Preset" : "Presets")"
+            )
+        } catch {
+            controller.showHUD(icon: "exclamationmark.triangle", message: error.localizedDescription)
+        }
+    }
+
+    private func importMultiviewPresetsFromPanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.title = "Import Multiview Presets"
+        panel.message = "Select a GlassGrid You Multiview preset JSON file."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            _ = try controller.importMultiviewPresets(from: data)
+        } catch {
+            controller.showHUD(icon: "exclamationmark.triangle", message: error.localizedDescription)
         }
     }
 

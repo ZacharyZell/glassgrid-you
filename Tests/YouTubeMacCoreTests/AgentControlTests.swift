@@ -130,12 +130,12 @@ final class AgentControlTests: XCTestCase {
         let ctx = AgentRequestContext(source: .mcpStdio, clientName: "test")
 
         // Initialize
-        XCTAssertEqual(handler.serverVersion, "1.4.0")
+        XCTAssertEqual(handler.serverVersion, "1.4.1")
         let initReq = Data(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#.utf8)
         if case .reply(let replyData) = await handler.handleMessageData(initReq, context: ctx, executor: executor),
            let decoded = try? JSONValue.decode(from: replyData) {
             XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["protocolVersion"]?.stringValue, "2025-06-18")
-            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.4.0")
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.4.1")
         } else {
             XCTFail("Expected initialize reply")
         }

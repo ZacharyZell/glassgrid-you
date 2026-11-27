@@ -49,6 +49,7 @@ public final class AppController {
     public var isSigningOutData: Bool = false
     public var activeToast: HUDToast? = nil
     public var deArrowTitlesByVideoID: [String: String] = [:]
+    public private(set) var deArrowThumbnailsByVideoID: [String: URL] = [:]
     public var isMultiviewAutoSyncEnabled: Bool = false
     public var multiviewMasterTabID: UUID? = nil
     public var stalledMultiviewTabIDs: Set<UUID> = []
@@ -245,7 +246,9 @@ public final class AppController {
             ? FloatingMiniPlayerController(
                 initialSavedFrame: resolvedSettings.savedMiniPlayerFrame,
                 initialSavedGridFrame: resolvedSettings.savedMiniPlayerGridFrame,
-                initialOpacity: resolvedSettings.miniPlayerOpacity
+                initialOpacity: resolvedSettings.miniPlayerOpacity,
+                initialPeekAwayEnabled: resolvedSettings.miniPlayerPeekAwayEnabled,
+                initialNightDimmerLevel: resolvedSettings.miniPlayerNightDimmerLevel
             )
             : nil
 
@@ -4206,7 +4209,7 @@ public final class AppController {
                 title: floatingMiniPlayer.isGhostMode ? "Disable Mini-Player Ghost Mode" : "Enable Mini-Player Ghost Mode",
                 keywords: "ghost mode click through transparent mini player option peek",
                 systemImage: floatingMiniPlayer.isGhostMode ? "eye" : "eye.slash",
-                shortcutHint: "⌘⌥O",
+                shortcutHint: settings.effectiveGlobalHotKeyBinding(for: .toggleGhostMode).displayString,
                 isFeaturedWhenEmpty: false
             )
         )
@@ -4238,7 +4241,7 @@ public final class AppController {
                 title: "Bookmark Current Timestamp",
                 keywords: "bookmark timestamp save jump mark",
                 systemImage: "bookmark.fill",
-                shortcutHint: "⌘⇧K",
+                shortcutHint: settings.effectiveGlobalHotKeyBinding(for: .addBookmark).displayString,
                 isFeaturedWhenEmpty: false
             )
         )
@@ -4653,6 +4656,78 @@ public final class AppController {
     public func deleteMultiviewPreset(id: UUID) {
         settings.savedMultiviewPresets.removeAll { $0.id == id }
         showHUD(icon: "trash", message: "Deleted Preset")
+    }
+
+    public func exportMultiviewPresetsData(presets: [MultiviewPreset]? = nil) throws -> Data {
+        let source = presets ?? settings.savedMultiviewPresets
+        return try MultiviewPresetTransferCodec.encode(source)
+    }
+
+    @discardableResult
+    public func importMultiviewPresets(from data: Data) throws -> Int {
+        let decoded = try MultiviewPresetTransferCodec.decode(from: data, tier: .fullControl)
+        var existing = settings.savedMultiviewPresets
+        var existingIDs = Set(existing.map(\.id))
+        var existingNames = Set(existing.map { $0.name.lowercased() })
+
+        func isExactDuplicate(_ candidate: MultiviewPreset, in list: [MultiviewPreset]) -> Bool {
+            list.contains { current in
+                current.name.caseInsensitiveCompare(candidate.name) == .orderedSame
+                    && current.urlStrings == candidate.urlStrings
+                    && current.layoutMode == candidate.layoutMode
+                    && current.splitRatios == candidate.splitRatios
+            }
+        }
+
+        func uniqueName(for baseName: String) -> String {
+            if !existingNames.contains(baseName.lowercased()) {
+                return baseName
+            }
+            var suffix = 2
+            while suffix <= 100 {
+                let suffixText = " (\(suffix))"
+                let maxBaseLength = max(1, MultiviewPresetTransferCodec.maxPresetNameLength - suffixText.count)
+                let trimmedBase = String(baseName.prefix(maxBaseLength)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let candidate = (trimmedBase.isEmpty ? "Imported Grid" : trimmedBase) + suffixText
+                if !existingNames.contains(candidate.lowercased()) {
+                    return candidate
+                }
+                suffix += 1
+            }
+            return baseName
+        }
+
+        var added: [MultiviewPreset] = []
+        for preset in decoded {
+            guard existing.count + added.count < MultiviewPresetTransferCodec.maxImportedPresets else {
+                break
+            }
+            if isExactDuplicate(preset, in: existing + added) {
+                continue
+            }
+            let resolvedID = existingIDs.contains(preset.id) ? UUID() : preset.id
+            let resolvedName = uniqueName(for: preset.name)
+            let normalized = MultiviewPreset(
+                id: resolvedID,
+                name: resolvedName,
+                urlStrings: preset.urlStrings,
+                layoutMode: preset.layoutMode,
+                splitRatios: preset.splitRatios
+            )
+            existingIDs.insert(resolvedID)
+            existingNames.insert(resolvedName.lowercased())
+            added.append(normalized)
+        }
+
+        if !added.isEmpty {
+            existing.append(contentsOf: added)
+            settings.savedMultiviewPresets = existing
+            let noun = added.count == 1 ? "Preset" : "Presets"
+            showHUD(icon: "square.and.arrow.down.on.square", message: "Imported \(added.count) \(noun)")
+        } else {
+            showHUD(icon: "checkmark.circle", message: "All Presets Already Saved")
+        }
+        return added.count
     }
 
     public func handleDroppedURL(_ url: URL) {
@@ -5250,6 +5325,72 @@ public final class AppController {
         return tab.displayTitle
     }
 
+    public func effectiveThumbnailURL(forVideoID videoID: String?, fallback: URL?) -> URL? {
+        guard settings.deArrowEnabled,
+              settings.deArrowThumbnailsEnabled,
+              let videoID = videoID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !videoID.isEmpty,
+              let overrideURL = deArrowThumbnailsByVideoID[videoID] else {
+            return fallback
+        }
+        return overrideURL
+    }
+
+    public func effectiveThumbnailURL(for url: URL?, fallback: URL?) -> URL? {
+        guard let url,
+              YouTubeURLRouter.isStandardYouTubeHost(url.host),
+              let videoID = YouTubeURLRouter.extractVideoID(from: url) else {
+            return fallback
+        }
+        return effectiveThumbnailURL(forVideoID: videoID, fallback: fallback)
+    }
+
+    public func ensureDeArrowBrandingLoaded(forVideoID videoID: String?) {
+        guard settings.deArrowEnabled,
+              !isWindowTornDown,
+              let videoID = videoID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !videoID.isEmpty,
+              !attemptedDeArrowVideoIDs.contains(videoID),
+              deArrowFetchTasks[videoID] == nil else {
+            return
+        }
+        if deArrowTitlesByVideoID[videoID] != nil && deArrowThumbnailsByVideoID[videoID] != nil {
+            return
+        }
+
+        attemptedDeArrowVideoIDs.insert(videoID)
+        let client = deArrowClient
+        deArrowFetchTasks[videoID] = Task { @MainActor [weak self] in
+            // Yield once so calls from SwiftUI lifecycle hooks never race with body evaluation.
+            await Task.yield()
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isWindowTornDown,
+                  self.settings.deArrowEnabled else {
+                self?.deArrowFetchTasks.removeValue(forKey: videoID)
+                return
+            }
+            let branding = await client.fetchBranding(for: videoID)
+            self.deArrowFetchTasks.removeValue(forKey: videoID)
+            guard !Task.isCancelled,
+                  !self.isWindowTornDown,
+                  self.settings.deArrowEnabled,
+                  let branding else {
+                return
+            }
+            if let cleanTitle = branding.title, !cleanTitle.isEmpty {
+                self.deArrowTitlesByVideoID[videoID] = cleanTitle
+                if let selected = self.selectedTab,
+                   YouTubeURLRouter.extractVideoID(from: selected.url) == videoID {
+                    self.syncWindowTitle()
+                }
+            }
+            if let thumbnailURL = branding.thumbnailURL {
+                self.deArrowThumbnailsByVideoID[videoID] = thumbnailURL
+            }
+        }
+    }
+
     func handleDeArrowSettingChanged(enabled: Bool) {
         if enabled {
             for tab in tabs {
@@ -5262,7 +5403,15 @@ public final class AppController {
             deArrowFetchTasks.removeAll()
             attemptedDeArrowVideoIDs.removeAll()
             deArrowTitlesByVideoID.removeAll()
+            deArrowThumbnailsByVideoID.removeAll()
             syncWindowTitle()
+        }
+    }
+
+    func handleDeArrowThumbnailsSettingChanged(enabled: Bool) {
+        guard enabled, settings.deArrowEnabled else { return }
+        for tab in tabs {
+            refreshDeArrowTitleIfNeeded(for: tab, url: tab.url)
         }
     }
 
@@ -5272,32 +5421,10 @@ public final class AppController {
               !tab.isSleeping,
               tab.pendingLazyURL == nil,
               YouTubeURLRouter.isStandardYouTubeHost(url.host),
-              let videoID = YouTubeURLRouter.extractVideoID(from: url),
-              deArrowTitlesByVideoID[videoID] == nil,
-              !attemptedDeArrowVideoIDs.contains(videoID),
-              deArrowFetchTasks[videoID] == nil else {
+              let videoID = YouTubeURLRouter.extractVideoID(from: url) else {
             return
         }
-
-        attemptedDeArrowVideoIDs.insert(videoID)
-        let client = deArrowClient
-        deArrowFetchTasks[videoID] = Task { @MainActor [weak self] in
-            let cleanTitle = await client.fetchCleanTitle(for: videoID)
-            guard let self else { return }
-            self.deArrowFetchTasks.removeValue(forKey: videoID)
-            guard !Task.isCancelled,
-                  !self.isWindowTornDown,
-                  self.settings.deArrowEnabled,
-                  let cleanTitle,
-                  !cleanTitle.isEmpty else {
-                return
-            }
-            self.deArrowTitlesByVideoID[videoID] = cleanTitle
-            if let selected = self.selectedTab,
-               YouTubeURLRouter.extractVideoID(from: selected.url) == videoID {
-                self.syncWindowTitle()
-            }
-        }
+        ensureDeArrowBrandingLoaded(forVideoID: videoID)
     }
 
     // MARK: - Timestamp Bookmarks, On-Demand Transcript & Channel Inbox

@@ -26,10 +26,12 @@ public final class AppSettings {
         static let sponsorBlockEnabled = "ytmac.sponsorBlockEnabled"
         static let sponsorBlockCategories = "ytmac.sponsorBlockCategories"
         static let deArrowEnabled = "ytmac.deArrowEnabled"
+        static let deArrowThumbnailsEnabled = "ytmac.deArrowThumbnailsEnabled"
         static let singleViewAutoPauseEnabled = "ytmac.singleViewAutoPauseEnabled"
         static let contentFilterConfig = "ytmac.contentFilterConfig"
         static let videoBookmarks = "ytmac.videoBookmarks"
         static let globalHotkeysEnabled = "ytmac.globalHotkeysEnabled"
+        static let globalHotKeyBindings = "ytmac.globalHotKeyBindings"
         static let notchMediaHUDEnabled = "ytmac.notchMediaHUDEnabled"
         static let openExternalLinksInBrowser = "ytmac.openExternalLinksInBrowser"
         static let alwaysShowTabBar = "ytmac.alwaysShowTabBar"
@@ -62,6 +64,8 @@ public final class AppSettings {
         static let enabledStreamingServiceIDs = "ytmac.enabledStreamingServiceIDs"
         static let signedInStreamingServiceIDs = "ytmac.signedInStreamingServiceIDs"
         static let miniPlayerOpacity = "ytmac.miniPlayerOpacity"
+        static let miniPlayerPeekAwayEnabled = "ytmac.miniPlayerPeekAwayEnabled"
+        static let miniPlayerNightDimmerLevel = "ytmac.miniPlayerNightDimmerLevel"
         static let agentControlEnabled = "ytmac.agentControlEnabled"
         static let agentPermissionLevel = "ytmac.agentPermissionLevel"
         static let agentShowHUDToasts = "ytmac.agentShowHUDToasts"
@@ -108,6 +112,9 @@ public final class AppSettings {
     var onDeArrowSettingDidChange: ((Bool) -> Void)?
 
     @ObservationIgnored
+    var onDeArrowThumbnailsSettingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
     var onGlobalHotkeysSettingDidChange: ((Bool) -> Void)?
 
     @ObservationIgnored
@@ -121,6 +128,12 @@ public final class AppSettings {
 
     @ObservationIgnored
     var onMiniPlayerOpacityDidChange: ((Double) -> Void)?
+
+    @ObservationIgnored
+    var onMiniPlayerPeekAwaySettingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
+    var onMiniPlayerNightDimmerSettingDidChange: ((Double) -> Void)?
 
     @ObservationIgnored
     var onAgentSettingsDidChange: (() -> Void)?
@@ -300,6 +313,14 @@ public final class AppSettings {
         }
     }
 
+    public var deArrowThumbnailsEnabled: Bool {
+        didSet {
+            guard deArrowThumbnailsEnabled != oldValue else { return }
+            defaults.set(deArrowThumbnailsEnabled, forKey: Keys.deArrowThumbnailsEnabled)
+            onDeArrowThumbnailsSettingDidChange?(deArrowThumbnailsEnabled)
+        }
+    }
+
     public var singleViewAutoPauseEnabled: Bool {
         didSet {
             guard singleViewAutoPauseEnabled != oldValue else { return }
@@ -326,6 +347,19 @@ public final class AppSettings {
         didSet {
             guard globalHotkeysEnabled != oldValue else { return }
             defaults.set(globalHotkeysEnabled, forKey: Keys.globalHotkeysEnabled)
+            onGlobalHotkeysSettingDidChange?(globalHotkeysEnabled)
+        }
+    }
+
+    public var globalHotKeyBindings: [String: GlobalHotKeyBinding] {
+        didSet {
+            let normalized = Self.sanitizedGlobalHotKeyBindings(globalHotKeyBindings)
+            if globalHotKeyBindings != normalized {
+                globalHotKeyBindings = normalized
+                return
+            }
+            guard globalHotKeyBindings != oldValue else { return }
+            saveGlobalHotKeyBindings()
             onGlobalHotkeysSettingDidChange?(globalHotkeysEnabled)
         }
     }
@@ -593,6 +627,27 @@ public final class AppSettings {
         }
     }
 
+    public var miniPlayerPeekAwayEnabled: Bool {
+        didSet {
+            guard miniPlayerPeekAwayEnabled != oldValue else { return }
+            defaults.set(miniPlayerPeekAwayEnabled, forKey: Keys.miniPlayerPeekAwayEnabled)
+            onMiniPlayerPeekAwaySettingDidChange?(miniPlayerPeekAwayEnabled)
+        }
+    }
+
+    public var miniPlayerNightDimmerLevel: Double {
+        didSet {
+            let clamped = min(max(miniPlayerNightDimmerLevel.isFinite ? miniPlayerNightDimmerLevel : 0.0, 0.0), 0.40)
+            if abs(miniPlayerNightDimmerLevel - clamped) > 0.0001 {
+                miniPlayerNightDimmerLevel = clamped
+                return
+            }
+            guard abs(miniPlayerNightDimmerLevel - oldValue) > 0.0001 else { return }
+            defaults.set(miniPlayerNightDimmerLevel, forKey: Keys.miniPlayerNightDimmerLevel)
+            onMiniPlayerNightDimmerSettingDidChange?(miniPlayerNightDimmerLevel)
+        }
+    }
+
     public var livePulseEnabled: Bool {
         didSet {
             guard livePulseEnabled != oldValue else { return }
@@ -855,6 +910,7 @@ public final class AppSettings {
             self.sponsorBlockCategories = SponsorSegmentCategory.defaultCategorySet
         }
         self.deArrowEnabled = defaults.object(forKey: Keys.deArrowEnabled) as? Bool ?? false
+        self.deArrowThumbnailsEnabled = defaults.object(forKey: Keys.deArrowThumbnailsEnabled) as? Bool ?? false
         self.singleViewAutoPauseEnabled = defaults.object(forKey: Keys.singleViewAutoPauseEnabled) as? Bool ?? false
         if let filterData = defaults.data(forKey: Keys.contentFilterConfig),
            let decodedFilter = try? JSONDecoder().decode(ContentFilterConfig.self, from: filterData) {
@@ -869,6 +925,12 @@ public final class AppSettings {
             self.videoBookmarks = []
         }
         self.globalHotkeysEnabled = defaults.object(forKey: Keys.globalHotkeysEnabled) as? Bool ?? false
+        if let bindingsData = defaults.data(forKey: Keys.globalHotKeyBindings),
+           let decodedBindings = try? JSONDecoder().decode([String: GlobalHotKeyBinding].self, from: bindingsData) {
+            self.globalHotKeyBindings = Self.sanitizedGlobalHotKeyBindings(decodedBindings)
+        } else {
+            self.globalHotKeyBindings = [:]
+        }
         self.notchMediaHUDEnabled = defaults.object(forKey: Keys.notchMediaHUDEnabled) as? Bool ?? false
         self.openExternalLinksInBrowser = defaults.object(forKey: Keys.openExternalLinksInBrowser) as? Bool ?? true
         self.alwaysShowTabBar = defaults.object(forKey: Keys.alwaysShowTabBar) as? Bool ?? false
@@ -916,6 +978,13 @@ public final class AppSettings {
             self.miniPlayerOpacity = min(max(savedOpacity, 0.40), 1.0)
         } else {
             self.miniPlayerOpacity = 1.0
+        }
+        self.miniPlayerPeekAwayEnabled = defaults.object(forKey: Keys.miniPlayerPeekAwayEnabled) as? Bool ?? false
+        if let savedDimmer = defaults.object(forKey: Keys.miniPlayerNightDimmerLevel) as? Double,
+           savedDimmer.isFinite {
+            self.miniPlayerNightDimmerLevel = min(max(savedDimmer, 0.0), 0.40)
+        } else {
+            self.miniPlayerNightDimmerLevel = 0.0
         }
 
         if let rawCeiling = defaults.string(forKey: Keys.multiviewQualityCeiling),
@@ -1133,10 +1202,79 @@ public final class AppSettings {
         )
     }
 
+    public func effectiveGlobalHotKeyBinding(for action: GlobalHotKeyAction) -> GlobalHotKeyBinding {
+        if let custom = globalHotKeyBindings[action.rawValue], custom.isValid {
+            return custom
+        }
+        return action.defaultBinding
+    }
+
+    public func isCustomGlobalHotKeyBinding(_ action: GlobalHotKeyAction) -> Bool {
+        guard let custom = globalHotKeyBindings[action.rawValue], custom.isValid else {
+            return false
+        }
+        return custom != action.defaultBinding
+    }
+
+    public func globalHotKeyConflict(
+        for binding: GlobalHotKeyBinding,
+        excluding action: GlobalHotKeyAction
+    ) -> GlobalHotKeyAction? {
+        guard binding.isValid else { return nil }
+        for candidate in GlobalHotKeyAction.allCases where candidate != action {
+            if effectiveGlobalHotKeyBinding(for: candidate) == binding {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    public func setGlobalHotKeyBinding(_ binding: GlobalHotKeyBinding?, for action: GlobalHotKeyAction) {
+        guard let binding else {
+            globalHotKeyBindings.removeValue(forKey: action.rawValue)
+            return
+        }
+        guard binding.isValid else { return }
+        if binding == action.defaultBinding {
+            globalHotKeyBindings.removeValue(forKey: action.rawValue)
+        } else {
+            globalHotKeyBindings[action.rawValue] = binding
+        }
+    }
+
+    public func resetAllGlobalHotKeyBindings() {
+        globalHotKeyBindings = [:]
+    }
+
+    private static func sanitizedGlobalHotKeyBindings(
+        _ raw: [String: GlobalHotKeyBinding]
+    ) -> [String: GlobalHotKeyBinding] {
+        var result: [String: GlobalHotKeyBinding] = [:]
+        for (key, binding) in raw {
+            guard let action = GlobalHotKeyAction(rawValue: key),
+                  binding.isValid,
+                  binding != action.defaultBinding else {
+                continue
+            }
+            result[key] = binding
+        }
+        return result
+    }
+
     public func clearLocalHistory() {
         continueWatching = []
         watchedChannels = []
         savedMultiviewPresets = []
+    }
+
+    private func saveGlobalHotKeyBindings() {
+        if globalHotKeyBindings.isEmpty {
+            if defaults.object(forKey: Keys.globalHotKeyBindings) != nil {
+                defaults.removeObject(forKey: Keys.globalHotKeyBindings)
+            }
+        } else if let data = try? JSONEncoder().encode(globalHotKeyBindings) {
+            defaults.set(data, forKey: Keys.globalHotKeyBindings)
+        }
     }
 
     private func saveMultiviewPresets() {

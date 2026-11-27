@@ -6,6 +6,26 @@
     <description>Most recent releases of GlassGrid You for macOS.</description>
     <language>en</language>
     <item>
+      <title>Version 1.4.1</title>
+      <pubDate>Fri, 27 Nov 2026 23:02:29 +0000</pubDate>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.4.1</h2>
+        <ul>
+          <li><strong>Mini-Player Peek-Away Auto-Fade &amp; FairPlay Night Dimmer:</strong> Opt into cursor Peek-Away auto-fade (<code>0.15</code> opacity click-through when hovering the video body; drag bar &amp; <code>⌥</code> keep controls solid) plus a <code>0%&ndash;40%</code> Night Dimmer scrim that safely skips FairPlay DRM streams.</li>
+          <li><strong>Customizable Carbon Global Hotkeys + Multiview Audio 1&ndash;4:</strong> Click-to-record custom keybindings in <strong>Settings &rarr; Shortcuts</strong> (with <code>Esc</code> cancel, <code>Delete</code> reset, duplicate detection, and <em>Reset Defaults</em>), adds <strong>Multiview Audio 1&ndash;4</strong> (<code>⌃⌥1</code>&ndash;<code>⌃⌥4</code>), and moves Global Play/Pause to <code>⌃⌥P</code> so in-app <code>⌘⌥P</code> (Always on Top) never overlaps.</li>
+          <li><strong>DeArrow Thumbnails, Preset JSON Export/Import &amp; Raycast Store Extension:</strong> Opt into DeArrow community timestamp thumbnails alongside clean titles, export/import Multiview Preset <code>.json</code> backups, and use the full TypeScript Raycast extension under <code>extras/raycast-extension/</code>.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://updates.glassgridyou.com/GlassGrid-You-1.4.1.dmg"
+        sparkle:edSignature="cLmFkzg6YgjpKzHYTMhq5PL6KGGp16zFEUazbBOVxY9yTFdBppNsp/Jp0YUV+XIYpvThCR7giRkOKXXNByUuCg=="
+        length="10607160"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.4.0</title>
       <pubDate>Fri, 27 Nov 2026 20:39:47 +0000</pubDate>
       <sparkle:version>8</sparkle:version>

@@ -111,7 +111,9 @@ public final class AppCoordinator {
         self.floatingMiniPlayer = FloatingMiniPlayerController(
             initialSavedFrame: settings.savedMiniPlayerFrame,
             initialSavedGridFrame: settings.savedMiniPlayerGridFrame,
-            initialOpacity: settings.miniPlayerOpacity
+            initialOpacity: settings.miniPlayerOpacity,
+            initialPeekAwayEnabled: settings.miniPlayerPeekAwayEnabled,
+            initialNightDimmerLevel: settings.miniPlayerNightDimmerLevel
         )
         _ = self.agentBridge
 
@@ -700,6 +702,12 @@ public final class AppCoordinator {
                 controller.handleDeArrowSettingChanged(enabled: enabled)
             }
         }
+        settings.onDeArrowThumbnailsSettingDidChange = { [weak self] enabled in
+            guard let self else { return }
+            for controller in self.openWindows {
+                controller.handleDeArrowThumbnailsSettingChanged(enabled: enabled)
+            }
+        }
         settings.onGlobalHotkeysSettingDidChange = { [weak self] enabled in
             self?.updateGlobalHotKeys(enabled: enabled)
         }
@@ -717,6 +725,12 @@ public final class AppCoordinator {
         }
         settings.onMiniPlayerOpacityDidChange = { [weak self] opacity in
             self?.floatingMiniPlayer.updateOpacity(opacity)
+        }
+        settings.onMiniPlayerPeekAwaySettingDidChange = { [weak self] enabled in
+            self?.floatingMiniPlayer.setPeekAwayEnabled(enabled)
+        }
+        settings.onMiniPlayerNightDimmerSettingDidChange = { [weak self] level in
+            self?.floatingMiniPlayer.setNightDimmerLevel(level)
         }
         settings.onAgentSettingsDidChange = { [weak self] in
             self?.agentBridge.reconcileServerState()
@@ -750,6 +764,12 @@ public final class AppCoordinator {
         floatingMiniPlayer.onOpacityChanged = { [weak self] opacity in
             self?.settings.miniPlayerOpacity = opacity
         }
+        floatingMiniPlayer.onPeekAwayChanged = { [weak self] enabled in
+            self?.settings.miniPlayerPeekAwayEnabled = enabled
+        }
+        floatingMiniPlayer.onNightDimmerLevelChanged = { [weak self] level in
+            self?.settings.miniPlayerNightDimmerLevel = level
+        }
         floatingMiniPlayer.onWindowClosedExternally = { [weak self] in
             guard let self,
                   let ownerID = self.floatingMiniPlayerOwnerWindowID,
@@ -778,7 +798,12 @@ public final class AppCoordinator {
     }
 
     private func updateGlobalHotKeys(enabled: Bool) {
-        globalHotKeyManager.configure(enabled: enabled) { [weak self] action in
+        let bindings = Dictionary(
+            uniqueKeysWithValues: GlobalHotKeyAction.allCases.map {
+                ($0, settings.effectiveGlobalHotKeyBinding(for: $0))
+            }
+        )
+        globalHotKeyManager.configure(enabled: enabled, bindings: bindings) { [weak self] action in
             self?.handleGlobalHotKey(action)
         }
     }
@@ -798,6 +823,14 @@ public final class AppCoordinator {
             _ = (nowPlayingController ?? commandTarget)?.addCurrentTimestampBookmark()
         case .toggleMute:
             (nowPlayingController ?? commandTarget)?.toggleMute()
+        case .multiviewAudio1:
+            (nowPlayingController ?? commandTarget)?.focusMultiviewAudio(slot: 1)
+        case .multiviewAudio2:
+            (nowPlayingController ?? commandTarget)?.focusMultiviewAudio(slot: 2)
+        case .multiviewAudio3:
+            (nowPlayingController ?? commandTarget)?.focusMultiviewAudio(slot: 3)
+        case .multiviewAudio4:
+            (nowPlayingController ?? commandTarget)?.focusMultiviewAudio(slot: 4)
         }
     }
 

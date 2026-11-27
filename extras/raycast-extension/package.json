@@ -1,0 +1,112 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "glassgrid-you",
+  "title": "GlassGrid You",
+  "description": "Control GlassGrid You playback, Multiview streams, Floating Mini-Player, Ghost Mode, bookmarks, transcripts, and streaming services directly from Raycast.",
+  "icon": "command-icon.png",
+  "author": "zacharyzell",
+  "categories": [
+    "Media",
+    "Productivity"
+  ],
+  "license": "MIT",
+  "platforms": [
+    "macOS"
+  ],
+  "commands": [
+    {
+      "name": "now-playing",
+      "title": "Now Playing",
+      "description": "Inspect the active GlassGrid You video, timeline, chapters, and quick playback actions.",
+      "mode": "view"
+    },
+    {
+      "name": "search-youtube",
+      "title": "Search YouTube",
+      "description": "Search YouTube in a new GlassGrid You tab.",
+      "mode": "no-view",
+      "arguments": [
+        {
+          "name": "query",
+          "type": "text",
+          "placeholder": "Search query",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "toggle-play-pause",
+      "title": "Toggle Play / Pause",
+      "description": "Toggle play or pause on the active GlassGrid You video.",
+      "mode": "no-view"
+    },
+    {
+      "name": "toggle-mini-player",
+      "title": "Toggle Floating Mini-Player",
+      "description": "Toggle the always-on-top Floating Mini-Player or Floating Multiview Grid.",
+      "mode": "no-view"
+    },
+    {
+      "name": "toggle-ghost-mode",
+      "title": "Toggle Ghost Mode",
+      "description": "Toggle click-through Ghost Mode on the Floating Mini-Player (hold Option to peek).",
+      "mode": "no-view"
+    },
+    {
+      "name": "sync-all-streams",
+      "title": "Sync All Multiview Streams",
+      "description": "Sync all active Multiview tiles to live edge or the primary stream.",
+      "mode": "no-view"
+    },
+    {
+      "name": "add-bookmark",
+      "title": "Bookmark Current Timestamp",
+      "description": "Save a timestamped bookmark for the active GlassGrid You video.",
+      "mode": "no-view",
+      "arguments": [
+        {
+          "name": "note",
+          "type": "text",
+          "placeholder": "Optional bookmark note",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "get-transcript",
+      "title": "Get Video Transcript",
+      "description": "Extract and search on-demand captions from the active YouTube watch page.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "query",
+          "type": "text",
+          "placeholder": "Optional filter query",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "open-service",
+      "title": "Open Streaming Service",
+      "description": "Browse and launch any of the 18 built-in streaming services in a tab or Multiview.",
+      "mode": "view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.83.0",
+    "@raycast/utils": "^1.17.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "typescript": "^5.5.4"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "typecheck": "tsc --noEmit"
+  }
+}
