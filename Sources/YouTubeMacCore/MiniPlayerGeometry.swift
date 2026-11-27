@@ -12,6 +12,7 @@ public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
     case compact
     case standard
     case large
+    case extraLarge
 
     public var id: String { rawValue }
 
@@ -20,6 +21,7 @@ public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
         case .compact: return "Compact (360×203)"
         case .standard: return "Standard (480×270)"
         case .large: return "Large (640×360)"
+        case .extraLarge: return "XL (880×495)"
         }
     }
 
@@ -28,6 +30,7 @@ public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
         case .compact: return "Compact"
         case .standard: return "Standard"
         case .large: return "Large"
+        case .extraLarge: return "XL"
         }
     }
 
@@ -36,6 +39,7 @@ public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
         case .compact: return CGSize(width: 360, height: 203)
         case .standard: return CGSize(width: 480, height: 270)
         case .large: return CGSize(width: 640, height: 360)
+        case .extraLarge: return CGSize(width: 880, height: 495)
         }
     }
 
@@ -44,6 +48,26 @@ public enum MiniPlayerSizePreset: String, CaseIterable, Identifiable, Sendable {
             abs(lhs.size.width - size.width) < abs(rhs.size.width - size.width)
         } ?? .standard
     }
+
+    public static func stepSmaller(from currentSize: CGSize, tolerance: CGFloat = 12) -> MiniPlayerSizePreset {
+        let ordered = Self.allCases
+        for candidate in ordered.reversed() {
+            if candidate.size.width < currentSize.width - tolerance {
+                return candidate
+            }
+        }
+        return ordered.first ?? .compact
+    }
+
+    public static func stepLarger(from currentSize: CGSize, tolerance: CGFloat = 12) -> MiniPlayerSizePreset {
+        let ordered = Self.allCases
+        for candidate in ordered {
+            if candidate.size.width > currentSize.width + tolerance {
+                return candidate
+            }
+        }
+        return ordered.last ?? .extraLarge
+    }
 }
 
 /// Curated 16:9 Floating Multiview Grid Mini-Player size presets.
@@ -51,6 +75,7 @@ public enum MiniPlayerGridSizePreset: String, CaseIterable, Identifiable, Sendab
     case compact
     case standard
     case large
+    case extraLarge
 
     public var id: String { rawValue }
 
@@ -59,6 +84,7 @@ public enum MiniPlayerGridSizePreset: String, CaseIterable, Identifiable, Sendab
         case .compact: return "Compact (540×304)"
         case .standard: return "Standard (680×383)"
         case .large: return "Large (880×495)"
+        case .extraLarge: return "XL (1040×585)"
         }
     }
 
@@ -67,6 +93,7 @@ public enum MiniPlayerGridSizePreset: String, CaseIterable, Identifiable, Sendab
         case .compact: return "Compact"
         case .standard: return "Standard"
         case .large: return "Large"
+        case .extraLarge: return "XL"
         }
     }
 
@@ -75,6 +102,7 @@ public enum MiniPlayerGridSizePreset: String, CaseIterable, Identifiable, Sendab
         case .compact: return CGSize(width: 540, height: 304)
         case .standard: return CGSize(width: 680, height: 383)
         case .large: return CGSize(width: 880, height: 495)
+        case .extraLarge: return CGSize(width: 1040, height: 585)
         }
     }
 
@@ -83,6 +111,38 @@ public enum MiniPlayerGridSizePreset: String, CaseIterable, Identifiable, Sendab
             abs(lhs.size.width - size.width) < abs(rhs.size.width - size.width)
         } ?? .standard
     }
+
+    public static func stepSmaller(from currentSize: CGSize, tolerance: CGFloat = 12) -> MiniPlayerGridSizePreset {
+        let ordered = Self.allCases
+        for candidate in ordered.reversed() {
+            if candidate.size.width < currentSize.width - tolerance {
+                return candidate
+            }
+        }
+        return ordered.first ?? .compact
+    }
+
+    public static func stepLarger(from currentSize: CGSize, tolerance: CGFloat = 12) -> MiniPlayerGridSizePreset {
+        let ordered = Self.allCases
+        for candidate in ordered {
+            if candidate.size.width > currentSize.width + tolerance {
+                return candidate
+            }
+        }
+        return ordered.last ?? .extraLarge
+    }
+}
+
+/// Edge or corner handle dragged to resize the Floating Mini-Player panel in screen coordinates.
+public enum MiniPlayerResizeEdge: String, CaseIterable, Sendable {
+    case top
+    case bottom
+    case left
+    case right
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
 }
 
 /// Pure, deterministic AppKit-coordinate geometry helpers for Floating Mini-Player magnetic corner snapping
@@ -135,7 +195,8 @@ public enum MiniPlayerGeometry {
     }
 
     /// Resizes `current` to `preset` while anchoring to the nearest horizontal and vertical screen edges
-    /// (so a bottom-right panel stays anchored at bottom-right) and clamping cleanly within `visibleFrame`.
+    /// (so a bottom-right panel stays anchored at bottom-right) and clamping cleanly within `visibleFrame`
+    /// while preserving a 16:9 aspect ratio on short screens.
     public static func resizedFrame(
         from current: CGRect,
         to preset: MiniPlayerSizePreset,
@@ -144,23 +205,13 @@ public enum MiniPlayerGeometry {
     ) -> CGRect {
         let maxW = max(300, visibleFrame.width - inset * 2)
         let maxH = max(169, visibleFrame.height - inset * 2)
-        let targetW = min(preset.size.width, maxW)
-        let targetH = min((targetW * 9.0 / 16.0).rounded(), maxH)
-
-        let closerToRight = (visibleFrame.maxX - current.maxX) <= (current.minX - visibleFrame.minX)
-        let closerToTop = (visibleFrame.maxY - current.maxY) <= (current.minY - visibleFrame.minY)
-
-        let rawX = closerToRight ? (current.maxX - targetW) : current.minX
-        let rawY = closerToTop ? (current.maxY - targetH) : current.minY
-
-        let minX = visibleFrame.minX + 8
-        let maxX = max(minX, visibleFrame.maxX - targetW - 8)
-        let minY = visibleFrame.minY + 8
-        let maxY = max(minY, visibleFrame.maxY - targetH - 8)
-
-        let clampedX = min(max(rawX, minX), maxX)
-        let clampedY = min(max(rawY, minY), maxY)
-        return CGRect(x: clampedX.rounded(), y: clampedY.rounded(), width: targetW.rounded(), height: targetH.rounded())
+        var targetW = min(preset.size.width, maxW)
+        var targetH = (targetW * 9.0 / 16.0).rounded()
+        if targetH > maxH {
+            targetH = max(169, maxH)
+            targetW = max(300, min(maxW, (targetH * 16.0 / 9.0).rounded()))
+        }
+        return anchoredFrame(from: current, targetSize: CGSize(width: targetW, height: targetH), in: visibleFrame)
     }
 
     /// Resizes `current` to a Floating Multiview Grid `preset` while anchoring to the nearest horizontal
@@ -173,9 +224,150 @@ public enum MiniPlayerGeometry {
     ) -> CGRect {
         let maxW = max(gridMinimumSize.width, visibleFrame.width - inset * 2)
         let maxH = max(gridMinimumSize.height, visibleFrame.height - inset * 2)
-        let targetW = min(preset.size.width, maxW)
-        let targetH = min((targetW * 9.0 / 16.0).rounded(), maxH)
+        var targetW = min(preset.size.width, maxW)
+        var targetH = (targetW * 9.0 / 16.0).rounded()
+        if targetH > maxH {
+            targetH = max(gridMinimumSize.height, maxH)
+            targetW = max(gridMinimumSize.width, min(maxW, (targetH * 16.0 / 9.0).rounded()))
+        }
+        return anchoredFrame(from: current, targetSize: CGSize(width: targetW, height: targetH), in: visibleFrame)
+    }
 
+    /// Computes a smooth live-drag resize frame in AppKit bottom-left screen coordinates while anchoring the
+    /// opposite edge/corner, maintaining optional 16:9 aspect ratio, and clamping inside `visibleFrame`.
+    public static func dragResizedFrame(
+        initialFrame: CGRect,
+        edge: MiniPlayerResizeEdge,
+        delta: CGSize,
+        maintainAspectRatio: Bool,
+        minSize: CGSize,
+        in visibleFrame: CGRect
+    ) -> CGRect {
+        guard visibleFrame.width > 0, visibleFrame.height > 0,
+              initialFrame.width > 0, initialFrame.height > 0,
+              delta.width.isFinite, delta.height.isFinite else {
+            return initialFrame
+        }
+
+        let screenMargin: CGFloat = 8
+        let movesLeft = (edge == .left || edge == .topLeft || edge == .bottomLeft)
+        let movesRight = (edge == .right || edge == .topRight || edge == .bottomRight)
+        let movesBottom = (edge == .bottom || edge == .bottomLeft || edge == .bottomRight)
+        let movesTop = (edge == .top || edge == .topLeft || edge == .topRight)
+
+        let rawW: CGFloat
+        if movesLeft {
+            rawW = initialFrame.width - delta.width
+        } else if movesRight {
+            rawW = initialFrame.width + delta.width
+        } else {
+            rawW = initialFrame.width
+        }
+
+        let rawH: CGFloat
+        if movesBottom {
+            rawH = initialFrame.height - delta.height
+        } else if movesTop {
+            rawH = initialFrame.height + delta.height
+        } else {
+            rawH = initialFrame.height
+        }
+
+        let fullAvailW = max(minSize.width, visibleFrame.width - screenMargin * 2)
+        let fullAvailH = max(minSize.height, visibleFrame.height - screenMargin * 2)
+
+        let availW: CGFloat
+        if movesLeft {
+            availW = min(fullAvailW, max(minSize.width, initialFrame.maxX - (visibleFrame.minX + screenMargin)))
+        } else if movesRight {
+            availW = min(fullAvailW, max(minSize.width, (visibleFrame.maxX - screenMargin) - initialFrame.minX))
+        } else {
+            availW = fullAvailW
+        }
+
+        let availH: CGFloat
+        if movesBottom {
+            availH = min(fullAvailH, max(minSize.height, initialFrame.maxY - (visibleFrame.minY + screenMargin)))
+        } else if movesTop {
+            availH = min(fullAvailH, max(minSize.height, (visibleFrame.maxY - screenMargin) - initialFrame.minY))
+        } else {
+            availH = fullAvailH
+        }
+
+        var targetW: CGFloat
+        var targetH: CGFloat
+
+        if maintainAspectRatio {
+            let verticalOnly = (edge == .top || edge == .bottom)
+            let horizontalOnly = (edge == .left || edge == .right)
+            let verticalDrives = verticalOnly || (!horizontalOnly && abs(delta.height * 16.0 / 9.0) > abs(delta.width))
+
+            if verticalDrives {
+                targetH = min(max(rawH, minSize.height), availH).rounded()
+                targetW = (targetH * 16.0 / 9.0).rounded()
+                if targetW > availW {
+                    targetW = availW.rounded()
+                    targetH = (targetW * 9.0 / 16.0).rounded()
+                }
+                if targetW < minSize.width {
+                    targetW = minSize.width.rounded()
+                    targetH = (targetW * 9.0 / 16.0).rounded()
+                }
+            } else {
+                targetW = min(max(rawW, minSize.width), availW).rounded()
+                targetH = (targetW * 9.0 / 16.0).rounded()
+                if targetH > availH {
+                    targetH = availH.rounded()
+                    targetW = (targetH * 16.0 / 9.0).rounded()
+                }
+                if targetH < minSize.height {
+                    targetH = minSize.height.rounded()
+                    targetW = (targetH * 16.0 / 9.0).rounded()
+                }
+            }
+        } else {
+            targetW = min(max(rawW, minSize.width), availW).rounded()
+            targetH = min(max(rawH, minSize.height), availH).rounded()
+        }
+
+        let rawX: CGFloat
+        if movesLeft {
+            rawX = initialFrame.maxX - targetW
+        } else if movesRight {
+            rawX = initialFrame.minX
+        } else {
+            rawX = initialFrame.midX - (targetW / 2.0)
+        }
+
+        let rawY: CGFloat
+        if movesBottom {
+            rawY = initialFrame.maxY - targetH
+        } else if movesTop {
+            rawY = initialFrame.minY
+        } else {
+            rawY = initialFrame.midY - (targetH / 2.0)
+        }
+
+        let minX = visibleFrame.minX + screenMargin
+        let maxX = max(minX, visibleFrame.maxX - targetW - screenMargin)
+        let minY = visibleFrame.minY + screenMargin
+        let maxY = max(minY, visibleFrame.maxY - targetH - screenMargin)
+
+        return CGRect(
+            x: min(max(rawX, minX), maxX).rounded(),
+            y: min(max(rawY, minY), maxY).rounded(),
+            width: targetW,
+            height: targetH
+        )
+    }
+
+    private static func anchoredFrame(
+        from current: CGRect,
+        targetSize: CGSize,
+        in visibleFrame: CGRect
+    ) -> CGRect {
+        let targetW = targetSize.width.rounded()
+        let targetH = targetSize.height.rounded()
         let closerToRight = (visibleFrame.maxX - current.maxX) <= (current.minX - visibleFrame.minX)
         let closerToTop = (visibleFrame.maxY - current.maxY) <= (current.minY - visibleFrame.minY)
 
@@ -189,6 +381,6 @@ public enum MiniPlayerGeometry {
 
         let clampedX = min(max(rawX, minX), maxX)
         let clampedY = min(max(rawY, minY), maxY)
-        return CGRect(x: clampedX.rounded(), y: clampedY.rounded(), width: targetW.rounded(), height: targetH.rounded())
+        return CGRect(x: clampedX.rounded(), y: clampedY.rounded(), width: targetW, height: targetH)
     }
 }

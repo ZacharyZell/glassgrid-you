@@ -436,6 +436,9 @@ public final class AppController {
         if isMultiviewActive {
             return canPopOutMultiviewGrid
         }
+        if let selected = selectedTab, canPopOut(tab: selected) {
+            return true
+        }
         guard let candidate = activeMediaTab else { return false }
         return canPopOut(tab: candidate)
     }
@@ -2441,8 +2444,9 @@ public final class AppController {
     }
 
     public func canPopOut(tab: BrowserTab) -> Bool {
-        guard tab.mediaStatus.hasVideo else { return false }
         guard !StreamingServiceCatalog.isTransientAuthURL(tab.url) else { return false }
+        let isCompanionWatch = tab.isCompanionTab && CleanBoxRules.classifyRoute(tab.url) == .watch
+        guard tab.mediaStatus.hasVideo || isCompanionWatch else { return false }
         guard YouTubeURLRouter.isWatchURL(tab.url) || tab.isCompanionTab else { return false }
         guard !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen else { return false }
         return true
@@ -2461,6 +2465,9 @@ public final class AppController {
         guard !hasLiveFullscreenTab else { return false }
         if isMultiviewActive {
             return popOutMultiviewToMiniPlayer(reason: reason)
+        }
+        if let selected = selectedTab, canPopOut(tab: selected) {
+            return popOutToMiniPlayer(tab: selected, reason: reason)
         }
         guard let targetTab = activeMediaTab, canPopOut(tab: targetTab) else {
             return false

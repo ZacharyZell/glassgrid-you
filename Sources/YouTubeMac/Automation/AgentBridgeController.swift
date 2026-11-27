@@ -1075,7 +1075,7 @@ public final class AgentBridgeController: AgentCommandExecutor {
         let validatedPreset: String?
         if let rawPreset = args["size_preset"]?.stringValue {
             guard MiniPlayerGridSizePreset(rawValue: rawPreset) != nil || MiniPlayerSizePreset(rawValue: rawPreset) != nil else {
-                return .failure(code: "invalid_arguments", message: "size_preset must be compact, standard, or large.")
+                return .failure(code: "invalid_arguments", message: "size_preset must be compact, standard, large, or extraLarge.")
             }
             validatedPreset = rawPreset
         } else {

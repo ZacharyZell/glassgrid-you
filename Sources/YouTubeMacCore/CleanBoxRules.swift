@@ -12,6 +12,8 @@ public enum CleanBoxStrategy: String, Codable, Hashable, Sendable {
     case companionIframe
     /// In-page overlay SDK modal mounted over a storefront/detail URL (Prime Video, Apple TV+).
     case companionOverlaySDK
+    /// Full-viewport companion watch app (e.g. Disney+) whose Shadow DOM / FairPlay layers stay untouched.
+    case companionPassthrough
 }
 
 /// High-level route classification determining whether Clean-Box is eligible on a given URL.
@@ -254,7 +256,7 @@ public enum CleanBoxRules {
         ),
         CleanBoxServiceProfile(
             serviceID: "disneyplus",
-            strategy: .companionSelector,
+            strategy: .companionPassthrough,
             hosts: ["disneyplus.com"],
             playerSelectors: [
                 "disney-web-player",

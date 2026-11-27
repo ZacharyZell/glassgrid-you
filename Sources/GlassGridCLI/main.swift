@@ -275,6 +275,8 @@ enum GlassGridCLIMain {
             let sub = (args.first ?? "toggle").lowercased()
             if ["compact", "standard", "large"].contains(sub) {
                 mapped = .success(("mini_player_control", ["size_preset": .string(sub)]))
+            } else if sub == "extralarge" || sub == "xl" {
+                mapped = .success(("mini_player_control", ["size_preset": .string("extraLarge")]))
             } else {
                 mapped = .success(("mini_player_control", ["action": .string(sub)]))
             }
@@ -359,7 +361,7 @@ enum GlassGridCLIMain {
           service <id>                             Open streaming service (youtube, yttv, twitch, primevideo, crunchyroll, ...)
           multiview <enter|exit|toggle|layout|audio|solo|add|remove>
           preset <name>                            Launch saved Multiview preset
-          mini-player <enter|exit|toggle|compact|standard|large>  Control floating Mini-Player or grid size
+          mini-player <enter|exit|toggle|compact|standard|large|extraLarge>  Control floating Mini-Player or grid size
           focus-mode [on|off|toggle]               Control Focus Mode
           appearance <system|light|dark|toggle>    Set Day / Night appearance
           sleep-timer <15m|30m|45m|60m|end_of_video|off>

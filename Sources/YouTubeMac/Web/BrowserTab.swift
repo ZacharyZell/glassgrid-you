@@ -817,6 +817,7 @@ public final class BrowserTab: NSObject, Identifiable {
         if mainFrameMediaStatus.hasVideo {
             resolved = mainFrameMediaStatus
         } else if let sub = subframeMediaStatus, sub.hasVideo {
+            let isPassthrough = CleanBoxRules.profile(for: webView.url ?? url)?.strategy == .companionPassthrough
             resolved = MediaStatus(
                 hasVideo: true,
                 isPlaying: sub.isPlaying,
@@ -833,7 +834,7 @@ public final class BrowserTab: NSObject, Identifiable {
                 airPlayAvailable: sub.airPlayAvailable,
                 isAirPlayActive: sub.isAirPlayActive,
                 isCleanBoxActive: mainFrameMediaStatus.isCleanBoxActive,
-                isCleanBoxEligible: mainFrameMediaStatus.isCleanBoxEligible || sub.hasVideo,
+                isCleanBoxEligible: !isPassthrough && (mainFrameMediaStatus.isCleanBoxEligible || sub.hasVideo),
                 streamContext: mainFrameMediaStatus.streamContext
             )
         } else {
@@ -1219,6 +1220,7 @@ extension BrowserTab: WKScriptMessageHandler {
 
             let wasPlaying = mediaStatus.isPlaying
             activeMediaFrameInfo = message.frameInfo
+            let isPassthrough = CleanBoxRules.profile(for: webView.url ?? url)?.strategy == .companionPassthrough
             subframeMediaStatus = MediaStatus(
                 hasVideo: true,
                 isPlaying: body["isPlaying"] as? Bool ?? false,
@@ -1233,7 +1235,8 @@ extension BrowserTab: WKScriptMessageHandler {
                 playbackRate: body["playbackRate"] as? Double ?? 1.0,
                 isHomeFeedEmpty: false,
                 airPlayAvailable: body["airPlayAvailable"] as? Bool ?? false,
-                isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false
+                isAirPlayActive: body["isAirPlayActive"] as? Bool ?? false,
+                isCleanBoxEligible: !isPassthrough
             )
             recomputeMergedMediaStatus()
             if !wasPlaying && mediaStatus.isPlaying {

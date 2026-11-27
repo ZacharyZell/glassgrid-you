@@ -1097,11 +1097,92 @@ final class YouTubeMacCoreTests: XCTestCase {
         XCTAssertEqual(resizedLarge.width, 640)
         XCTAssertEqual(resizedLarge.height, 360)
 
-        // Clamping on tiny screen
+        // Clamping on tiny screen preserves 16:9 ratio
         let tinyScreen = CGRect(x: 0, y: 0, width: 500, height: 320)
-        let clamped = MiniPlayerGeometry.resizedFrame(from: CGRect(x: 20, y: 20, width: 360, height: 203), to: .large, in: tinyScreen)
+        let clamped = MiniPlayerGeometry.resizedFrame(from: CGRect(x: 20, y: 20, width: 360, height: 203), to: .extraLarge, in: tinyScreen)
         XCTAssertLessThanOrEqual(clamped.maxX, tinyScreen.maxX)
         XCTAssertLessThanOrEqual(clamped.maxY, tinyScreen.maxY)
+        XCTAssertEqual(clamped.width / clamped.height, 16.0 / 9.0, accuracy: 0.05)
+
+        // XL preset & tolerance-aware Shrink/Expand stepping
+        XCTAssertEqual(MiniPlayerSizePreset.extraLarge.size, CGSize(width: 880, height: 495))
+        XCTAssertEqual(MiniPlayerSizePreset.extraLarge.shortTitle, "XL")
+        XCTAssertEqual(MiniPlayerSizePreset.stepLarger(from: CGSize(width: 360, height: 203)), .standard)
+        XCTAssertEqual(MiniPlayerSizePreset.stepLarger(from: CGSize(width: 640, height: 360)), .extraLarge)
+        XCTAssertEqual(MiniPlayerSizePreset.stepLarger(from: CGSize(width: 880, height: 495)), .extraLarge)
+        XCTAssertEqual(MiniPlayerSizePreset.stepLarger(from: CGSize(width: 472, height: 266)), .large)
+        XCTAssertEqual(MiniPlayerSizePreset.stepSmaller(from: CGSize(width: 880, height: 495)), .large)
+        XCTAssertEqual(MiniPlayerSizePreset.stepSmaller(from: CGSize(width: 488, height: 275)), .compact)
+        XCTAssertEqual(MiniPlayerSizePreset.stepSmaller(from: CGSize(width: 360, height: 203)), .compact)
+
+        // Live 8-edge / corner drag resizing in Single mode (16:9 aspect-locked, opposite edge anchored, clamped)
+        let start = CGRect(x: 500, y: 200, width: 480, height: 270)
+        let singleMin = CGSize(width: 300, height: 169)
+        let topDrag = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .top, delta: CGSize(width: 0, height: 90),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(topDrag.minY, start.minY, accuracy: 1.0)
+        XCTAssertEqual(topDrag.midX, start.midX, accuracy: 1.0)
+        XCTAssertEqual(topDrag.height, 360, accuracy: 1.0)
+        XCTAssertEqual(topDrag.width, 640, accuracy: 1.0)
+
+        let leftDrag = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .left, delta: CGSize(width: -160, height: 0),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(leftDrag.maxX, start.maxX, accuracy: 1.0)
+        XCTAssertEqual(leftDrag.midY, start.midY, accuracy: 1.0)
+        XCTAssertEqual(leftDrag.width, 640, accuracy: 1.0)
+        XCTAssertEqual(leftDrag.height, 360, accuracy: 1.0)
+
+        let rightShrinkClamp = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .right, delta: CGSize(width: -400, height: 0),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(rightShrinkClamp.minX, start.minX, accuracy: 1.0)
+        XCTAssertEqual(rightShrinkClamp.width, 300, accuracy: 1.0)
+        XCTAssertEqual(rightShrinkClamp.height, 169, accuracy: 1.0)
+
+        let topLeftCorner = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .topLeft, delta: CGSize(width: -160, height: 90),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(topLeftCorner.maxX, start.maxX, accuracy: 1.0)
+        XCTAssertEqual(topLeftCorner.minY, start.minY, accuracy: 1.0)
+        XCTAssertEqual(topLeftCorner.width, 640, accuracy: 1.0)
+
+        let bottomRightExpand = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .bottomRight, delta: CGSize(width: 160, height: -90),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(bottomRightExpand.minX, start.minX, accuracy: 1.0)
+        XCTAssertEqual(bottomRightExpand.maxY, start.maxY, accuracy: 1.0)
+        XCTAssertEqual(bottomRightExpand.width, 640, accuracy: 1.0)
+
+        let bottomLeftExpand = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .bottomLeft, delta: CGSize(width: -160, height: -90),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(bottomLeftExpand.maxX, start.maxX, accuracy: 1.0)
+        XCTAssertEqual(bottomLeftExpand.maxY, start.maxY, accuracy: 1.0)
+        XCTAssertEqual(bottomLeftExpand.width, 640, accuracy: 1.0)
+
+        let topRightCorner = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .topRight, delta: CGSize(width: 160, height: 90),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(topRightCorner.minX, start.minX, accuracy: 1.0)
+        XCTAssertEqual(topRightCorner.minY, start.minY, accuracy: 1.0)
+        XCTAssertEqual(topRightCorner.width, 640, accuracy: 1.0)
+
+        let bottomDrag = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: start, edge: .bottom, delta: CGSize(width: 0, height: -90),
+            maintainAspectRatio: true, minSize: singleMin, in: visible
+        )
+        XCTAssertEqual(bottomDrag.maxY, start.maxY, accuracy: 1.0)
+        XCTAssertEqual(bottomDrag.height, 360, accuracy: 1.0)
+        XCTAssertEqual(bottomDrag.width, 640, accuracy: 1.0)
     }
 
     func testVideoChapterParserStructuredAndDescription() {
@@ -2171,11 +2252,25 @@ final class YouTubeMacCoreTests: XCTestCase {
         }
     }
 
+    func testCleanBoxRulesDisneyPlusPassthrough() {
+        let profile = CleanBoxRules.profile(serviceID: "disneyplus")
+        XCTAssertNotNil(profile)
+        XCTAssertEqual(profile?.strategy, .companionPassthrough)
+        XCTAssertEqual(profile?.hosts.contains("disneyplus.com"), true)
+    }
+
     func testFloatingMultiviewGridGeometryAndPresets() {
         XCTAssertEqual(MiniPlayerGridSizePreset.compact.size, CGSize(width: 540, height: 304))
         XCTAssertEqual(MiniPlayerGridSizePreset.standard.size, CGSize(width: 680, height: 383))
         XCTAssertEqual(MiniPlayerGridSizePreset.large.size, CGSize(width: 880, height: 495))
+        XCTAssertEqual(MiniPlayerGridSizePreset.extraLarge.size, CGSize(width: 1040, height: 585))
+        XCTAssertEqual(MiniPlayerGridSizePreset.extraLarge.shortTitle, "XL")
         XCTAssertEqual(MiniPlayerGeometry.gridMinimumSize, CGSize(width: 440, height: 248))
+
+        XCTAssertEqual(MiniPlayerGridSizePreset.stepLarger(from: CGSize(width: 540, height: 304)), .standard)
+        XCTAssertEqual(MiniPlayerGridSizePreset.stepLarger(from: CGSize(width: 880, height: 495)), .extraLarge)
+        XCTAssertEqual(MiniPlayerGridSizePreset.stepSmaller(from: CGSize(width: 1040, height: 585)), .large)
+        XCTAssertEqual(MiniPlayerGridSizePreset.stepSmaller(from: CGSize(width: 540, height: 304)), .compact)
 
         XCTAssertEqual(MultiviewGridLayout.floatingMiniPlayerPadding, 6)
         XCTAssertEqual(MultiviewGridLayout.floatingMiniPlayerSpacing, 6)
@@ -2185,15 +2280,29 @@ final class YouTubeMacCoreTests: XCTestCase {
         let bottomRightCompact = CGRect(x: 880, y: 45, width: 540, height: 304)
         let grown = MiniPlayerGeometry.resizedGridFrame(
             from: bottomRightCompact,
-            to: .large,
+            to: .extraLarge,
             in: visible,
             inset: 20
         )
-        XCTAssertEqual(grown.size, CGSize(width: 880, height: 495))
+        XCTAssertEqual(grown.size, CGSize(width: 1040, height: 585))
         XCTAssertEqual(grown.maxX, bottomRightCompact.maxX, accuracy: 1.0)
         XCTAssertEqual(grown.minY, bottomRightCompact.minY, accuracy: 1.0)
         XCTAssertGreaterThanOrEqual(grown.minX, visible.minX + 8)
         XCTAssertLessThanOrEqual(grown.maxY, visible.maxY - 8)
+
+        // Free-aspect drag resize in Grid mode clamped to gridMinimumSize
+        let freeGrid = MiniPlayerGeometry.dragResizedFrame(
+            initialFrame: bottomRightCompact,
+            edge: .topLeft,
+            delta: CGSize(width: -120, height: 40),
+            maintainAspectRatio: false,
+            minSize: MiniPlayerGeometry.gridMinimumSize,
+            in: visible
+        )
+        XCTAssertEqual(freeGrid.maxX, bottomRightCompact.maxX, accuracy: 1.0)
+        XCTAssertEqual(freeGrid.minY, bottomRightCompact.minY, accuracy: 1.0)
+        XCTAssertEqual(freeGrid.width, 660, accuracy: 1.0)
+        XCTAssertEqual(freeGrid.height, 344, accuracy: 1.0)
     }
 
     func testCleanBoxRulesCrunchyrollDualPathAndAllowlist() {

@@ -340,11 +340,26 @@ struct VisualEffectBackground: NSViewRepresentable {
 final class WindowDragNSView: NSView {
     var onDoubleClick: (() -> Void)?
     var onDragEnded: (() -> Void)?
+    var edgeResizeInset: CGFloat = 0
 
     override var mouseDownCanMoveWindow: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if edgeResizeInset > 0, let window {
+            let winPoint = superview?.convert(point, to: nil) ?? convert(point, to: nil)
+            let size = window.frame.size
+            let nearHorizontalEdge = winPoint.x <= edgeResizeInset || winPoint.x >= (size.width - edgeResizeInset)
+            let nearTopEdge = winPoint.y >= (size.height - edgeResizeInset)
+            let nearBottomEdge = winPoint.y <= edgeResizeInset
+            if nearHorizontalEdge || nearTopEdge || nearBottomEdge {
+                return nil
+            }
+        }
+        return super.hitTest(point)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -362,17 +377,20 @@ final class WindowDragNSView: NSView {
 }
 
 struct WindowDragArea: NSViewRepresentable {
+    var edgeResizeInset: CGFloat = 0
     var onDoubleClick: (() -> Void)? = nil
     var onDragEnded: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> WindowDragNSView {
         let view = WindowDragNSView(frame: .zero)
+        view.edgeResizeInset = edgeResizeInset
         view.onDoubleClick = onDoubleClick
         view.onDragEnded = onDragEnded
         return view
     }
 
     func updateNSView(_ nsView: WindowDragNSView, context: Context) {
+        nsView.edgeResizeInset = edgeResizeInset
         nsView.onDoubleClick = onDoubleClick
         nsView.onDragEnded = onDragEnded
     }

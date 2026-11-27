@@ -348,12 +348,12 @@ public enum AgentToolCatalog {
         ),
         AgentToolDefinition(
             name: "mini_player_control",
-            description: "Enter, exit, toggle, adjust opacity (0.4..1.0), or set grid/single size preset (compact, standard, large) for the Floating Mini-Player or Floating Multiview Grid.",
+            description: "Enter, exit, toggle, adjust opacity (0.4..1.0), or set grid/single size preset (compact, standard, large, extraLarge) for the Floating Mini-Player or Floating Multiview Grid.",
             requiredTier: .playbackAndNavigation,
             inputSchema: schema(properties: [
                 "action": enumProp(["enter", "exit", "toggle"], "Mini-Player state action."),
                 "opacity": numProp("Optional Mini-Player opacity (0.40 to 1.0).", min: 0.4, max: 1.0),
-                "size_preset": enumProp(["compact", "standard", "large"], "Optional floating Mini-Player or Multiview Grid size preset."),
+                "size_preset": enumProp(["compact", "standard", "large", "extraLarge"], "Optional floating Mini-Player or Multiview Grid size preset."),
                 "window_id": strProp("Optional target window UUID string.")
             ])
         ),

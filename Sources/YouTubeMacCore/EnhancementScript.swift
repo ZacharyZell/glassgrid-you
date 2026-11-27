@@ -613,6 +613,7 @@ public enum EnhancementScript {
 
                 const isCompactSurface = Boolean(cfg && (cfg.miniPlayerActive || cfg.multiviewTileActive));
                 const profile = CLEANBOX_PLAYER_SELECTORS[route.serviceID] || null;
+                if (profile && profile.strategy === 'companionPassthrough') return none;
                 const isCatalog = route.serviceID !== '_generic';
                 const wasCleanBox = document.documentElement.dataset.ytmacCleanBox === 'true';
 
@@ -762,6 +763,8 @@ public enum EnhancementScript {
                 if (!isWebCompanionHost() || isCompanionAuthPage()) return;
                 const route = isCleanBoxWatchPage();
                 if (!route || route.type === 'browse') return;
+                const profile = CLEANBOX_PLAYER_SELECTORS[route.serviceID] || null;
+                if (profile && profile.strategy === 'companionPassthrough') return;
                 const cfg = window.__ytmacConfig || initialConfig;
                 if (!cfg || !cfg.cleanBoxStreamingPlayers || cfg.cleanBoxBypassed) return;
                 clearCleanBoxSettleTimers();

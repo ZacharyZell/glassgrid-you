@@ -494,7 +494,7 @@ final class AgentControlTests: XCTestCase {
         XCTAssertNotNil(miniTool)
         let sizePresetSchema = miniTool?.inputSchema.objectValue?["properties"]?.objectValue?["size_preset"]?.objectValue
         let enumValues = sizePresetSchema?["enum"]?.arrayValue?.compactMap { $0.stringValue } ?? []
-        XCTAssertEqual(enumValues, ["compact", "standard", "large"])
+        XCTAssertEqual(enumValues, ["compact", "standard", "large", "extraLarge"])
 
         let prefsTool = AgentToolCatalog.tool(named: "set_distraction_free_preferences")
         XCTAssertNotNil(prefsTool)

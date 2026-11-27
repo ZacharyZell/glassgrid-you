@@ -446,18 +446,22 @@ final class CleanBoxDOMFixtureTests: XCTestCase {
             const r = p.getBoundingClientRect();
             return {
                 init: Boolean(window.__ytmacInitialized),
-                active: document.documentElement.dataset.ytmacCleanBox,
-                attr: p.getAttribute('data-ytmac-cb'),
+                active: document.documentElement.dataset.ytmacCleanBox ?? '',
+                hasAttr: p.hasAttribute('data-ytmac-cb'),
+                styleEl: document.getElementById('ytmac-cleanbox-style') !== null,
+                mainVideo: Boolean(window.__ytmacGetMainVideo && window.__ytmacGetMainVideo()),
                 w: Math.round(r.width),
                 h: Math.round(r.height)
             };
         })()
         """) as? [String: Any]
         XCTAssertEqual(spaRecovered?["init"] as? Bool, true)
-        XCTAssertEqual(spaRecovered?["active"] as? String, "true")
-        XCTAssertEqual(spaRecovered?["attr"] as? String, "player")
-        XCTAssertEqual((spaRecovered?["w"] as? NSNumber)?.intValue, 640)
-        XCTAssertEqual((spaRecovered?["h"] as? NSNumber)?.intValue, 360)
+        XCTAssertEqual(spaRecovered?["active"] as? String, "false")
+        XCTAssertEqual(spaRecovered?["hasAttr"] as? Bool, false)
+        XCTAssertEqual(spaRecovered?["styleEl"] as? Bool, false)
+        XCTAssertEqual(spaRecovered?["mainVideo"] as? Bool, true)
+        XCTAssertEqual((spaRecovered?["w"] as? NSNumber)?.intValue, 400)
+        XCTAssertEqual((spaRecovered?["h"] as? NSNumber)?.intValue, 200)
 
         // 3. HBO Max auth page must bail out, and play.hbomax.com/video/watch/123 must fill 640x360
         try await host.loadFixture(
