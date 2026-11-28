@@ -58,7 +58,7 @@ Switch apps or press `⌘⇧M` while watching Single Video or Multiview and your
   <img src="docs/screenshots/mini-player-grid-night.png" alt="GlassGrid You floating 2x2 Multiview Grid Mini-Player in Night Mode" width="85%" />
 </p>
 
-Watching a single video? The single-stream 16:9 Mini-Player supports YouTube, YouTube TV, Twitch, ESPN, Peacock, and open Shadow DOM HTML5 players with **40%–100% transparency**, **0.5×–2.0× speed controls**, **AirPlay casting**, **Compact / Standard / Large** size presets, an ultra-thin `2pt` progress hairline, `Esc` quick dock, and optional cross-Spaces visibility.
+Watching a single video? The single-stream 16:9 Mini-Player supports YouTube, YouTube TV, Twitch, ESPN, Peacock, and open Shadow DOM HTML5 players with **40%–100% transparency**, **0.25×–3.0× preset speed controls** (up to `4.0×` engine support), **A-B Segment Loop**, **Frame Step (`−1f` / `+1f`)**, FairPlay-safe **21:9 Aspect Fill**, **SponsorBlock (`poi_highlight`) & loop markers on the hairline**, **AirPlay casting**, **Compact / Standard / Large** size presets, `Esc` quick dock, and optional cross-Spaces visibility.
 
 <p align="center">
   <img src="docs/screenshots/mini-player-night.png" alt="GlassGrid You floating 16:9 Mini-Player with progress hairline" width="70%" />
@@ -109,7 +109,8 @@ Follow live NFL, NBA, MLB, and NHL scoreboards (plus opt-in **NCAAF Top 25, NCAA
 - **Liquid Glass Chrome & Inter Typography**: Uses macOS 26/27 `.glassEffect` & `GlassEffectContainer` when compiled with Swift 6.2+ SDKs (gracefully falling back to `.regularMaterial` on macOS 14–15), paired with bundled **Inter v4.1** variable typography (`>= 10pt` integer ramp, `wght` / `opsz` axes, `cv05` & tabular numerals), WCAG 2.1 AA adaptive Day/Night tokens (`>= 4.5:1` across all 18 service badges), `>= 24pt` interactive hit targets, concentric corner radii, and automatic **Reduce Transparency** / **Increase Contrast** adaptation.
 - **Seasonal Holiday Color Themes & Ambient Effects**: Offline Gregorian & Computus calendar detection across **9 WCAG 2.1 AA Day & Night palettes** (Thanksgiving Harvest, Winter Holidays, New Year's, Valentine's Day, St. Patrick's Day, Spring & Easter, Independence Day, Halloween, and Classic Crimson) with zero-polling `00:00:05` midnight rollover, manual pinning in **View → Holiday Theme** / **Settings → General** / `⌘K`, and zero-CPU WindowServer Core Animation `CAEmitterLayer` chrome-only effects (`Off / Subtle / Festive`) that pause automatically in Fullscreen, Focus Mode, and **Reduce Motion**.
 - **Multi-Window Support (`⌘N`)**: Open independent windows across multiple displays (`Open in New Window`, `Launch Preset in New Window`) with per-window Multiview, shared settings & Day/Night theme sync, dynamic window titles, and a single conflict-free Floating Mini-Player.
-- **Custom Sidebar Channel Folders**: Group pinned channels, playlists, and Companion sites into collapsible sidebar folders with 1-click **Open in Multiview**, non-destructive folder deletion, and `⌘K` Command Palette search.
+- **Custom Sidebar Channel Folders & Folder RSS Decks**: Group pinned channels, playlists, and Companion sites into collapsible sidebar folders with 1-click **Open in Multiview**, dedicated chronological **Folder RSS Decks** with *Hide Watched*, non-destructive folder deletion, and `⌘K` Command Palette search.
+- **Persistent 100-Item Up Next Watch Queue**: Queue YouTube and streaming URLs from the Channel Inbox, Sidebar, Menu Bar, `⌘K`, CLI, or MCP (`manage_watch_queue`) with automatic next-video advancement (cleanly paused when Sleep Timer *End of Current Video* or Multiview is active).
 - **Sparkle 2 Silent Auto-Updates**: Signed releases include embedded Sparkle 2 EdDSA-verified auto-updates (with zero-dependency GitHub Releases fallback on source builds and forks).
 - **Multi-Tab Architecture & Session Restoration**: Keeps background tab audio alive, supports drag-to-reorder, middle-click close, manual **Sleep Tab** (`Unload Page`), reopen closed tab (`⌘⇧T`), and lazy session restoration across launches.
 - **Control Center Menu Bar**: Compact now-playing popover with 16:9 thumbnail, live interactive timeline scrubber, transport controls, chapter jump menu, Multiview audio switcher, and Sleep Timer.
@@ -180,6 +181,7 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 | `⌘⌥T` | Toggle Theater Mode |
 | `⌘⇧B` | Toggle Clean-Box / Full Page |
 | `⌘⌥]` / `⌘⌥[` / `⌘⌥0` | Playback Speed +0.1× / −0.1× / Reset 1× |
+| *Playback Menu* | A-B Loop (`Set A` / `Set B` / `Toggle` / `Clear`), Frame Step (`−1f` / `+1f`), `21:9` Aspect Fill & `Jump to Highlight` |
 
 ### Multiview
 | Shortcut | Action |
@@ -196,7 +198,7 @@ Every shortcut below matches the native macOS menu bar in [`YouTubeMacApp.swift`
 | `⌘⌥S` | Toggle Sidebar |
 | `⌘⌥\` | Toggle Compact Single-Row Header |
 | `⌘⌥B` | Toggle Live Pulse Ticker Bar |
-| `⌘⌥I` | Toggle Live Pulse Companion Drawer |
+| `⌘⌥I` | Toggle Companion Drawer (Notes & Transcript / Live Pulse / Chat) |
 | `⌘⇧L` | Switch Day / Night Mode |
 | `⌘=` / `⌘-` / `⌘0` | Zoom In / Zoom Out / Actual Size |
 
