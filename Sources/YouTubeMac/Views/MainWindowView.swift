@@ -446,6 +446,10 @@ struct MainWindowView: View {
 
                     // Trailing Liquid Glass control capsules
                     HStack(spacing: AppSpacing.sm) {
+                        if !isCompact && !foldSecondaryControls && !controller.isMultiviewActive && !controller.anyTabInFullscreen {
+                            playerStatusPills
+                        }
+
                         cleanBoxTogglePill
 
                         focusModePill
@@ -544,21 +548,29 @@ struct MainWindowView: View {
                                 }
                             }
 
-                            if controller.settings.livePulseEnabled {
-                                AppleIconButton(
-                                    systemImage: controller.isLivePulseDrawerVisible ? "sportscourt.fill" : "sportscourt",
-                                    isActive: controller.isLivePulseDrawerVisible || controller.isLivePulseTickerRendered,
-                                    isDisabled: controller.hasLiveFullscreenTab,
-                                    helpText: "Live Pulse Drawer (⌘⌥I) · Right-Click for Ticker"
-                                ) {
+                            AppleIconButton(
+                                systemImage: controller.settings.livePulseEnabled
+                                    ? (controller.isLivePulseDrawerVisible ? "sportscourt.fill" : "sportscourt")
+                                    : (controller.isLivePulseDrawerVisible ? "sidebar.right" : "note.text"),
+                                isActive: controller.isLivePulseDrawerVisible || (controller.settings.livePulseEnabled && controller.isLivePulseTickerRendered),
+                                isDisabled: controller.hasLiveFullscreenTab,
+                                helpText: controller.settings.livePulseEnabled
+                                    ? "Live Companion Drawer (⌘⌥I) · Right-Click for Ticker"
+                                    : "Notes, Transcript & Companion Drawer (⌘⌥I)"
+                            ) {
+                                controller.toggleLivePulseDrawer()
+                            }
+                            .contextMenu {
+                                Button(controller.isLivePulseDrawerVisible ? "Hide Companion Drawer" : "Show Companion Drawer") {
                                     controller.toggleLivePulseDrawer()
                                 }
-                                .contextMenu {
+                                Button("Open Notes & Transcript") {
+                                    controller.openCompanionDrawerNotes()
+                                }
+                                if controller.settings.livePulseEnabled {
+                                    Divider()
                                     Button(controller.isLivePulseTickerRendered ? "Hide Live Pulse Ticker" : "Show Live Pulse Ticker") {
                                         controller.toggleLivePulseTicker()
-                                    }
-                                    Button(controller.isLivePulseDrawerVisible ? "Hide Live Companion Drawer" : "Show Live Companion Drawer") {
-                                        controller.toggleLivePulseDrawer()
                                     }
                                 }
                             }
@@ -958,6 +970,106 @@ struct MainWindowView: View {
             Image(systemName: tab.isCompanionTab ? "globe" : "play.rectangle")
                 .font(AppIconFont.xs(weight: .medium))
                 .foregroundStyle(AppleTheme.textSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private var playerStatusPills: some View {
+        let abLoop = controller.activeABLoop
+        let highlight = controller.currentHighlightSegment
+        let rydStats = controller.settings.rydEnabled ? controller.currentRYDStats : nil
+        let hasAnyStatus = abLoop.startSeconds != nil || abLoop.isEnabled || highlight != nil || rydStats != nil
+
+        if hasAnyStatus {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AppSpacing.xs) {
+                    if controller.settings.rydEnabled, let stats = rydStats {
+                        HStack(spacing: 3) {
+                            Image(systemName: "hand.thumbsup.fill")
+                                .font(AppIconFont.xs(weight: .semibold))
+                            if let pct = stats.likePercentage {
+                                Text("\(pct)%")
+                                    .font(AppFont.micro(weight: .semibold, tabular: true))
+                            }
+                            Text("· \(stats.formattedDislikes)")
+                                .font(AppFont.micro(weight: .medium, tabular: true))
+                                .foregroundStyle(AppleTheme.textSecondary)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, AppSpacing.md)
+                        .frame(height: 28)
+                        .appleGlass(in: Capsule(style: .continuous))
+                        .help("Return YouTube Dislike estimate: \(stats.likes) likes · \(stats.formattedDislikes) dislikes")
+                    }
+
+                    if let highlight {
+                        Button {
+                            controller.jumpToHighlight()
+                        } label: {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "sparkle")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text("Highlight")
+                                    .font(AppFont.caption(weight: .semibold))
+                            }
+                            .foregroundStyle(AppleTheme.accentText)
+                            .padding(.horizontal, AppSpacing.md)
+                            .frame(height: 28)
+                            .appleGlass(
+                                in: Capsule(style: .continuous),
+                                tint: AppleTheme.accentText.opacity(0.14),
+                                interactive: true
+                            )
+                            .contentShape(Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Jump to SponsorBlock Highlight (\(MediaState.formatTime(highlight.start)))")
+                    }
+
+                    if abLoop.startSeconds != nil || abLoop.isEnabled {
+                        Button {
+                            if abLoop.isComplete {
+                                controller.toggleABLoop()
+                            } else {
+                                controller.setABLoopEnd()
+                            }
+                        } label: {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "repeat")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text(abLoop.isComplete ? (abLoop.isEnabled ? "A-B" : "A-B Off") : "A…")
+                                    .font(AppFont.caption(weight: .semibold, tabular: true))
+                            }
+                            .foregroundStyle(abLoop.isEnabled ? AppleTheme.accentText : Color.primary.opacity(0.86))
+                            .padding(.horizontal, AppSpacing.md)
+                            .frame(height: 28)
+                            .appleGlass(
+                                in: Capsule(style: .continuous),
+                                tint: abLoop.isEnabled ? AppleTheme.accentText.opacity(0.16) : nil,
+                                interactive: true
+                            )
+                            .contentShape(Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help(abLoop.isComplete ? "Toggle A-B Loop (Right-Click for options)" : "Click to Set Loop End (B)")
+                        .contextMenu {
+                            Button("Set Loop Start (A)") { controller.setABLoopStart() }
+                            Button("Set Loop End (B)") { controller.setABLoopEnd() }
+                            if abLoop.isComplete {
+                                Button(abLoop.isEnabled ? "Disable A-B Loop" : "Enable A-B Loop") {
+                                    controller.toggleABLoop()
+                                }
+                            }
+                            Button("Clear A-B Loop", role: .destructive) {
+                                controller.clearABLoop()
+                            }
+                        }
+                    }
+                }
+                .fixedSize()
+
+                EmptyView()
+            }
         }
     }
 
@@ -1374,7 +1486,7 @@ struct MainWindowView: View {
 
                 Divider()
 
-                ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { rate in
+                ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0], id: \.self) { rate in
                     let isCurrent = hasVideo && abs(activeRate - rate) < 0.02
                     Button {
                         controller.setPlaybackRate(rate)
@@ -1388,6 +1500,46 @@ struct MainWindowView: View {
                     .disabled(!hasVideo)
                 }
             }
+
+            Menu("Precision Playback") {
+                Button("Set Loop Start (A)") { controller.setABLoopStart() }
+                    .disabled(!hasVideo)
+                Button("Set Loop End (B)") { controller.setABLoopEnd() }
+                    .disabled(!hasVideo)
+                Button(controller.activeABLoop.isEnabled ? "Disable A-B Loop" : "Enable A-B Loop") {
+                    controller.toggleABLoop()
+                }
+                .disabled(!controller.activeABLoop.isComplete)
+                Button("Clear A-B Loop") { controller.clearABLoop() }
+                    .disabled(controller.activeABLoop.startSeconds == nil && controller.activeABLoop.endSeconds == nil)
+
+                Divider()
+
+                Button("Step Frame Backward (−1f)") { controller.stepFrame(forward: false) }
+                    .disabled(!hasVideo || !controller.canApplyAspectFill)
+                Button("Step Frame Forward (+1f)") { controller.stepFrame(forward: true) }
+                    .disabled(!hasVideo || !controller.canApplyAspectFill)
+                Button(controller.isAspectFillActive ? "Disable 21:9 Aspect Fill" : "Enable 21:9 Aspect Fill") {
+                    controller.toggleAspectFill()
+                }
+                .disabled(!hasVideo || !controller.canApplyAspectFill)
+
+                if let highlight = controller.currentHighlightSegment {
+                    Divider()
+                    Button("Jump to Highlight (\(MediaState.formatTime(highlight.start)))") {
+                        controller.jumpToHighlight()
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                controller.openCompanionDrawerNotes()
+            } label: {
+                Label("Open Notes & Transcript", systemImage: "note.text")
+            }
+            .disabled(controller.hasLiveFullscreenTab)
 
             Divider()
 
@@ -1563,6 +1715,9 @@ struct MainWindowView: View {
     @ViewBuilder
     private var transcriptPopoverContent: some View {
         let tab = controller.selectedTab
+        let title = tab.map { controller.effectiveTitle(for: $0) } ?? "YouTube"
+        let videoID = tab.flatMap { YouTubeURLRouter.extractVideoID(from: $0.url) } ?? ""
+        let noteMarkdown = videoID.isEmpty ? "" : (controller.noteEntry(forVideoID: videoID)?.markdown ?? "")
         let currentTime = tab?.timeline.currentTime ?? controller.activeTimeline?.currentTime ?? 0
         TranscriptPopoverView(
             transcript: controller.currentTranscript,
@@ -1575,6 +1730,22 @@ struct MainWindowView: View {
             },
             onSeek: { seconds in
                 controller.seek(to: seconds)
+            },
+            videoTitle: title,
+            videoID: videoID,
+            urlString: tab?.url.absoluteString,
+            bookmarks: controller.settings.videoBookmarks,
+            chapters: controller.activeChapters,
+            noteMarkdown: noteMarkdown,
+            onBookmarkCue: { cue in
+                controller.addBookmark(
+                    title: title,
+                    urlString: tab?.url.absoluteString ?? "https://www.youtube.com/watch?v=\(videoID)",
+                    videoID: videoID.isEmpty ? nil : videoID,
+                    channel: tab?.mediaStatus.channel ?? "",
+                    note: cue.text,
+                    timestampSeconds: cue.startSeconds
+                )
             }
         )
         .onAppear {
@@ -1591,6 +1762,8 @@ struct MainWindowView: View {
     private var bookmarksPopoverContent: some View {
         let tab = controller.selectedTab
         let title = tab.map { controller.effectiveTitle(for: $0) } ?? "YouTube"
+        let videoID = tab.flatMap { YouTubeURLRouter.extractVideoID(from: $0.url) } ?? ""
+        let noteMarkdown = videoID.isEmpty ? "" : (controller.noteEntry(forVideoID: videoID)?.markdown ?? "")
         let currentTime = tab?.timeline.currentTime ?? controller.activeTimeline?.currentTime ?? 0
         let hasVideo = controller.nowPlayingStatus.hasVideo
         BookmarksPopoverView(
@@ -1607,7 +1780,12 @@ struct MainWindowView: View {
             },
             onDelete: { id in
                 controller.removeVideoBookmark(id: id)
-            }
+            },
+            currentVideoID: videoID,
+            currentURLString: tab?.url.absoluteString,
+            transcript: controller.currentTranscript,
+            chapters: controller.activeChapters,
+            noteMarkdown: noteMarkdown
         )
     }
 

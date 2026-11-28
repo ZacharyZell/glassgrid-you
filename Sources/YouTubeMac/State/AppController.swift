@@ -53,6 +53,8 @@ public final class AppController {
     public var isMultiviewAutoSyncEnabled: Bool = false
     public var multiviewMasterTabID: UUID? = nil
     public var stalledMultiviewTabIDs: Set<UUID> = []
+    public var multiviewSyncOffsetsByTabID: [UUID: Double] = [:]
+    public var multiviewOffsetLockEnabled: Bool = false
     public var channelInboxEntries: [ChannelInboxEntry] = []
     public var isLoadingChannelInbox: Bool = false
     public var currentTranscript: YouTubeTranscript? = nil
@@ -60,6 +62,7 @@ public final class AppController {
     public var isTranscriptPopoverPresented: Bool = false
     public var isBookmarksPopoverPresented: Bool = false
     public var isContinueWatchingExpanded: Bool = true
+    public var isWatchQueueExpanded: Bool = true
     public var selectedHomeTopic: SuggestedTopic = .all
 
     public var sleepTimerOption: SleepTimerOption?
@@ -149,7 +152,16 @@ public final class AppController {
     private let fallbackSuggestClient = YouTubeSuggestClient()
 
     @ObservationIgnored
+    private let rydClient = ReturnYouTubeDislikeClient()
+
+    @ObservationIgnored
     private var sponsorFetchTasks: [UUID: Task<Void, Never>] = [:]
+
+    @ObservationIgnored
+    private var rydFetchTasks: [UUID: Task<Void, Never>] = [:]
+
+    @ObservationIgnored
+    private var lastVideoEndedByTabID: [UUID: (videoID: String?, at: Date)] = [:]
 
     @ObservationIgnored
     private var deArrowFetchTasks: [String: Task<Void, Never>] = [:]
@@ -240,7 +252,7 @@ public final class AppController {
         self.isSidebarVisible = resolvedSettings.isSidebarVisible
         self.isCompactHeaderActive = resolvedSettings.compactHeaderMode
         self.isLivePulseTickerVisible = resolvedSettings.livePulseEnabled && resolvedSettings.livePulseShowTicker
-        self.isLivePulseDrawerVisible = resolvedSettings.livePulseEnabled && resolvedSettings.livePulseShowDrawer
+        self.isLivePulseDrawerVisible = resolvedSettings.livePulseShowDrawer
         self.livePulseDrawerWidth = LivePulseLayout.clampDrawerWidth(CGFloat(resolvedSettings.livePulseDrawerWidth))
         self.fallbackFloatingMiniPlayer = coordinator == nil
             ? FloatingMiniPlayerController(
@@ -611,6 +623,7 @@ public final class AppController {
             }
         }
         refreshSponsorSegmentsIfNeeded(for: tab, url: targetURL)
+        refreshRYDStatsIfNeeded(for: tab, url: targetURL)
         refreshDeArrowTitleIfNeeded(for: tab, url: targetURL)
         scheduleSessionSave()
         syncLivePulseStreamSignals()
@@ -631,6 +644,10 @@ public final class AppController {
         }
         sponsorFetchTasks[id]?.cancel()
         sponsorFetchTasks.removeValue(forKey: id)
+        rydFetchTasks[id]?.cancel()
+        rydFetchTasks.removeValue(forKey: id)
+        lastVideoEndedByTabID.removeValue(forKey: id)
+        multiviewSyncOffsetsByTabID.removeValue(forKey: id)
         signInCheckTasks[id]?.cancel()
         signInCheckTasks.removeValue(forKey: id)
         signInCheckServiceIDs.removeValue(forKey: id)
@@ -844,6 +861,10 @@ public final class AppController {
         for tab in toClose {
             sponsorFetchTasks[tab.id]?.cancel()
             sponsorFetchTasks.removeValue(forKey: tab.id)
+            rydFetchTasks[tab.id]?.cancel()
+            rydFetchTasks.removeValue(forKey: tab.id)
+            lastVideoEndedByTabID.removeValue(forKey: tab.id)
+            multiviewSyncOffsetsByTabID.removeValue(forKey: tab.id)
             signInCheckTasks[tab.id]?.cancel()
             signInCheckTasks.removeValue(forKey: tab.id)
             signInCheckServiceIDs.removeValue(forKey: tab.id)
@@ -1263,6 +1284,7 @@ public final class AppController {
                     }
                 }
                 refreshSponsorSegmentsIfNeeded(for: newTab, url: targetURL)
+                refreshRYDStatsIfNeeded(for: newTab, url: targetURL)
                 usedTabIDs.insert(newTab.id)
                 targetTabIDs.append(newTab.id)
             }
@@ -1603,6 +1625,7 @@ public final class AppController {
                 }
             }
             refreshSponsorSegmentsIfNeeded(for: newTab, url: targetURL)
+            refreshRYDStatsIfNeeded(for: newTab, url: targetURL)
             enterMultiview(with: [selectedTabID, newTab.id])
             return
         }
@@ -1623,6 +1646,7 @@ public final class AppController {
             }
         }
         refreshSponsorSegmentsIfNeeded(for: newTab, url: targetURL)
+        refreshRYDStatsIfNeeded(for: newTab, url: targetURL)
 
         let next = MultiviewReducer.addTile(newTab.id, to: multiviewState)
         multiviewTabIDs = next.tabIDs
@@ -1749,6 +1773,7 @@ public final class AppController {
         let wasFloatingGrid = isFloatingMultiviewGrid
         multiviewVolumeDispatchTasks[id]?.cancel()
         multiviewVolumeDispatchTasks.removeValue(forKey: id)
+        multiviewSyncOffsetsByTabID.removeValue(forKey: id)
         if let removedTab = tabs.first(where: { $0.id == id }) {
             removedTab.needsPostAttachResize = true
             removedTab.setAudioLevel(muted: false, volumePercent: 100)
@@ -1897,7 +1922,31 @@ public final class AppController {
             ?? tiles.first
         let masterIsLive = master.map { Self.isTabLikelyLive($0) } ?? true
 
-        if masterIsLive {
+        if multiviewOffsetLockEnabled, let master {
+            let masterTime = master.timeline.currentTime
+            let masterOffset = MultiviewWatchAlongSync.clampOffset(multiviewSyncOffsetsByTabID[master.id] ?? 0)
+            for tab in tiles where !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen {
+                if tab.id != master.id {
+                    let tileOffset = MultiviewWatchAlongSync.clampOffset(multiviewSyncOffsetsByTabID[tab.id] ?? 0)
+                    let relativeOffset = tileOffset - masterOffset
+                    let tileIsLive = Self.isTabLikelyLive(tab)
+                    if tileIsLive && abs(relativeOffset) < 0.05 {
+                        tab.seekToLiveEdge()
+                    } else if let target = MultiviewWatchAlongSync.computeTargetTime(
+                        masterTime: masterTime,
+                        tileOffsetSeconds: relativeOffset,
+                        tileDuration: tab.timeline.duration,
+                        isLive: tileIsLive
+                    ) {
+                        tab.seekTo(seconds: target)
+                    }
+                }
+                if abs(tab.mediaStatus.playbackRate - 1.0) >= 0.02 {
+                    tab.setPlaybackRate(1.0)
+                }
+            }
+            showHUD(icon: "lock.fill", message: "Synced Multiview with Offsets")
+        } else if masterIsLive {
             for tab in tiles where !tab.isInFullscreen && tab.webView.fullscreenState == .notInFullscreen {
                 tab.seekToLiveEdge()
                 if abs(tab.mediaStatus.playbackRate - 1.0) >= 0.02 {
@@ -1920,6 +1969,91 @@ public final class AppController {
 
         stalledMultiviewTabIDs.removeAll()
         multiviewStallDetector.resetAll()
+    }
+
+    public func lockCurrentMultiviewOffsets() {
+        guard isMultiviewActive else { return }
+        let tiles = multiviewTabs
+        let master = multiviewMasterTabID.flatMap { id in tiles.first(where: { $0.id == id }) }
+            ?? multiviewAudioTab
+            ?? tiles.first
+        guard let master else { return }
+        let masterTime = master.timeline.currentTime
+        var offsets: [UUID: Double] = [:]
+        for tab in tiles {
+            if tab.id == master.id {
+                offsets[tab.id] = 0
+            } else {
+                offsets[tab.id] = MultiviewWatchAlongSync.clampOffset(tab.timeline.currentTime - masterTime)
+            }
+        }
+        multiviewSyncOffsetsByTabID = offsets
+        multiviewOffsetLockEnabled = true
+        if isFloatingMultiviewGrid {
+            syncFloatingMultiviewGrid()
+        }
+        showHUD(icon: "lock.fill", message: "Locked Watch-Along Offsets")
+    }
+
+    public func resetMultiviewSyncOffsets() {
+        multiviewSyncOffsetsByTabID.removeAll()
+        multiviewOffsetLockEnabled = false
+        if isFloatingMultiviewGrid {
+            syncFloatingMultiviewGrid()
+        }
+        showHUD(icon: "arrow.counterclockwise", message: "Reset Multiview Offsets")
+    }
+
+    public func setMultiviewOffsetLock(_ enabled: Bool) {
+        if enabled {
+            if multiviewSyncOffsetsByTabID.isEmpty {
+                lockCurrentMultiviewOffsets()
+            } else {
+                multiviewOffsetLockEnabled = true
+                if isFloatingMultiviewGrid {
+                    syncFloatingMultiviewGrid()
+                }
+                showHUD(icon: "lock.fill", message: "Watch-Along Offsets Locked")
+            }
+        } else {
+            multiviewOffsetLockEnabled = false
+            if isFloatingMultiviewGrid {
+                syncFloatingMultiviewGrid()
+            }
+            showHUD(icon: "lock.open", message: "Watch-Along Offsets Unlocked")
+        }
+    }
+
+    public func masterTogglePlayPauseAllMultiviewTiles() {
+        guard isMultiviewActive else { return }
+        let videoTiles = multiviewTabs.filter { $0.mediaStatus.hasVideo }
+        guard !videoTiles.isEmpty else { return }
+        let anyPlaying = videoTiles.contains { $0.mediaStatus.isPlaying }
+        for tab in videoTiles {
+            if anyPlaying {
+                tab.pauseMedia()
+            } else {
+                tab.playMedia()
+            }
+        }
+        showHUD(
+            icon: anyPlaying ? "pause.fill" : "play.fill",
+            message: anyPlaying ? "Paused All Streams" : "Playing All Streams"
+        )
+    }
+
+    public func masterNudgeAllMultiviewTiles(by delta: Double) {
+        guard isMultiviewActive, delta.isFinite, delta != 0 else { return }
+        let videoTiles = multiviewTabs.filter {
+            $0.mediaStatus.hasVideo && !$0.isInFullscreen && $0.webView.fullscreenState == .notInFullscreen
+        }
+        guard !videoTiles.isEmpty else { return }
+        for tab in videoTiles {
+            tab.seekBy(seconds: delta)
+        }
+        let sign = delta >= 0 ? "+" : ""
+        let formatted = delta.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(delta))" : String(format: "%.1f", delta)
+        showHUD(icon: delta >= 0 ? "goforward" : "gobackward", message: "Nudged All \(sign)\(formatted)s")
     }
 
     public func toggleMultiviewAutoSync() {
@@ -2002,6 +2136,7 @@ public final class AppController {
                     }
                 }
                 refreshSponsorSegmentsIfNeeded(for: newTab, url: entryURL)
+                refreshRYDStatsIfNeeded(for: newTab, url: entryURL)
                 refreshDeArrowTitleIfNeeded(for: newTab, url: entryURL)
                 usedTabIDs.insert(newTab.id)
                 targetTabIDs.append(newTab.id)
@@ -2018,6 +2153,8 @@ public final class AppController {
     private func resetMultiviewSyncAndStallState() {
         isMultiviewAutoSyncEnabled = false
         multiviewMasterTabID = nil
+        multiviewSyncOffsetsByTabID.removeAll()
+        multiviewOffsetLockEnabled = false
         stalledMultiviewTabIDs.removeAll()
         multiviewStallDetector.resetAll()
         lastObservedTileTimes.removeAll()
@@ -2097,10 +2234,12 @@ public final class AppController {
             let masterID = (multiviewMasterTabID.flatMap { activeIDs.contains($0) ? $0 : nil })
                 ?? multiviewAudioTabID
                 ?? multiviewTabIDs.first
-            let adjustments = MultiviewSyncPlanner.computeRateAdjustments(
+            let activeOffsets = multiviewOffsetLockEnabled ? multiviewSyncOffsetsByTabID : [:]
+            let adjustments = MultiviewWatchAlongSync.computeRateAdjustments(
                 samples: samples,
                 masterTabID: masterID,
                 isAutoSyncEnabled: true,
+                offsetsByTabID: activeOffsets,
                 currentRates: currentRates
             )
             for adj in adjustments {
@@ -2362,6 +2501,7 @@ public final class AppController {
     private func handleTabDidFinishNavigation(tabID: UUID, url: URL) {
         if let tab = tabs.first(where: { $0.id == tabID }) {
             refreshDeArrowTitleIfNeeded(for: tab, url: url)
+            refreshRYDStatsIfNeeded(for: tab, url: url)
         }
         scheduleSignInCompletionCheck(for: tabID, url: url, requireAuthFlowForNonPrime: false)
         syncLivePulseStreamSignals()
@@ -2996,6 +3136,7 @@ public final class AppController {
             tab: tab,
             allSpaces: settings.miniPlayerAllSpaces,
             opacity: settings.miniPlayerOpacity,
+            isRYDEnabled: settings.rydEnabled,
             onSeek: { [weak tab] seconds in
                 tab?.seekBy(seconds: seconds)
             },
@@ -3019,6 +3160,43 @@ public final class AppController {
             },
             onClose: { [weak self] in
                 self?.closeMiniPlayerPopup()
+            },
+            onSetABLoopStart: { [weak self, weak tab] in
+                if let self, let tab { self.setABLoopStart(for: tab) }
+            },
+            onSetABLoopEnd: { [weak self, weak tab] in
+                if let self, let tab { self.setABLoopEnd(for: tab) }
+            },
+            onToggleABLoop: { [weak self, weak tab] in
+                if let self, let tab { self.toggleABLoop(for: tab) }
+            },
+            onClearABLoop: { [weak self, weak tab] in
+                if let self, let tab { self.clearABLoop(for: tab) }
+            },
+            onStepFrame: { [weak self, weak tab] forward in
+                guard let self, let tab else { return }
+                let activeURL = tab.webView.url ?? tab.url
+                let dur = tab.timeline.duration
+                guard VideoAspectMode.canApplyAspectFill(for: activeURL),
+                      dur.isFinite, dur > 0, dur < 86_400 else {
+                    self.stepFrame(forward: forward)
+                    return
+                }
+                _ = tab.stepVideoFrame(forward: forward)
+            },
+            onToggleAspectFill: { [weak self, weak tab] in
+                if let self, let tab {
+                    _ = self.setVideoAspect(tab.isAspectFillEnabled ? .fit : .fill, for: tab)
+                }
+            },
+            onJumpToHighlight: { [weak self, weak tab] in
+                guard let self, let tab, let highlight = tab.activeHighlightSegment else { return }
+                let dur = tab.timeline.duration
+                if dur.isFinite && dur > 0 && dur < 86_400 {
+                    tab.timeline.update(currentTime: highlight.start, duration: dur)
+                    tab.seekTo(seconds: highlight.start)
+                    self.showHUD(icon: "sparkles", message: "Jumped to Highlight · \(MediaState.formatTime(highlight.start))")
+                }
             }
         )
     }
@@ -3070,6 +3248,7 @@ public final class AppController {
             opacity: settings.miniPlayerOpacity,
             tileVolumes: tileVolumes,
             hasCustomMix: hasCustomMultiviewMix,
+            isOffsetsLocked: multiviewOffsetLockEnabled,
             onFocusAudio: { [weak self] tabID in
                 self?.focusMultiviewAudio(tabID: tabID, showFeedback: false)
             },
@@ -3104,6 +3283,16 @@ public final class AppController {
             },
             onClose: { [weak self] in
                 self?.closeMiniPlayerPopup()
+            },
+            onMasterTogglePlayPauseAll: { [weak self] in
+                self?.masterTogglePlayPauseAllMultiviewTiles()
+            },
+            onToggleLockOffsets: { [weak self] in
+                guard let self else { return }
+                self.setMultiviewOffsetLock(!self.multiviewOffsetLockEnabled)
+            },
+            onResetOffsets: { [weak self] in
+                self?.resetMultiviewSyncOffsets()
             }
         )
         applyConfigToAllTabs()
@@ -3128,7 +3317,8 @@ public final class AppController {
             layoutMode: multiviewLayoutMode,
             splitRatios: multiviewSplitRatios,
             tileVolumes: tileVolumes,
-            hasCustomMix: hasCustomMultiviewMix
+            hasCustomMix: hasCustomMultiviewMix,
+            isOffsetsLocked: multiviewOffsetLockEnabled
         )
     }
 
@@ -3484,7 +3674,13 @@ public final class AppController {
     public func toggleLivePulseDrawer() {
         guard !hasLiveFullscreenTab else { return }
         if !isLivePulseDrawerVisible {
-            openLivePulseDrawer(tab: coordinator?.livePulseStore.selectedDrawerTab ?? .scores)
+            let currentTab = coordinator?.livePulseStore.selectedDrawerTab ?? .notes
+            if !settings.livePulseEnabled {
+                let targetTab: LivePulseDrawerTab = currentTab.requiresLivePulseSports ? .notes : currentTab
+                openCompanionDrawer(tab: targetTab, enableLivePulseIfSports: false)
+            } else {
+                openLivePulseDrawer(tab: currentTab)
+            }
             return
         }
 
@@ -3504,9 +3700,18 @@ public final class AppController {
         coordinator?.livePulseStore.reconcileLifecycle()
     }
 
-    public func openLivePulseDrawer(tab: LivePulseDrawerTab) {
+    public func openCompanionDrawerNotes() {
         guard !hasLiveFullscreenTab else { return }
-        if !settings.livePulseEnabled {
+        openCompanionDrawer(tab: .notes, enableLivePulseIfSports: false)
+    }
+
+    public func openLivePulseDrawer(tab: LivePulseDrawerTab) {
+        openCompanionDrawer(tab: tab, enableLivePulseIfSports: true)
+    }
+
+    private func openCompanionDrawer(tab: LivePulseDrawerTab, enableLivePulseIfSports: Bool) {
+        guard !hasLiveFullscreenTab else { return }
+        if enableLivePulseIfSports && tab.requiresLivePulseSports && !settings.livePulseEnabled {
             settings.livePulseEnabled = true
             showHUD(icon: "sportscourt.fill", message: "Live Pulse Enabled")
         }
@@ -3565,12 +3770,8 @@ public final class AppController {
     /// inside Preferences or after exiting native fullscreen) without writing back into `AppSettings`.
     public func syncLivePulseVisibilityFromSettings() {
         guard !hasLiveFullscreenTab else { return }
-        guard settings.livePulseEnabled else {
-            collapseLivePulseSurfacesOnMasterDisable()
-            return
-        }
 
-        let wantTicker = settings.livePulseShowTicker
+        let wantTicker = settings.livePulseEnabled && settings.livePulseShowTicker
         let wantDrawer = settings.livePulseShowDrawer
 
         if isLivePulseTickerVisible != wantTicker {
@@ -3898,6 +4099,11 @@ public final class AppController {
             task.cancel()
         }
         sponsorFetchTasks.removeAll()
+        for (_, task) in rydFetchTasks {
+            task.cancel()
+        }
+        rydFetchTasks.removeAll()
+        lastVideoEndedByTabID.removeAll()
         for (_, task) in deArrowFetchTasks {
             task.cancel()
         }
@@ -4272,6 +4478,104 @@ public final class AppController {
                 isFeaturedWhenEmpty: false
             )
         )
+        if nowPlayingStatus.hasVideo {
+            actions.append(
+                CommandPaletteActionDescriptor(
+                    action: .abLoopSetA,
+                    title: "Set Loop Start (A)",
+                    keywords: "ab loop start repeat section marker",
+                    systemImage: "repeat",
+                    isFeaturedWhenEmpty: false
+                )
+            )
+            actions.append(
+                CommandPaletteActionDescriptor(
+                    action: .abLoopSetB,
+                    title: "Set Loop End (B)",
+                    keywords: "ab loop end repeat section marker",
+                    systemImage: "repeat",
+                    isFeaturedWhenEmpty: false
+                )
+            )
+            actions.append(
+                CommandPaletteActionDescriptor(
+                    action: .abLoopToggle,
+                    title: activeABLoop.isEnabled ? "Pause A-B Loop" : "Toggle A-B Loop",
+                    keywords: "ab loop toggle repeat playback",
+                    systemImage: activeABLoop.isEnabled ? "repeat.circle.fill" : "repeat",
+                    isFeaturedWhenEmpty: false
+                )
+            )
+            if activeABLoop != .empty {
+                actions.append(
+                    CommandPaletteActionDescriptor(
+                        action: .abLoopClear,
+                        title: "Clear A-B Loop",
+                        keywords: "ab loop clear reset",
+                        systemImage: "xmark.circle",
+                        isFeaturedWhenEmpty: false
+                    )
+                )
+            }
+            if canApplyAspectFill {
+                actions.append(
+                    CommandPaletteActionDescriptor(
+                        action: .toggleAspectFill,
+                        title: isAspectFillActive ? "Fit Video to Frame" : "21:9 Aspect Fill (Crop)",
+                        keywords: "aspect fill crop ultrawide 21:9 letterbox fit",
+                        systemImage: isAspectFillActive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                        isFeaturedWhenEmpty: false
+                    )
+                )
+                actions.append(
+                    CommandPaletteActionDescriptor(
+                        action: .stepFrameForward,
+                        title: "Step Frame Forward (+1f)",
+                        keywords: "frame step forward next frame precision",
+                        systemImage: "forward.frame.fill",
+                        isFeaturedWhenEmpty: false
+                    )
+                )
+                actions.append(
+                    CommandPaletteActionDescriptor(
+                        action: .stepFrameBackward,
+                        title: "Step Frame Backward (−1f)",
+                        keywords: "frame step backward previous frame precision",
+                        systemImage: "backward.frame.fill",
+                        isFeaturedWhenEmpty: false
+                    )
+                )
+            }
+            if let highlight = currentHighlightSegment {
+                actions.append(
+                    CommandPaletteActionDescriptor(
+                        action: .jumpToHighlight,
+                        title: "Jump to Highlight (\(MediaState.formatTime(highlight.start)))",
+                        keywords: "sponsorblock poi highlight jump key moment",
+                        systemImage: "sparkles",
+                        isFeaturedWhenEmpty: false
+                    )
+                )
+            }
+        }
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleWatchQueue,
+                title: isWatchQueueExpanded ? "Collapse Up Next Queue" : "Show Up Next Watch Queue",
+                keywords: "watch queue up next playlist sidebar",
+                systemImage: "text.line.first.and.arrowtriangle.forward",
+                isFeaturedWhenEmpty: false
+            )
+        )
+        actions.append(
+            CommandPaletteActionDescriptor(
+                action: .toggleMaskScores,
+                title: settings.livePulseMaskScores ? "Reveal Live Sports Scores" : "Mask Live Sports Scores (DVR Shield)",
+                keywords: "dvr spoiler shield mask hide live scores odds",
+                systemImage: settings.livePulseMaskScores ? "eye.fill" : "eye.slash.fill",
+                isFeaturedWhenEmpty: false
+            )
+        )
 
         return CommandPaletteEngine.rank(
             query: commandPaletteQuery,
@@ -4430,6 +4734,39 @@ public final class AppController {
                 showHUD(
                     icon: "keyboard",
                     message: settings.globalHotkeysEnabled ? "Global Hotkeys Enabled" : "Global Hotkeys Disabled"
+                )
+            case .abLoopSetA:
+                setABLoopStart()
+            case .abLoopSetB:
+                setABLoopEnd()
+            case .abLoopToggle:
+                toggleABLoop()
+            case .abLoopClear:
+                clearABLoop()
+            case .toggleAspectFill:
+                toggleAspectFill()
+            case .stepFrameForward:
+                stepFrame(forward: true)
+            case .stepFrameBackward:
+                stepFrame(forward: false)
+            case .jumpToHighlight:
+                jumpToHighlight()
+            case .toggleWatchQueue:
+                if !isSidebarVisible {
+                    toggleSidebar()
+                    isWatchQueueExpanded = true
+                } else {
+                    isWatchQueueExpanded.toggle()
+                }
+                showHUD(
+                    icon: "text.line.first.and.arrowtriangle.forward",
+                    message: isWatchQueueExpanded ? "Up Next Queue Shown" : "Up Next Queue Collapsed"
+                )
+            case .toggleMaskScores:
+                settings.livePulseMaskScores.toggle()
+                showHUD(
+                    icon: settings.livePulseMaskScores ? "eye.slash.fill" : "eye.fill",
+                    message: settings.livePulseMaskScores ? "Live Scores Masked" : "Live Scores Visible"
                 )
             }
             focusActiveWebView()
@@ -4630,6 +4967,7 @@ public final class AppController {
                     }
                 }
                 refreshSponsorSegmentsIfNeeded(for: newTab, url: entry.url)
+                refreshRYDStatsIfNeeded(for: newTab, url: entry.url)
                 usedTabIDs.insert(newTab.id)
                 targetTabIDs.append(newTab.id)
             }
@@ -4846,16 +5184,47 @@ public final class AppController {
         )
     }
 
-    private func handleTabVideoEnded(tabID: UUID) {
-        guard sleepTimerOption == .endOfVideo else { return }
-        let targetID = isMultiviewActive ? multiviewAudioTab?.id : activeMediaTab?.id
-        guard tabID == targetID else { return }
+    private func handleTabVideoEnded(tabID: UUID, videoID: String?) {
+        let now = Date()
+        if let previous = lastVideoEndedByTabID[tabID],
+           now.timeIntervalSince(previous.at) < 1.5 {
+            return
+        }
+        lastVideoEndedByTabID[tabID] = (videoID, now)
 
-        sleepTimerOption = nil
-        sleepTimerEndDate = nil
-        postSleepTimerEndGuardUntil = Date().addingTimeInterval(4.0)
-        pauseAllPlayingTabs()
-        showHUD(icon: "moon.zzz.fill", message: "Sleep Timer Paused Playback")
+        if sleepTimerOption == .endOfVideo {
+            let targetID = isMultiviewActive ? multiviewAudioTab?.id : activeMediaTab?.id
+            guard tabID == targetID else { return }
+
+            sleepTimerOption = nil
+            sleepTimerEndDate = nil
+            postSleepTimerEndGuardUntil = now.addingTimeInterval(4.0)
+            pauseAllPlayingTabs()
+            showHUD(icon: "moon.zzz.fill", message: "Sleep Timer Paused Playback")
+            return
+        }
+
+        let activeTargetID = activeMediaTab?.id ?? selectedTabID
+        guard tabID == activeTargetID else { return }
+
+        guard WatchQueuePolicy.shouldAutoAdvance(
+            isQueueNonEmpty: !settings.watchQueue.isEmpty,
+            sleepTimerOption: sleepTimerOption,
+            isMultiviewActive: isMultiviewActive
+        ) else {
+            return
+        }
+
+        guard let nextItem = popNextWatchQueueItem(), let nextURL = nextItem.url else { return }
+        if let tab = tabs.first(where: { $0.id == tabID }) {
+            tab.load(nextURL)
+            if tab.id == selectedTabID {
+                omniboxText = nextURL.absoluteString
+            }
+        } else {
+            navigateSelectedTab(to: nextURL)
+        }
+        showHUD(icon: "forward.end.fill", message: "Up Next · \(nextItem.title)")
     }
 
     public func zoomIn() {
@@ -5309,6 +5678,265 @@ public final class AppController {
                 return
             }
             tab.applySponsorSegments(videoID: videoID, segments: segments)
+            self.coordinator?.refreshNotchMediaHUD()
+        }
+    }
+
+    // MARK: - Precision Playback (A-B Loop, Frame Step, Aspect Fill, Highlight Jump, RYD)
+
+    public var activeABLoop: ABLoopRange {
+        activeMediaTab?.abLoop ?? .empty
+    }
+
+    public func setABLoopStart() {
+        guard let tab = activeMediaTab else { return }
+        setABLoopStart(for: tab)
+    }
+
+    func setABLoopStart(for tab: BrowserTab) {
+        guard tab.mediaStatus.hasVideo else { return }
+        let duration = tab.timeline.duration
+        guard duration.isFinite, duration > 0, duration < 86_400 else {
+            showHUD(icon: "repeat", message: "A-B Loop Unavailable on Livestreams")
+            return
+        }
+        let current = tab.timeline.currentTime
+        var next = tab.abLoop
+        next.startSeconds = current
+        if let end = next.endSeconds, end <= current + ABLoopRange.minimumSpanSeconds {
+            next.endSeconds = nil
+            next.isEnabled = false
+        } else if next.endSeconds != nil {
+            next.isEnabled = true
+        }
+        tab.abLoop = next.clamped(duration: duration)
+        showHUD(icon: "repeat", message: "Loop Start (A) · \(MediaState.formatTime(tab.abLoop.startSeconds ?? current))")
+    }
+
+    public func setABLoopEnd() {
+        guard let tab = activeMediaTab else { return }
+        setABLoopEnd(for: tab)
+    }
+
+    func setABLoopEnd(for tab: BrowserTab) {
+        guard tab.mediaStatus.hasVideo else { return }
+        let duration = tab.timeline.duration
+        guard duration.isFinite, duration > 0, duration < 86_400 else {
+            showHUD(icon: "repeat", message: "A-B Loop Unavailable on Livestreams")
+            return
+        }
+        let current = tab.timeline.currentTime
+        let start = tab.abLoop.startSeconds ?? 0
+        guard current > start + ABLoopRange.minimumSpanSeconds else {
+            showHUD(icon: "exclamationmark.triangle", message: "Set B at least 0.5s after A")
+            return
+        }
+        let next = ABLoopRange(startSeconds: start, endSeconds: current, isEnabled: true).clamped(duration: duration)
+        tab.abLoop = next
+        if next.isComplete {
+            showHUD(icon: "repeat.circle.fill", message: "Loop A-B · \(MediaState.formatTime(start))–\(MediaState.formatTime(current))")
+        }
+    }
+
+    public func toggleABLoop() {
+        guard let tab = activeMediaTab else { return }
+        toggleABLoop(for: tab)
+    }
+
+    func toggleABLoop(for tab: BrowserTab) {
+        guard tab.mediaStatus.hasVideo else { return }
+        let duration = tab.timeline.duration
+        guard duration.isFinite, duration > 0, duration < 86_400 else {
+            showHUD(icon: "repeat", message: "A-B Loop Unavailable on Livestreams")
+            return
+        }
+        var next = tab.abLoop.clamped(duration: duration)
+        guard next.isComplete else {
+            setABLoopStart(for: tab)
+            return
+        }
+        next.isEnabled.toggle()
+        tab.abLoop = next
+        showHUD(
+            icon: next.isEnabled ? "repeat.circle.fill" : "repeat",
+            message: next.isEnabled ? "A-B Loop On" : "A-B Loop Off"
+        )
+    }
+
+    public func clearABLoop() {
+        guard let tab = activeMediaTab else { return }
+        clearABLoop(for: tab)
+    }
+
+    func clearABLoop(for tab: BrowserTab) {
+        let hadLoop = tab.abLoop != .empty
+        tab.abLoop = .empty
+        if hadLoop {
+            showHUD(icon: "repeat", message: "A-B Loop Cleared")
+        }
+    }
+
+    @discardableResult
+    public func setABLoopRange(startSeconds: Double, endSeconds: Double) -> Bool {
+        guard let tab = activeMediaTab else { return false }
+        return setABLoopRange(startSeconds: startSeconds, endSeconds: endSeconds, for: tab)
+    }
+
+    @discardableResult
+    func setABLoopRange(startSeconds: Double, endSeconds: Double, for tab: BrowserTab) -> Bool {
+        guard tab.mediaStatus.hasVideo else { return false }
+        let duration = tab.timeline.duration
+        guard duration.isFinite, duration > 0, duration < 86_400 else { return false }
+        guard startSeconds.isFinite, endSeconds.isFinite else { return false }
+        let candidate = ABLoopRange(startSeconds: startSeconds, endSeconds: endSeconds, isEnabled: true)
+            .clamped(duration: duration)
+        guard candidate.isComplete else { return false }
+        tab.abLoop = candidate
+        if let start = candidate.startSeconds, let end = candidate.endSeconds {
+            showHUD(icon: "repeat.circle.fill", message: "Loop A-B · \(MediaState.formatTime(start))–\(MediaState.formatTime(end))")
+        }
+        return true
+    }
+
+    public func stepFrame(forward: Bool) {
+        stepFrame(forward: forward, fps: 30.0)
+    }
+
+    public func stepFrame(forward: Bool, fps: Double) {
+        guard let tab = activeMediaTab, tab.mediaStatus.hasVideo else { return }
+        let activeURL = tab.webView.url ?? tab.url
+        guard VideoAspectMode.canApplyAspectFill(for: activeURL) else {
+            showHUD(icon: "lock.shield", message: "Frame step unavailable on DRM streams")
+            return
+        }
+        let duration = tab.timeline.duration
+        guard duration.isFinite, duration > 0, duration < 86_400 else {
+            showHUD(icon: "dot.radiowaves.left.and.right", message: "Frame step unavailable on livestreams")
+            return
+        }
+        _ = tab.stepVideoFrame(forward: forward, fps: fps)
+    }
+
+    public var canApplyAspectFill: Bool {
+        guard let tab = activeMediaTab, tab.mediaStatus.hasVideo else { return false }
+        let activeURL = tab.webView.url ?? tab.url
+        return VideoAspectMode.canApplyAspectFill(for: activeURL)
+    }
+
+    public var isAspectFillActive: Bool {
+        guard let tab = activeMediaTab, canApplyAspectFill else { return false }
+        return tab.isAspectFillEnabled
+    }
+
+    public func toggleAspectFill() {
+        _ = setVideoAspect(isAspectFillActive ? .fit : .fill)
+    }
+
+    @discardableResult
+    public func setVideoAspect(_ mode: VideoAspectMode) -> Bool {
+        guard let tab = activeMediaTab else { return false }
+        return setVideoAspect(mode, for: tab)
+    }
+
+    @discardableResult
+    func setVideoAspect(_ mode: VideoAspectMode, for tab: BrowserTab) -> Bool {
+        let activeURL = tab.webView.url ?? tab.url
+        if mode == .fill && !VideoAspectMode.canApplyAspectFill(for: activeURL) {
+            tab.isAspectFillEnabled = false
+            tab.applyConfig(configForTab(id: tab.id), force: true)
+            showHUD(icon: "lock.shield", message: "Aspect Fill unavailable on DRM streams")
+            return false
+        }
+        let enableFill = (mode == .fill)
+        tab.isAspectFillEnabled = enableFill
+        tab.applyConfig(configForTab(id: tab.id), force: true)
+        showHUD(
+            icon: mode.systemImage,
+            message: enableFill ? "21:9 Aspect Fill" : "Fit to Frame"
+        )
+        return true
+    }
+
+    func handleVideoAspectFillSettingChanged(enabled: Bool) {
+        for tab in tabs {
+            let activeURL = tab.pendingLazyURL ?? tab.url
+            tab.isAspectFillEnabled = enabled && VideoAspectMode.canApplyAspectFill(for: activeURL)
+        }
+        applyConfigToAllTabs()
+    }
+
+    public var currentSponsorSegments: [SponsorSegment] {
+        activeMediaTab?.currentSponsorSegments ?? []
+    }
+
+    public var currentHighlightSegment: SponsorSegment? {
+        activeMediaTab?.activeHighlightSegment
+    }
+
+    public func jumpToHighlight() {
+        guard let tab = activeMediaTab,
+              let highlight = tab.activeHighlightSegment else {
+            showHUD(icon: "sparkles", message: "No Highlight Marker for This Video")
+            return
+        }
+        seek(to: highlight.start)
+        showHUD(icon: "sparkles", message: "Jumped to Highlight · \(MediaState.formatTime(highlight.start))")
+    }
+
+    public var currentRYDStats: ReturnYouTubeDislikeStats? {
+        guard settings.rydEnabled else { return nil }
+        return activeMediaTab?.currentRYDStats
+    }
+
+    func handleRYDSettingChanged(enabled: Bool) {
+        if enabled {
+            for tab in tabs {
+                refreshRYDStatsIfNeeded(for: tab, url: tab.url)
+            }
+        } else {
+            for (_, task) in rydFetchTasks {
+                task.cancel()
+            }
+            rydFetchTasks.removeAll()
+            for tab in tabs {
+                tab.currentRYDStats = nil
+            }
+            let client = rydClient
+            Task {
+                await client.clearCache()
+            }
+        }
+    }
+
+    private func refreshRYDStatsIfNeeded(for tab: BrowserTab, url: URL) {
+        let tabID = tab.id
+        rydFetchTasks[tabID]?.cancel()
+        rydFetchTasks.removeValue(forKey: tabID)
+
+        guard settings.rydEnabled,
+              !isWindowTornDown,
+              !tab.isSleeping,
+              tab.pendingLazyURL == nil,
+              YouTubeURLRouter.isStandardYouTubeHost(url.host),
+              let videoID = YouTubeURLRouter.extractVideoID(from: url) else {
+            if !settings.rydEnabled && tab.currentRYDStats != nil {
+                tab.currentRYDStats = nil
+            }
+            return
+        }
+
+        let client = rydClient
+        rydFetchTasks[tabID] = Task { @MainActor [weak self, weak tab] in
+            let stats = await client.fetchStats(for: videoID)
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isWindowTornDown,
+                  let tab,
+                  self.settings.rydEnabled,
+                  YouTubeURLRouter.extractVideoID(from: tab.url) == videoID else {
+                return
+            }
+            tab.currentRYDStats = stats
         }
     }
 
@@ -5427,7 +6055,134 @@ public final class AppController {
         ensureDeArrowBrandingLoaded(forVideoID: videoID)
     }
 
-    // MARK: - Timestamp Bookmarks, On-Demand Transcript & Channel Inbox
+    // MARK: - Timestamp Bookmarks, Video Notes, Watch Queue, Transcript & Channel Inbox
+
+    public func noteEntry(forVideoID videoID: String) -> VideoNoteEntry? {
+        let cleanID = videoID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanID.isEmpty else { return nil }
+        return settings.videoNotesByVideoID[cleanID]
+    }
+
+    public func saveNote(markdown: String, forVideoID videoID: String, title: String) {
+        let cleanID = videoID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanID.isEmpty else { return }
+        let entry = VideoNoteEntry(videoID: cleanID, title: title, markdown: markdown, updatedAt: Date())
+        var map = settings.videoNotesByVideoID
+        if entry.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            map.removeValue(forKey: cleanID)
+        } else {
+            map[cleanID] = entry
+        }
+        settings.videoNotesByVideoID = map
+    }
+
+    public func addBookmark(
+        title: String,
+        urlString: String,
+        videoID: String?,
+        channel: String,
+        note: String,
+        timestampSeconds: Double
+    ) {
+        let cleanTitle = AgentSecurity.sanitizeWebText(title, maxLength: AgentSecurity.maxWebTitleLength).text
+        let cleanChannel = AgentSecurity.sanitizeWebText(channel, maxLength: AgentSecurity.maxChannelNameLength).text
+        let cleanNote = AgentSecurity.sanitizeWebText(note, maxLength: 240).text
+        let safeSeconds = timestampSeconds.isFinite && timestampSeconds >= 0 ? timestampSeconds : 0
+        let bookmark = VideoBookmark(
+            videoID: videoID,
+            urlString: urlString,
+            title: cleanTitle.isEmpty ? "YouTube" : cleanTitle,
+            channel: cleanChannel,
+            note: cleanNote,
+            timestampSeconds: safeSeconds
+        )
+        settings.videoBookmarks.insert(bookmark, at: 0)
+        if settings.videoBookmarks.count > 200 {
+            settings.videoBookmarks = Array(settings.videoBookmarks.prefix(200))
+        }
+        let timeLabel = bookmark.timestampSeconds >= 1 ? " at \(bookmark.formattedTimestamp)" : ""
+        showHUD(icon: "bookmark.fill", message: "Bookmarked\(timeLabel)")
+    }
+
+    public func enqueueInWatchQueue(_ item: WatchQueueItem, playNext: Bool = false) {
+        settings.watchQueue = WatchQueuePolicy.enqueue(item, into: settings.watchQueue, playNext: playNext)
+        showHUD(
+            icon: playNext ? "text.insert" : "text.append",
+            message: playNext ? "Playing Next · \(item.title)" : "Added to Watch Queue"
+        )
+    }
+
+    public func playWatchQueueItem(_ item: WatchQueueItem) {
+        guard let targetURL = item.url else { return }
+        settings.watchQueue = WatchQueuePolicy.remove(id: item.id, from: settings.watchQueue)
+        if isMultiviewActive {
+            exitMultiview(focusTabID: selectedTabID, showFeedback: false)
+        }
+        navigateSelectedTab(to: targetURL)
+        focusMainWindow()
+        showHUD(icon: "play.fill", message: "Playing · \(item.title)")
+    }
+
+    public func removeWatchQueueItem(id: UUID) {
+        settings.watchQueue = WatchQueuePolicy.remove(id: id, from: settings.watchQueue)
+    }
+
+    public func moveWatchQueueItems(fromOffsets: IndexSet, toOffset: Int) {
+        settings.watchQueue = WatchQueuePolicy.move(fromOffsets: fromOffsets, toOffset: toOffset, in: settings.watchQueue)
+    }
+
+    @discardableResult
+    public func popNextWatchQueueItem() -> WatchQueueItem? {
+        let result = WatchQueuePolicy.popNext(from: settings.watchQueue)
+        settings.watchQueue = result.remaining
+        return result.next
+    }
+
+    public func clearWatchQueue() {
+        guard !settings.watchQueue.isEmpty else { return }
+        settings.watchQueue = []
+        showHUD(icon: "trash", message: "Watch Queue Cleared")
+    }
+
+    public func markInboxVideoWatched(_ videoID: String, watched: Bool = true) {
+        let clean = videoID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        var ids = settings.watchedInboxVideoIDs.filter { $0 != clean }
+        if watched {
+            ids.append(clean)
+            if ids.count > 500 {
+                ids = Array(ids.suffix(500))
+            }
+        }
+        settings.watchedInboxVideoIDs = ids
+    }
+
+    public func toggleChannelInboxHideWatched() {
+        settings.channelInboxHideWatched.toggle()
+    }
+
+    public var filteredChannelInboxEntries: [ChannelInboxEntry] {
+        let byFolder: [ChannelInboxEntry]
+        switch settings.channelInboxFilter {
+        case .all:
+            byFolder = channelInboxEntries
+        case .ungrouped, .folder:
+            let allowedChannelIDs = Set(
+                ChannelInboxFilterHelper.channelIDs(
+                    for: settings.channelInboxFilter,
+                    folders: settings.pinnedFolders,
+                    pins: settings.pinnedItems,
+                    watchedChannels: settings.watchedChannels
+                )
+            )
+            byFolder = channelInboxEntries.filter { allowedChannelIDs.contains($0.channelID) }
+        }
+        return ChannelInboxFilterHelper.filterEntries(
+            byFolder,
+            watchedVideoIDs: settings.watchedInboxVideoIDSet,
+            hideWatched: settings.channelInboxHideWatched
+        )
+    }
 
     @discardableResult
     public func addCurrentTimestampBookmark(note: String = "") -> VideoBookmark? {
@@ -5514,21 +6269,12 @@ public final class AppController {
         guard !isWindowTornDown else { return }
         channelInboxTask?.cancel()
 
-        var channelIDs: [String] = []
-        var seen: Set<String> = []
-        for item in settings.pinnedItems {
-            if let cid = ChannelInboxClient.extractChannelID(from: item.urlString),
-               seen.insert(cid).inserted {
-                channelIDs.append(cid)
-            }
-        }
-        for stat in settings.watchedChannels {
-            if let raw = stat.channelURLString,
-               let cid = ChannelInboxClient.extractChannelID(from: raw),
-               seen.insert(cid).inserted {
-                channelIDs.append(cid)
-            }
-        }
+        let channelIDs = ChannelInboxFilterHelper.channelIDs(
+            for: settings.channelInboxFilter,
+            folders: settings.pinnedFolders,
+            pins: settings.pinnedItems,
+            watchedChannels: settings.watchedChannels
+        )
 
         guard !channelIDs.isEmpty else {
             channelInboxEntries = []
@@ -5566,7 +6312,10 @@ public final class AppController {
     }
 
     private func configForTab(id: UUID) -> DistractionFreeConfig {
-        let bypassed = tabs.first(where: { $0.id == id })?.isCleanBoxBypassed ?? false
+        let tab = tabs.first(where: { $0.id == id })
+        let bypassed = tab?.isCleanBoxBypassed ?? false
+        let tabURL = tab?.pendingLazyURL ?? tab?.url ?? settings.startupDestination.url
+        let effectiveAspectFill = (tab?.isAspectFillEnabled ?? false) && VideoAspectMode.canApplyAspectFill(for: tabURL)
         if isMultiviewActive, let slotIndex = multiviewTabIDs.firstIndex(of: id) {
             let isSoloed = (soloMultiviewTabID == id)
             let isPrimary = isSoloed || MultiviewGridLayout.isPrimarySlot(
@@ -5586,13 +6335,15 @@ public final class AppController {
                 miniPlayer: isTabPoppedOut(id),
                 multiviewTile: true,
                 qualityOverride: clampedQuality,
-                cleanBoxBypassed: bypassed
+                cleanBoxBypassed: bypassed,
+                aspectFill: effectiveAspectFill
             )
         }
         return settings.distractionFreeConfig(
             focusMode: focusModeActive,
             miniPlayer: isTabPoppedOut(id),
-            cleanBoxBypassed: bypassed
+            cleanBoxBypassed: bypassed,
+            aspectFill: effectiveAspectFill
         )
     }
 
@@ -5655,8 +6406,8 @@ public final class AppController {
         tab.onFullscreenDidChange = { [weak self] fsTabID, isInFS in
             self?.handleTabFullscreenDidChange(tabID: fsTabID, isInFullscreen: isInFS)
         }
-        tab.onVideoEnded = { [weak self] endedTabID in
-            self?.handleTabVideoEnded(tabID: endedTabID)
+        tab.onVideoEnded = { [weak self] endedTabID, endedVideoID in
+            self?.handleTabVideoEnded(tabID: endedTabID, videoID: endedVideoID)
         }
         tab.onSponsorSegmentSkipped = { [weak self, weak tab] segment in
             guard let self, let tab else { return }
@@ -5769,6 +6520,7 @@ public final class AppController {
         }
         if let tab = tabs.first(where: { $0.id == tabID }) {
             refreshSponsorSegmentsIfNeeded(for: tab, url: newURL)
+            refreshRYDStatsIfNeeded(for: tab, url: newURL)
             refreshDeArrowTitleIfNeeded(for: tab, url: newURL)
             if tab.authFlowServiceID != nil && !StreamingServiceCatalog.isTransientAuthURL(newURL) {
                 scheduleSignInCompletionCheck(for: tabID, url: newURL, requireAuthFlowForNonPrime: true)

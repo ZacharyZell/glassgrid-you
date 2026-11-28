@@ -196,6 +196,26 @@ public struct GameSituation: Equatable, Hashable, Codable, Sendable {
     }
 }
 
+/// Single timestamped win-probability sample parsed from ESPN game summaries.
+public struct WinProbabilityPoint: Equatable, Hashable, Codable, Sendable {
+    public let sequence: Int
+    public let homeWinProb: Double
+    public let awayWinProb: Double
+    public let playID: String?
+
+    public init(
+        sequence: Int,
+        homeWinProb: Double,
+        awayWinProb: Double,
+        playID: String? = nil
+    ) {
+        self.sequence = sequence
+        self.homeWinProb = homeWinProb.isFinite ? min(1.0, max(0.0, homeWinProb)) : 0.5
+        self.awayWinProb = awayWinProb.isFinite ? min(1.0, max(0.0, awayWinProb)) : 0.5
+        self.playID = playID
+    }
+}
+
 /// Normalized live sporting event model from ESPN public scoreboard/summary feeds.
 public struct LiveGame: Identifiable, Equatable, Hashable, Codable, Sendable {
     public let id: String
@@ -211,8 +231,28 @@ public struct LiveGame: Identifiable, Equatable, Hashable, Codable, Sendable {
     public let situation: GameSituation?
     public let espnAwayWinProb: Double?
     public let espnHomeWinProb: Double?
+    public let espnWinProbHistory: [WinProbabilityPoint]
     public let spreadSummary: String?
     public let overUnder: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case league
+        case status
+        case statusDetail
+        case clock
+        case period
+        case startTime
+        case away
+        case home
+        case broadcasts
+        case situation
+        case espnAwayWinProb
+        case espnHomeWinProb
+        case espnWinProbHistory
+        case spreadSummary
+        case overUnder
+    }
 
     public init(
         id: String,
@@ -229,7 +269,8 @@ public struct LiveGame: Identifiable, Equatable, Hashable, Codable, Sendable {
         espnAwayWinProb: Double? = nil,
         espnHomeWinProb: Double? = nil,
         spreadSummary: String? = nil,
-        overUnder: Double? = nil
+        overUnder: Double? = nil,
+        espnWinProbHistory: [WinProbabilityPoint] = []
     ) {
         self.id = id
         self.league = league
@@ -244,8 +285,29 @@ public struct LiveGame: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.situation = situation
         self.espnAwayWinProb = espnAwayWinProb
         self.espnHomeWinProb = espnHomeWinProb
+        self.espnWinProbHistory = espnWinProbHistory
         self.spreadSummary = spreadSummary
         self.overUnder = overUnder
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        league = try container.decode(SportsLeague.self, forKey: .league)
+        status = try container.decode(GameStatus.self, forKey: .status)
+        statusDetail = try container.decode(String.self, forKey: .statusDetail)
+        clock = try container.decodeIfPresent(String.self, forKey: .clock)
+        period = try container.decodeIfPresent(Int.self, forKey: .period)
+        startTime = try container.decodeIfPresent(Date.self, forKey: .startTime)
+        away = try container.decode(TeamScore.self, forKey: .away)
+        home = try container.decode(TeamScore.self, forKey: .home)
+        broadcasts = try container.decodeIfPresent([String].self, forKey: .broadcasts) ?? []
+        situation = try container.decodeIfPresent(GameSituation.self, forKey: .situation)
+        espnAwayWinProb = try container.decodeIfPresent(Double.self, forKey: .espnAwayWinProb)
+        espnHomeWinProb = try container.decodeIfPresent(Double.self, forKey: .espnHomeWinProb)
+        espnWinProbHistory = try container.decodeIfPresent([WinProbabilityPoint].self, forKey: .espnWinProbHistory) ?? []
+        spreadSummary = try container.decodeIfPresent(String.self, forKey: .spreadSummary)
+        overUnder = try container.decodeIfPresent(Double.self, forKey: .overUnder)
     }
 }
 
@@ -494,6 +556,7 @@ public enum LivePulseDrawerTab: String, CaseIterable, Codable, Identifiable, Has
     case players
     case scores
     case markets
+    case notes
     case chat
 
     public var id: String { rawValue }
@@ -504,6 +567,7 @@ public enum LivePulseDrawerTab: String, CaseIterable, Codable, Identifiable, Has
         case .players: return "Players"
         case .scores: return "Scores"
         case .markets: return "Markets"
+        case .notes: return "Notes"
         case .chat: return "Chat"
         }
     }
@@ -514,7 +578,17 @@ public enum LivePulseDrawerTab: String, CaseIterable, Codable, Identifiable, Has
         case .players: return "person.2.fill"
         case .scores: return "sportscourt.fill"
         case .markets: return "chart.line.uptrend.xyaxis"
+        case .notes: return "note.text"
         case .chat: return "bubble.left.and.bubble.right.fill"
+        }
+    }
+
+    public var requiresLivePulseSports: Bool {
+        switch self {
+        case .notes, .chat:
+            return false
+        case .matchup, .players, .scores, .markets:
+            return true
         }
     }
 }
@@ -528,9 +602,24 @@ public struct PlayByPlayEvent: Identifiable, Equatable, Hashable, Codable, Senda
     public let teamAbbreviation: String?
     public let text: String
     public let isScoringPlay: Bool
+    public let isKeyPlay: Bool
     public let awayScore: Int?
     public let homeScore: Int?
     public let wallclock: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case gameID
+        case periodText
+        case clock
+        case teamAbbreviation
+        case text
+        case isScoringPlay
+        case isKeyPlay
+        case awayScore
+        case homeScore
+        case wallclock
+    }
 
     public init(
         id: String,
@@ -542,7 +631,8 @@ public struct PlayByPlayEvent: Identifiable, Equatable, Hashable, Codable, Senda
         isScoringPlay: Bool = false,
         awayScore: Int? = nil,
         homeScore: Int? = nil,
-        wallclock: Date? = nil
+        wallclock: Date? = nil,
+        isKeyPlay: Bool = false
     ) {
         self.id = id
         self.gameID = gameID
@@ -551,9 +641,25 @@ public struct PlayByPlayEvent: Identifiable, Equatable, Hashable, Codable, Senda
         self.teamAbbreviation = teamAbbreviation
         self.text = text
         self.isScoringPlay = isScoringPlay
+        self.isKeyPlay = isKeyPlay
         self.awayScore = awayScore
         self.homeScore = homeScore
         self.wallclock = wallclock
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        gameID = try container.decode(String.self, forKey: .gameID)
+        periodText = try container.decodeIfPresent(String.self, forKey: .periodText) ?? ""
+        clock = try container.decodeIfPresent(String.self, forKey: .clock)
+        teamAbbreviation = try container.decodeIfPresent(String.self, forKey: .teamAbbreviation)
+        text = try container.decode(String.self, forKey: .text)
+        isScoringPlay = try container.decodeIfPresent(Bool.self, forKey: .isScoringPlay) ?? false
+        isKeyPlay = try container.decodeIfPresent(Bool.self, forKey: .isKeyPlay) ?? false
+        awayScore = try container.decodeIfPresent(Int.self, forKey: .awayScore)
+        homeScore = try container.decodeIfPresent(Int.self, forKey: .homeScore)
+        wallclock = try container.decodeIfPresent(Date.self, forKey: .wallclock)
     }
 }
 

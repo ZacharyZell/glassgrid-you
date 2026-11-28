@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Release Log — GlassGrid You for macOS</title>
-  <meta name="description" content="Complete GlassGrid You release history and exact version-to-version differences across v1.3.0, v1.2.0, v1.1.1, v1.1.0, and v1.0.0.">
+  <meta name="description" content="Complete GlassGrid You release history and exact version-to-version differences across v1.5.0, v1.4.1, v1.4.0, v1.3.1, v1.3.0, v1.2.0, v1.1.1, v1.1.0, and v1.0.0.">
   <meta name="theme-color" content="#0A0A0B">
   <link rel="canonical" href="https://glassgridyou.com/changelog.html">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -76,12 +76,16 @@
         <span class="section-label">Release Log &amp; Version Diffs</span>
         <h1>What changed in every update.</h1>
         <p class="changelog-sub">
-          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.4.1</strong>, Build 9).
+          A transparent record of every capability added, improved, and fixed in GlassGrid You. Signed &amp; notarized releases roll out silently over <a href="appcast.xml">Sparkle 2 EdDSA</a> (current release: <strong>v1.5.0</strong>, Build 10).
         </p>
 
         <nav class="release-jump-strip" aria-label="Jump to version">
-          <a class="release-jump-pill" href="#v1-4-1">
+          <a class="release-jump-pill" href="#v1-5-0">
             <span class="jump-dot jump-dot--signed" aria-hidden="true"></span>
+            <span>v1.5.0</span>
+          </a>
+          <a class="release-jump-pill" href="#v1-4-1">
+            <span class="jump-dot jump-dot--archive" aria-hidden="true"></span>
             <span>v1.4.1</span>
           </a>
           <a class="release-jump-pill" href="#v1-4-0">
@@ -146,16 +150,63 @@
       -->
 
       <div class="changelog-timeline">
-        <article class="release-card release-card--latest" id="v1-4-1">
+        <article class="release-card release-card--latest" id="v1-5-0">
+          <div class="release-header">
+            <div class="release-title-row">
+              <h2 class="release-version">v1.5.0</h2>
+              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 10</span>
+            </div>
+            <div class="release-meta-row">
+              <time datetime="2026-11-28">Nov 28, 2026</time>
+              <span>DMG: 10,575,043 bytes</span>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/b409804...main" target="_blank" rel="noopener noreferrer">Diff v1.4.1 &rarr; v1.5.0 &rarr;</a>
+            </div>
+          </div>
+
+          <div class="release-delta-summary">
+            <p><strong>Compared to v1.4.1:</strong> Closes 7 ToS-compliant specialist parity &amp; power-user frontiers: adds precision playback (<strong>A-B Loop</strong>, <strong>Frame Step</strong> <code>−1f/+1f</code>, <code>2.5&times;/3.0&times;</code> speed presets, FairPlay-safe <strong>21:9 Aspect Fill</strong>); expands SponsorBlock to <strong>7 categories</strong> (<code>music_offtopic</code> &amp; jump-only <code>poi_highlight</code>) with native scrubber segment ticks + strictly opt-in read-only <a href="https://returnyoutubedislike.com" target="_blank" rel="noopener noreferrer">Return YouTube Dislike</a> quality ratios; adds a persistent 6-tab Companion <strong>Notes</strong> workspace (even with Live Pulse OFF) with Follow-Playback transcripts, 1-click cue bookmarking &amp; Obsidian Markdown / AI Study Packet export; adds <strong>Folder RSS Decks</strong>, cross-service <strong>Up Next Queue</strong>, Live Pulse <strong>Key Plays</strong>, <strong>Win-Probability Sparklines</strong> &amp; <strong>DVR Score Mask</strong>, hover-expandable <strong>Interactive Notch Island</strong>, <strong>Multiview Watch-Along Offset Lock</strong> + tabbed Live Chat, and an official <strong>Elgato Stream Deck Plugin</strong> (<code>extras/streamdeck-plugin/</code>) + <strong>37 MCP tools</strong>.</p>
+            <div class="delta-pills">
+              <span class="delta-pill">+A-B Loop, Frame Step &amp; 21:9 Fill</span>
+              <span class="delta-pill">+Highlight Jump &amp; Opt-In RYD</span>
+              <span class="delta-pill">+Notes Tab &amp; Obsidian Export</span>
+              <span class="delta-pill">+Folder Decks &amp; Up Next Queue</span>
+              <span class="delta-pill">+Sparkline, Key Plays &amp; DVR Mask</span>
+              <span class="delta-pill">+Hover Notch &amp; Watch-Along Lock</span>
+              <span class="delta-pill">32 &rarr; 37 MCP Tools · 147 &rarr; 158 Tests</span>
+            </div>
+          </div>
+
+          <div class="diff-groups">
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--added">Added</span>
+              <ul class="diff-list">
+                <li><strong>Precision Playback Suite (A-B Loop, Frame Step, <code>3.0&times;</code> Presets &amp; 21:9 Aspect Fill):</strong> Set loop start/end (<code>A</code>/<code>B</code>) with automatic <code>&ge;0.4s</code> re-seek cooldown and video-change reset; step single frames (<code>&minus;1f</code> / <code>+1f</code>); pick up to <code>2.5&times;</code> &amp; <code>3.0&times;</code> presets across controls; and toggle FairPlay-safe 21:9 Aspect Fill (<code>object-fit: cover</code>) automatically bypassed on YouTube TV and strict-DRM services.</li>
+                <li><strong>SponsorBlock Highlight Jump, Scrubber Ticks &amp; Opt-In RYD Ratio:</strong> Added <code>Non-Music Section</code> (<code>music_offtopic</code>) and jump-only <code>Highlight</code> (<code>poi_highlight</code>) markers rendered directly on native Menu Bar &amp; Mini-Player scrubbers with 1-click <em>Jump to Highlight</em>—plus strictly opt-in, cookieless read-only <a href="https://returnyoutubedislike.com" target="_blank" rel="noopener noreferrer">Return YouTube Dislike</a> quality badges with 60s <code>429</code> backoff and explicit privacy disclosure (off by default).</li>
+                <li><strong>Persistent Notes Tab, Follow-Playback Transcript &amp; Obsidian Export:</strong> Added a 6th <strong>Notes</strong> tab inside the Companion Drawer (accessible even while Live Pulse is OFF with zero sports network requests) featuring per-video Scratchpad Markdown notes, Timestamp Bookmarks, Follow-Playback auto-scrolling transcripts with 1-click cue bookmarking, and Obsidian <code>.md</code> / AI Study Packet export.</li>
+                <li><strong>Folder RSS Decks &amp; Cross-Service Up Next Watch Queue:</strong> Filter Channel Inbox by Sidebar folders with local watched tracking (<code>Hide Watched</code>), and queue up to 100 videos across services with auto-advance on completion (safely pausing when Sleep Timer <em>End of Video</em> or Multiview is active).</li>
+                <li><strong>Live Pulse Depth, Interactive Notch Island, Watch-Along Sync &amp; Stream Deck:</strong> Added ESPN <code>winProbabilityHistory</code> Canvas sparklines, <code>KEY</code> Play-by-Play filter, 1-click DVR Score Mask (across Ticker, Drawer, Notch &amp; Menu Bar), hover-expandable Notch Island with scrubber &amp; Multiview audio slots below the camera notch, Multiview Watch-Along offset lock + tabbed Multi-Stream Chat, an official zero-shell TypeScript Elgato Stream Deck plugin (<code>extras/streamdeck-plugin/</code>), and 5 new MCP tools (<code>37</code> total) + CLI commands.</li>
+              </ul>
+            </section>
+
+            <section class="diff-group">
+              <span class="diff-tag diff-tag--changed">Changed &amp; Security</span>
+              <ul class="diff-list">
+                <li><strong>ToS-Compliant Scope &amp; Drawer Decoupling:</strong> Kept window-close hidden audio strictly excluded for YouTube ToS compliance; decoupled Companion Drawer Notes/Chat cleanly from Live Pulse polling; hardened automated test coverage from <strong>147 &rarr; 158 tests</strong>.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="release-card" id="v1-4-1">
           <div class="release-header">
             <div class="release-title-row">
               <h2 class="release-version">v1.4.1</h2>
-              <span class="release-status release-status--signed">Latest Signed .dmg · Sparkle Build 9</span>
+              <span class="release-status release-status--signed">Signed .dmg · Sparkle Build 9</span>
             </div>
             <div class="release-meta-row">
               <time datetime="2026-11-27">Nov 27, 2026</time>
               <span>DMG: 10,607,160 bytes</span>
-              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/cc19d44...main" target="_blank" rel="noopener noreferrer">Diff v1.4.0 &rarr; v1.4.1 &rarr;</a>
+              <a class="release-diff-link" href="https://github.com/ZacharyZell/glassgrid-you/compare/cc19d44...b409804" target="_blank" rel="noopener noreferrer">Diff v1.4.0 &rarr; v1.4.1 &rarr;</a>
             </div>
           </div>
 

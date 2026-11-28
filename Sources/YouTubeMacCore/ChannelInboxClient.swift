@@ -33,6 +33,87 @@ public struct ChannelInboxEntry: Identifiable, Equatable, Hashable, Codable, Sen
     }
 }
 
+/// Filter selection for per-folder YouTube Channel RSS Inbox decks.
+public enum ChannelInboxFilter: Equatable, Hashable, Codable, Sendable {
+    case all
+    case ungrouped
+    case folder(UUID)
+}
+
+/// Pure helper extracting deduplicated `UC...` channel IDs per folder filter and filtering watched entries.
+public enum ChannelInboxFilterHelper {
+    public static func channelIDs(
+        for filter: ChannelInboxFilter,
+        folders: [PinnedFolder],
+        pins: [PinnedItem],
+        watchedChannels: [WatchedChannelStat]
+    ) -> [String] {
+        let validFolderIDs = Set(folders.map(\.id))
+        var result: [String] = []
+        var seen: Set<String> = []
+
+        func appendChannelID(from rawOrURL: String?) {
+            guard let rawOrURL,
+                  let cid = ChannelInboxClient.extractChannelID(from: rawOrURL),
+                  seen.insert(cid).inserted else {
+                return
+            }
+            result.append(cid)
+        }
+
+        switch filter {
+        case .all:
+            for pin in pins {
+                appendChannelID(from: pin.urlString)
+            }
+            for stat in watchedChannels {
+                appendChannelID(from: stat.channelURLString)
+            }
+
+        case .folder(let folderID):
+            guard folders.isEmpty || validFolderIDs.contains(folderID) else {
+                return []
+            }
+            for pin in pins where pin.folderID == folderID {
+                appendChannelID(from: pin.urlString)
+            }
+
+        case .ungrouped:
+            var folderChannelIDs: Set<String> = []
+            for pin in pins {
+                if let fid = pin.folderID, validFolderIDs.contains(fid) {
+                    if let cid = ChannelInboxClient.extractChannelID(from: pin.urlString) {
+                        folderChannelIDs.insert(cid)
+                    }
+                } else {
+                    appendChannelID(from: pin.urlString)
+                }
+            }
+            for stat in watchedChannels {
+                if let urlString = stat.channelURLString,
+                   let cid = ChannelInboxClient.extractChannelID(from: urlString),
+                   !folderChannelIDs.contains(cid),
+                   seen.insert(cid).inserted {
+                    result.append(cid)
+                }
+            }
+        }
+
+        return result
+    }
+
+    public static func filterEntries(
+        _ entries: [ChannelInboxEntry],
+        watchedVideoIDs: Set<String>,
+        hideWatched: Bool
+    ) -> [ChannelInboxEntry] {
+        guard hideWatched, !watchedVideoIDs.isEmpty else {
+            return entries
+        }
+        return entries.filter { !watchedVideoIDs.contains($0.videoID) }
+    }
+}
+
 /// Cookieless ephemeral Atom RSS client for YouTube channel upload feeds (`youtube.com/feeds/videos.xml`).
 /// Strictly opt-in; never touches cookies, auth headers, or WebKit state.
 public actor ChannelInboxClient {

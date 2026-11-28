@@ -6,6 +6,27 @@
     <description>Most recent releases of GlassGrid You for macOS.</description>
     <language>en</language>
     <item>
+      <title>Version 1.5.0</title>
+      <pubDate>Sat, 28 Nov 2026 00:32:41 +0000</pubDate>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+        <h2>What's New in GlassGrid You 1.5.0</h2>
+        <ul>
+          <li><strong>Precision Playback (A-B Loop, Frame Step, 3.0&times; Speed &amp; 21:9 Aspect Fill):</strong> Set A-B segment loops with seek-cooldown safety, step frame-by-frame (<code>&minus;1f</code> / <code>+1f</code>), unlock <code>2.5&times;</code> &amp; <code>3.0&times;</code> speed presets, and fill 21:9 screens safely (automatically bypassed on FairPlay DRM streams).</li>
+          <li><strong>Full SponsorBlock Spec &amp; Opt-In Return YouTube Dislike:</strong> Adds <em>Non-Music Section</em> and 1-click <em>Highlight Jump</em> markers with colored scrubber ticks across the Menu Bar and Mini-Player, plus strictly opt-in read-only <a href="https://returnyoutubedislike.com">Return YouTube Dislike</a> quality ratios in native chrome.</li>
+          <li><strong>Notes Companion Tab, Follow-Playback Transcripts &amp; Obsidian Markdown Export:</strong> Open the Companion Drawer to the persistent <strong>Notes</strong> tab anytime (even with Live Pulse OFF), auto-scroll live transcripts, bookmark any cue in 1 click, or export Obsidian/Markdown &amp; AI Study Packets.</li>
+          <li><strong>Folder RSS Decks, Up Next Queue, DVR Score Mask, Interactive Notch Island &amp; Stream Deck:</strong> Filter Channel Inbox by Sidebar folders + watched status, queue videos across services, mask live scores &amp; Win-Probability sparklines in Live Pulse, hover-expand the Notch Island, lock watch-along Multiview offsets with tabbed Live Chat, and control 37 MCP tools from the TypeScript Stream Deck plugin under <code>extras/streamdeck-plugin/</code>.</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://updates.glassgridyou.com/GlassGrid-You-1.5.0.dmg"
+        sparkle:edSignature="Rpy1WW52jjWm42Hqlh65L96kXhXapAkPSdncZlRI4PnRPoeNvjqsK2qeuYc0WgEevdrafAErwt8mFCOelDgLBQ=="
+        length="10575043"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.4.1</title>
       <pubDate>Fri, 27 Nov 2026 23:02:29 +0000</pubDate>
       <sparkle:version>9</sparkle:version>

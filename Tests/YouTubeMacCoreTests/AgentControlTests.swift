@@ -130,12 +130,12 @@ final class AgentControlTests: XCTestCase {
         let ctx = AgentRequestContext(source: .mcpStdio, clientName: "test")
 
         // Initialize
-        XCTAssertEqual(handler.serverVersion, "1.4.1")
+        XCTAssertEqual(handler.serverVersion, "1.5.0")
         let initReq = Data(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#.utf8)
         if case .reply(let replyData) = await handler.handleMessageData(initReq, context: ctx, executor: executor),
            let decoded = try? JSONValue.decode(from: replyData) {
             XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["protocolVersion"]?.stringValue, "2025-06-18")
-            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.4.1")
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["serverInfo"]?.objectValue?["version"]?.stringValue, "1.5.0")
         } else {
             XCTFail("Expected initialize reply")
         }
@@ -145,14 +145,14 @@ final class AgentControlTests: XCTestCase {
         let notifRes = await handler.handleMessageData(notifReq, context: ctx, executor: executor)
         XCTAssertEqual(notifRes, .noResponse)
 
-        // tools/list returns all 32 tools with annotations
+        // tools/list returns all 37 tools with annotations
         let listReq = Data(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#.utf8)
         if case .reply(let listData) = await handler.handleMessageData(listReq, context: ctx, executor: executor),
            let decoded = try? JSONValue.decode(from: listData),
            let tools = decoded.objectValue?["result"]?.objectValue?["tools"]?.arrayValue {
-            XCTAssertEqual(tools.count, 32)
+            XCTAssertEqual(tools.count, 37)
         } else {
-            XCTFail("Expected 32 tools from tools/list")
+            XCTFail("Expected 37 tools from tools/list")
         }
 
         // resources/list returns all 5 resources
@@ -511,7 +511,7 @@ final class AgentControlTests: XCTestCase {
     }
 
     func testMCPCatalogPreservesSurfaceAndExposesCleanBoxAndGridControls() {
-        XCTAssertEqual(AgentToolCatalog.tools.count, 32)
+        XCTAssertEqual(AgentToolCatalog.tools.count, 37)
         XCTAssertEqual(AgentToolCatalog.resources.count, 5)
 
         let transcriptTool = AgentToolCatalog.tool(named: "get_transcript")
@@ -617,6 +617,103 @@ final class AgentControlTests: XCTestCase {
 
         let notifIDReq = Data(#"{"jsonrpc":"2.0","method":"resources/templates/list"}"#.utf8)
         XCTAssertEqual(handler.handleDiscoveryOnly(notifIDReq), .noResponse)
+    }
+
+    func testV150ToolCatalogPermissionsAndURLActions() async throws {
+        let expectedV150Tools: [(String, AgentPermissionLevel)] = [
+            ("ab_loop_control", .playbackAndNavigation),
+            ("set_video_aspect", .playbackAndNavigation),
+            ("step_frame", .playbackAndNavigation),
+            ("manage_watch_queue", .playbackAndNavigation),
+            ("manage_video_notes", .fullControl)
+        ]
+
+        for (name, tier) in expectedV150Tools {
+            let tool = try XCTUnwrap(AgentToolCatalog.tool(named: name), "Missing v1.5.0 tool: \(name)")
+            XCTAssertEqual(tool.requiredTier, tier, "Unexpected permission tier for \(name)")
+        }
+
+        // Permission matrix enforcement for v1.5.0 tools via MCPProtocolHandler
+        let handler = MCPProtocolHandler()
+        let playbackExecutor = MockAgentExecutor(enabled: true, tier: .playbackAndNavigation)
+        let readOnlyExecutor = MockAgentExecutor(enabled: true, tier: .readOnly)
+        let ctx = AgentRequestContext(source: .mcpHTTP, clientName: "streamdeck")
+
+        let abLoopCall = Data(#"{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"ab_loop_control","arguments":{"action":"toggle"}}}"#.utf8)
+        if case .reply(let data) = await handler.handleMessageData(abLoopCall, context: ctx, executor: playbackExecutor),
+           let decoded = try? JSONValue.decode(from: data) {
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["isError"]?.boolValue, false)
+        } else {
+            XCTFail("Expected ab_loop_control to succeed in playbackAndNavigation")
+        }
+
+        if case .reply(let data) = await handler.handleMessageData(abLoopCall, context: ctx, executor: readOnlyExecutor),
+           let decoded = try? JSONValue.decode(from: data) {
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["isError"]?.boolValue, true)
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["structuredContent"]?.objectValue?["errorCode"]?.stringValue, "permission_denied")
+        } else {
+            XCTFail("Expected ab_loop_control to be denied in readOnly")
+        }
+
+        let notesCall = Data(#"{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"manage_video_notes","arguments":{"action":"set","markdown":"Notes"}}}"#.utf8)
+        if case .reply(let data) = await handler.handleMessageData(notesCall, context: ctx, executor: playbackExecutor),
+           let decoded = try? JSONValue.decode(from: data) {
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["isError"]?.boolValue, true)
+            XCTAssertEqual(decoded.objectValue?["result"]?.objectValue?["structuredContent"]?.objectValue?["errorCode"]?.stringValue, "permission_denied")
+        } else {
+            XCTFail("Expected manage_video_notes to require fullControl")
+        }
+
+        // AgentURLActionParser v1.5.0 verbs
+        if case .success(let abParsed) = AgentURLActionParser.parse(
+            URL(string: "glassgridyou://action/ab-loop?action=set_range&start=10&end=25&slot=2")!
+        ) {
+            XCTAssertEqual(abParsed.toolName, "ab_loop_control")
+            XCTAssertEqual(abParsed.arguments["action"]?.stringValue, "set_range")
+            XCTAssertEqual(abParsed.arguments["start_seconds"]?.doubleValue, 10)
+            XCTAssertEqual(abParsed.arguments["end_seconds"]?.doubleValue, 25)
+            XCTAssertEqual(abParsed.arguments["slot"]?.intValue, 2)
+        } else {
+            XCTFail("Expected ab-loop URL action to parse")
+        }
+
+        if case .success(let aspectParsed) = AgentURLActionParser.parse(
+            URL(string: "glassgridyou://action/aspect?mode=fill&slot=1")!
+        ) {
+            XCTAssertEqual(aspectParsed.toolName, "set_video_aspect")
+            XCTAssertEqual(aspectParsed.arguments["mode"]?.stringValue, "fill")
+            XCTAssertEqual(aspectParsed.arguments["slot"]?.intValue, 1)
+        } else {
+            XCTFail("Expected aspect URL action to parse")
+        }
+
+        if case .success(let stepParsed) = AgentURLActionParser.parse(
+            URL(string: "glassgridyou://action/frame-step?direction=back&fps=60")!
+        ) {
+            XCTAssertEqual(stepParsed.toolName, "step_frame")
+            XCTAssertEqual(stepParsed.arguments["direction"]?.stringValue, "backward")
+            XCTAssertEqual(stepParsed.arguments["fps"]?.doubleValue, 60)
+        } else {
+            XCTFail("Expected frame-step URL action to parse")
+        }
+
+        if case .success(let queueParsed) = AgentURLActionParser.parse(
+            URL(string: "glassgridyou://action/queue?action=add&url=https://www.youtube.com/watch?v=dQw4w9WgXcQ&title=Test")!
+        ) {
+            XCTAssertEqual(queueParsed.toolName, "manage_watch_queue")
+            XCTAssertEqual(queueParsed.arguments["action"]?.stringValue, "add")
+            XCTAssertEqual(queueParsed.arguments["url"]?.stringValue, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+            XCTAssertEqual(queueParsed.arguments["title"]?.stringValue, "Test")
+        } else {
+            XCTFail("Expected queue add URL action to parse")
+        }
+
+        // Unsafe URL in queue verb must fail closed
+        if case .success = AgentURLActionParser.parse(
+            URL(string: "glassgridyou://action/queue?action=add&url=http://127.0.0.1:41773/mcp")!
+        ) {
+            XCTFail("Loopback URL must be rejected by queue URL action")
+        }
     }
 }
 

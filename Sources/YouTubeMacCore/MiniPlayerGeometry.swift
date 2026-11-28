@@ -455,4 +455,61 @@ public enum NotchMediaHUDGeometry {
             notchWidth: 0
         )
     }
+
+    /// Computes an expanded interactive Notch Media HUD frame anchored at `base.frame.maxY`,
+    /// preserving `notchWidth` and clamping cleanly inside `screenFrame` / `visibleFrame`.
+    public static func expandedFrame(
+        from base: NotchMediaHUDPlacement,
+        in screenFrame: CGRect,
+        visibleFrame: CGRect,
+        extraHeight: CGFloat = 86,
+        extraHorizontalWing: CGFloat = 34
+    ) -> NotchMediaHUDPlacement {
+        guard base.frame.width > 0, base.frame.height > 0,
+              screenFrame.width > 0, screenFrame.height > 0 else {
+            return base
+        }
+
+        let safeExtraHeight = max(0, extraHeight.isFinite ? extraHeight : 0)
+        let safeExtraWing = max(0, extraHorizontalWing.isFinite ? extraHorizontalWing : 0)
+        let effectiveVisible = (visibleFrame.width > 0 && visibleFrame.height > 0) ? visibleFrame : screenFrame
+
+        if base.hasNotch {
+            let minX = screenFrame.minX + 8
+            let maxAvailableWidth = max(base.frame.width, screenFrame.width - 16)
+            let targetWidth = min(maxAvailableWidth, base.frame.width + safeExtraWing * 2).rounded()
+            let rawX = (base.frame.midX - (targetWidth / 2.0)).rounded()
+            let maxX = max(minX, screenFrame.maxX - targetWidth - 8)
+            let clampedX = min(max(rawX, minX), maxX)
+
+            let topY = min(base.frame.maxY, screenFrame.maxY)
+            let maxHeight = max(base.frame.height, topY - (effectiveVisible.minY + 8))
+            let targetHeight = min(maxHeight, base.frame.height + safeExtraHeight).rounded()
+            let y = (topY - targetHeight).rounded()
+
+            return NotchMediaHUDPlacement(
+                frame: CGRect(x: clampedX, y: y, width: targetWidth, height: targetHeight),
+                hasNotch: true,
+                notchWidth: base.notchWidth
+            )
+        }
+
+        let minX = effectiveVisible.minX + 8
+        let maxAvailableWidth = max(base.frame.width, effectiveVisible.width - 16)
+        let targetWidth = min(maxAvailableWidth, base.frame.width + safeExtraWing * 2).rounded()
+        let rawX = (base.frame.midX - (targetWidth / 2.0)).rounded()
+        let maxX = max(minX, effectiveVisible.maxX - targetWidth - 8)
+        let clampedX = min(max(rawX, minX), maxX)
+
+        let topY = min(base.frame.maxY, effectiveVisible.maxY)
+        let maxHeight = max(base.frame.height, topY - (effectiveVisible.minY + 8))
+        let targetHeight = min(maxHeight, base.frame.height + safeExtraHeight).rounded()
+        let y = (topY - targetHeight).rounded()
+
+        return NotchMediaHUDPlacement(
+            frame: CGRect(x: clampedX, y: y, width: targetWidth, height: targetHeight),
+            hasNotch: false,
+            notchWidth: base.notchWidth
+        )
+    }
 }

@@ -85,6 +85,14 @@ public final class AppSettings {
         static let livePulseFantasyLeagues = "ytmac.livePulse.fantasyLeagues"
         static let livePulseMenuBarPin = "ytmac.livePulse.menuBarPin"
         static let livePulseScoringFlashes = "ytmac.livePulse.scoringFlashes"
+        static let rydEnabled = "ytmac.rydEnabled"
+        static let videoAspectFillEnabled = "ytmac.videoAspectFillEnabled"
+        static let livePulseMaskScores = "ytmac.livePulse.maskScores"
+        static let channelInboxHideWatched = "ytmac.channelInbox.hideWatched"
+        static let channelInboxFilter = "ytmac.channelInbox.filter"
+        static let watchQueue = "ytmac.watchQueue"
+        static let watchedInboxVideoIDs = "ytmac.watchedInboxVideoIDs"
+        static let videoNotesByVideoID = "ytmac.videoNotesByVideoID"
     }
 
     @ObservationIgnored
@@ -143,6 +151,12 @@ public final class AppSettings {
 
     @ObservationIgnored
     public var onLivePulseSettingsDidChange: (() -> Void)?
+
+    @ObservationIgnored
+    public var onRYDSettingDidChange: ((Bool) -> Void)?
+
+    @ObservationIgnored
+    public var onVideoAspectFillSettingDidChange: ((Bool) -> Void)?
 
     @ObservationIgnored
     var onCompactHeaderModeDidChange: ((Bool) -> Void)?
@@ -790,6 +804,84 @@ public final class AppSettings {
         }
     }
 
+    public var rydEnabled: Bool {
+        didSet {
+            guard rydEnabled != oldValue else { return }
+            defaults.set(rydEnabled, forKey: Keys.rydEnabled)
+            onRYDSettingDidChange?(rydEnabled)
+        }
+    }
+
+    public var videoAspectFillEnabled: Bool {
+        didSet {
+            guard videoAspectFillEnabled != oldValue else { return }
+            defaults.set(videoAspectFillEnabled, forKey: Keys.videoAspectFillEnabled)
+            onVideoAspectFillSettingDidChange?(videoAspectFillEnabled)
+            onWebConfigDidChange?()
+        }
+    }
+
+    public var livePulseMaskScores: Bool {
+        didSet {
+            guard livePulseMaskScores != oldValue else { return }
+            defaults.set(livePulseMaskScores, forKey: Keys.livePulseMaskScores)
+            onLivePulseSettingsDidChange?()
+        }
+    }
+
+    public var channelInboxHideWatched: Bool {
+        didSet {
+            guard channelInboxHideWatched != oldValue else { return }
+            defaults.set(channelInboxHideWatched, forKey: Keys.channelInboxHideWatched)
+        }
+    }
+
+    public var channelInboxFilter: ChannelInboxFilter {
+        didSet {
+            guard channelInboxFilter != oldValue else { return }
+            saveChannelInboxFilter()
+        }
+    }
+
+    public var watchQueue: [WatchQueueItem] {
+        didSet {
+            if watchQueue.count > WatchQueuePolicy.maxItems {
+                watchQueue = Array(watchQueue.prefix(WatchQueuePolicy.maxItems))
+                return
+            }
+            guard watchQueue != oldValue else { return }
+            saveWatchQueue()
+        }
+    }
+
+    public var watchedInboxVideoIDs: [String] {
+        didSet {
+            let trimmed = Self.boundedWatchedInboxIDs(watchedInboxVideoIDs)
+            if watchedInboxVideoIDs != trimmed {
+                watchedInboxVideoIDs = trimmed
+                return
+            }
+            guard watchedInboxVideoIDs != oldValue else { return }
+            defaults.set(watchedInboxVideoIDs, forKey: Keys.watchedInboxVideoIDs)
+        }
+    }
+
+    public var watchedInboxVideoIDSet: Set<String> {
+        Set(watchedInboxVideoIDs)
+    }
+
+    public var videoNotesByVideoID: [String: VideoNoteEntry] {
+        didSet {
+            let bounded = Self.boundedVideoNotes(videoNotesByVideoID)
+            if videoNotesByVideoID != bounded {
+                videoNotesByVideoID = bounded
+                return
+            }
+            guard videoNotesByVideoID != oldValue else { return }
+            saveVideoNotesByVideoID()
+        }
+    }
+
     public var enabledStreamingServices: [StreamingService] {
         StreamingServiceCatalog.resolvedEnabledServices(from: enabledStreamingServiceIDs)
     }
@@ -1117,6 +1209,37 @@ public final class AppSettings {
 
         self.livePulseMenuBarPin = defaults.object(forKey: Keys.livePulseMenuBarPin) as? Bool ?? false
         self.livePulseScoringFlashes = defaults.object(forKey: Keys.livePulseScoringFlashes) as? Bool ?? false
+        self.rydEnabled = defaults.object(forKey: Keys.rydEnabled) as? Bool ?? false
+        self.videoAspectFillEnabled = defaults.object(forKey: Keys.videoAspectFillEnabled) as? Bool ?? false
+        self.livePulseMaskScores = defaults.object(forKey: Keys.livePulseMaskScores) as? Bool ?? false
+        self.channelInboxHideWatched = defaults.object(forKey: Keys.channelInboxHideWatched) as? Bool ?? false
+
+        if let data = defaults.data(forKey: Keys.channelInboxFilter),
+           let decoded = try? JSONDecoder().decode(ChannelInboxFilter.self, from: data) {
+            self.channelInboxFilter = decoded
+        } else {
+            self.channelInboxFilter = .all
+        }
+
+        if let data = defaults.data(forKey: Keys.watchQueue),
+           let decoded = try? JSONDecoder().decode([WatchQueueItem].self, from: data) {
+            self.watchQueue = Array(decoded.prefix(WatchQueuePolicy.maxItems))
+        } else {
+            self.watchQueue = []
+        }
+
+        if let savedWatched = defaults.stringArray(forKey: Keys.watchedInboxVideoIDs) {
+            self.watchedInboxVideoIDs = Self.boundedWatchedInboxIDs(savedWatched)
+        } else {
+            self.watchedInboxVideoIDs = []
+        }
+
+        if let data = defaults.data(forKey: Keys.videoNotesByVideoID),
+           let decoded = try? JSONDecoder().decode([String: VideoNoteEntry].self, from: data) {
+            self.videoNotesByVideoID = Self.boundedVideoNotes(decoded)
+        } else {
+            self.videoNotesByVideoID = [:]
+        }
     }
 
     public var preferredColorScheme: ColorScheme? {
@@ -1173,7 +1296,8 @@ public final class AppSettings {
         miniPlayer: Bool,
         multiviewTile: Bool = false,
         qualityOverride: PreferredVideoQuality? = nil,
-        cleanBoxBypassed: Bool = false
+        cleanBoxBypassed: Bool = false,
+        aspectFill: Bool = false
     ) -> DistractionFreeConfig {
         DistractionFreeConfig(
             hideShorts: hideShorts,
@@ -1198,7 +1322,8 @@ public final class AppSettings {
             cleanBoxStreamingPlayers: cleanBoxStreamingPlayers,
             cleanBoxBypassed: cleanBoxBypassed,
             contentFilterKeywords: contentFilterConfig.effectiveBlockedKeywords,
-            contentFilterChannels: contentFilterConfig.effectiveBlockedChannels
+            contentFilterChannels: contentFilterConfig.effectiveBlockedChannels,
+            aspectFill: aspectFill
         )
     }
 
@@ -1323,5 +1448,54 @@ public final class AppSettings {
         if let data = try? JSONEncoder().encode(videoBookmarks) {
             defaults.set(data, forKey: Keys.videoBookmarks)
         }
+    }
+
+    private func saveChannelInboxFilter() {
+        if let data = try? JSONEncoder().encode(channelInboxFilter) {
+            defaults.set(data, forKey: Keys.channelInboxFilter)
+        }
+    }
+
+    private func saveWatchQueue() {
+        if let data = try? JSONEncoder().encode(watchQueue) {
+            defaults.set(data, forKey: Keys.watchQueue)
+        }
+    }
+
+    private func saveVideoNotesByVideoID() {
+        if let data = try? JSONEncoder().encode(videoNotesByVideoID) {
+            defaults.set(data, forKey: Keys.videoNotesByVideoID)
+        }
+    }
+
+    private static func boundedWatchedInboxIDs(_ raw: [String]) -> [String] {
+        var deduped: [String] = []
+        var seen: Set<String> = []
+        for id in raw.reversed() {
+            let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { continue }
+            deduped.append(trimmed)
+        }
+        deduped.reverse()
+        if deduped.count > 500 {
+            return Array(deduped.suffix(500))
+        }
+        return deduped
+    }
+
+    private static func boundedVideoNotes(_ raw: [String: VideoNoteEntry]) -> [String: VideoNoteEntry] {
+        guard raw.count > 200 else { return raw }
+        let sorted = raw.sorted { lhs, rhs in
+            if lhs.value.updatedAt != rhs.value.updatedAt {
+                return lhs.value.updatedAt > rhs.value.updatedAt
+            }
+            return lhs.key < rhs.key
+        }
+        var result: [String: VideoNoteEntry] = [:]
+        result.reserveCapacity(200)
+        for (key, entry) in sorted.prefix(200) {
+            result[key] = entry
+        }
+        return result
     }
 }

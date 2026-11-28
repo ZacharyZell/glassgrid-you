@@ -1415,8 +1415,15 @@ struct LivePulseV2Tests {
         #expect(SportsLeague.allCases.count == 9)
         #expect(SportsLeague.defaultEnabledLeagues == [.nfl, .nba, .mlb, .nhl])
         #expect(SportsLeague.primaryLeagues == [.nfl, .nba, .mlb, .nhl])
-        #expect(LivePulseDrawerTab.allCases.count == 5)
+        #expect(LivePulseDrawerTab.allCases.count == 6)
+        #expect(LivePulseDrawerTab.allCases.contains(.notes))
         #expect(LivePulseDrawerTab.allCases.contains(.chat))
+        #expect(LivePulseDrawerTab.notes.requiresLivePulseSports == false)
+        #expect(LivePulseDrawerTab.chat.requiresLivePulseSports == false)
+        #expect(LivePulseDrawerTab.matchup.requiresLivePulseSports == true)
+        #expect(LivePulseDrawerTab.players.requiresLivePulseSports == true)
+        #expect(LivePulseDrawerTab.scores.requiresLivePulseSports == true)
+        #expect(LivePulseDrawerTab.markets.requiresLivePulseSports == true)
 
         #expect(
             SportsLeague.normalizedPriority([]) ==
@@ -1543,5 +1550,72 @@ struct LivePulseV2Tests {
         #expect(summary.recentPlays[0].awayScore == 31)
         #expect(summary.recentPlays[0].homeScore == 27)
         #expect(summary.recentPlays[1].id == "p1")
+    }
+
+    @Test("Downsamples espnWinProbHistory to <= 60 clamped points preserving endpoints and detects PlayByPlayEvent.isKeyPlay")
+    func espnWinProbHistoryDownsamplingClampingAndKeyPlayDetection() throws {
+        // Build 120 winprobability points including out-of-range endpoints (-0.25 and 150.0)
+        // plus a >= 0.08 win-prob swing tied to playId "p-swing".
+        var wpEntries: [String] = []
+        for idx in 0..<120 {
+            if idx == 0 {
+                wpEntries.append(#"{ "homeWinPercentage": -0.25, "playId": "p-start" }"#)
+            } else if idx == 1 {
+                wpEntries.append(#"{ "homeWinPercentage": 0.40, "playId": "p-kickoff" }"#)
+            } else if idx == 2 {
+                wpEntries.append(#"{ "homeWinPercentage": 0.41, "playId": "p-routine" }"#)
+            } else if idx == 3 {
+                wpEntries.append(#"{ "homeWinPercentage": 0.55, "playId": "p-swing" }"#)
+            } else if idx == 119 {
+                wpEntries.append(#"{ "homeWinPercentage": 150.0, "playId": "p-end" }"#)
+            } else {
+                let pct = 0.40 + (Double(idx) / 120.0) * 0.40
+                wpEntries.append(#"{ "homeWinPercentage": \#(pct), "playId": "p-\#(idx)" }"#)
+            }
+        }
+
+        let summaryData = Data("""
+        {
+          "header": {
+            "competitions": [{
+              "competitors": [
+                { "team": { "id": "12", "abbreviation": "KC" } },
+                { "team": { "id": "2", "abbreviation": "BUF" } }
+              ]
+            }]
+          },
+          "winprobability": [\(wpEntries.joined(separator: ","))],
+          "plays": [
+            { "id": "p-routine", "text": "J. Allen pass short right for 4 yds.", "period": { "displayValue": "Q1" }, "clock": { "displayValue": "11:20" }, "team": { "id": "2" }, "scoringPlay": false },
+            { "id": "p-swing", "text": "P. Mahomes pass deep middle for 28 yds.", "period": { "displayValue": "Q1" }, "clock": { "displayValue": "09:45" }, "team": { "id": "12" }, "scoringPlay": false },
+            { "id": "p-turnover", "text": "Fumble recovered by KC at BUF 32 (turnover).", "period": { "displayValue": "Q2" }, "clock": { "displayValue": "06:10" }, "team": { "id": "12" }, "scoringPlay": false },
+            { "id": "p-hr", "text": "S. Ohtani hits a home run to right center.", "period": { "displayValue": "Top 5th" }, "team": { "id": "12" }, "scoringPlay": false },
+            { "id": "p-score", "text": "H. Butker 42 yd field goal is GOOD.", "period": { "displayValue": "Q4" }, "clock": { "displayValue": "00:05" }, "team": { "id": "12" }, "scoringPlay": true }
+          ]
+        }
+        """.utf8)
+
+        let summary = try #require(ESPNScoreboardClient.parseSummary(from: summaryData, eventID: "wp-test-1", league: .nfl))
+
+        // History is clamped 0...1, downsampled <= 60, and preserves first & last endpoints
+        #expect(summary.espnWinProbHistory.count == 60)
+        #expect(summary.espnWinProbHistory.first?.sequence == 0)
+        #expect(summary.espnWinProbHistory.first?.playID == "p-start")
+        #expect(summary.espnWinProbHistory.first?.homeWinProb == 0.0)
+        #expect(summary.espnWinProbHistory.last?.sequence == 119)
+        #expect(summary.espnWinProbHistory.last?.playID == "p-end")
+        #expect(summary.espnWinProbHistory.last?.homeWinProb == 1.0)
+        for point in summary.espnWinProbHistory {
+            #expect(point.homeWinProb >= 0.0 && point.homeWinProb <= 1.0)
+            #expect(point.awayWinProb >= 0.0 && point.awayWinProb <= 1.0)
+        }
+
+        // PlayByPlayEvent.isKeyPlay assertions
+        let byID = Dictionary(uniqueKeysWithValues: summary.recentPlays.map { ($0.id, $0) })
+        #expect(byID["p-routine"]?.isKeyPlay == false)
+        #expect(byID["p-swing"]?.isKeyPlay == true)
+        #expect(byID["p-turnover"]?.isKeyPlay == true)
+        #expect(byID["p-hr"]?.isKeyPlay == true)
+        #expect(byID["p-score"]?.isKeyPlay == true)
     }
 }

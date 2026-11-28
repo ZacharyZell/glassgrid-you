@@ -25,6 +25,14 @@ public final class LivePulseStore {
             return nil
         }
         let clockOrStatus = (game.clock ?? game.statusDetail).trimmingCharacters(in: .whitespacesAndNewlines)
+        if settings.livePulseMaskScores {
+            if game.league == .f1 {
+                let base = "\(game.home.abbreviation) • · \(game.away.abbreviation) •"
+                return clockOrStatus.isEmpty ? base : "\(base) · \(clockOrStatus)"
+            }
+            let masked = "\(game.away.abbreviation) • - • \(game.home.abbreviation)"
+            return clockOrStatus.isEmpty ? masked : "\(masked) · \(clockOrStatus)"
+        }
         if game.league == .f1 {
             let base = "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
             return clockOrStatus.isEmpty ? base : "\(base) · \(clockOrStatus)"
@@ -202,7 +210,11 @@ public final class LivePulseStore {
         self.sleeperClient = sleeperClient
         self.espnFantasyClient = espnFantasyClient
         self.marketsClient = marketsClient
-        self.selectedDrawerTab = settings.livePulseFantasyLeagues.contains(where: \.isEnabled) ? .matchup : .scores
+        if settings.livePulseEnabled {
+            self.selectedDrawerTab = settings.livePulseFantasyLeagues.contains(where: \.isEnabled) ? .matchup : .scores
+        } else {
+            self.selectedDrawerTab = .notes
+        }
     }
 
     // MARK: - Lifecycle & Control
@@ -1066,7 +1078,8 @@ public final class LivePulseStore {
             espnAwayWinProb: summary.awayWinProb ?? game.espnAwayWinProb,
             espnHomeWinProb: summary.homeWinProb ?? game.espnHomeWinProb,
             spreadSummary: summary.spreadSummary ?? game.spreadSummary,
-            overUnder: summary.overUnder ?? game.overUnder
+            overUnder: summary.overUnder ?? game.overUnder,
+            espnWinProbHistory: summary.espnWinProbHistory.isEmpty ? game.espnWinProbHistory : summary.espnWinProbHistory
         )
     }
 

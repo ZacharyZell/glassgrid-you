@@ -708,6 +708,18 @@ public final class AppCoordinator {
                 controller.handleDeArrowThumbnailsSettingChanged(enabled: enabled)
             }
         }
+        settings.onRYDSettingDidChange = { [weak self] enabled in
+            guard let self else { return }
+            for controller in self.openWindows {
+                controller.handleRYDSettingChanged(enabled: enabled)
+            }
+        }
+        settings.onVideoAspectFillSettingDidChange = { [weak self] enabled in
+            guard let self else { return }
+            for controller in self.openWindows {
+                controller.handleVideoAspectFillSettingChanged(enabled: enabled)
+            }
+        }
         settings.onGlobalHotkeysSettingDidChange = { [weak self] enabled in
             self?.updateGlobalHotKeys(enabled: enabled)
         }
@@ -843,12 +855,36 @@ public final class AppCoordinator {
             ? livePulse.menuBarPinnedScoreText
             : nil
 
+        let activeTab = target?.activeMediaTab
+        let rawTabURL = activeTab.map { $0.pendingLazyURL ?? $0.url }
+        let videoID = rawTabURL.flatMap { YouTubeURLRouter.extractVideoID(from: $0) }
+        let fallbackThumbURL: URL? = videoID.flatMap {
+            URL(string: "https://i.ytimg.com/vi/\($0)/mqdefault.jpg")
+        }
+        let thumbnailURL = target?.effectiveThumbnailURL(forVideoID: videoID, fallback: fallbackThumbURL)
+        let sponsorSegments = activeTab?.currentSponsorSegments ?? []
+        let multiviewSlotCount = (target?.isMultiviewActive == true) ? (target?.multiviewTabIDs.count ?? 0) : 0
+        let activeMultiviewSlot = (target?.isMultiviewActive == true)
+            ? (target?.multiviewAudioTabID.flatMap { target?.multiviewSlotNumber(for: $0) } ?? 0)
+            : 0
+
         notchHUD.update(
             status: status,
             timeline: timeline,
             isEnabled: settings.notchMediaHUDEnabled,
             isSuppressed: isSuppressed,
             scoreText: scoreText,
+            thumbnailURL: thumbnailURL,
+            sponsorSegments: sponsorSegments,
+            multiviewSlotCount: multiviewSlotCount,
+            activeMultiviewSlot: activeMultiviewSlot,
+            onSelectMultiviewSlot: { [weak self] slot in
+                (self?.nowPlayingController ?? self?.commandTarget)?.focusMultiviewAudio(slot: slot)
+            },
+            onSeekToTime: { [weak self] seconds in
+                (self?.nowPlayingController ?? self?.commandTarget)?.seek(to: seconds)
+            },
+            isMaskScoresEnabled: settings.livePulseMaskScores,
             onTogglePlayPause: { [weak self] in
                 (self?.nowPlayingController ?? self?.commandTarget)?.togglePlayPause()
             },

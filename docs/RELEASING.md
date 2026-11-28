@@ -64,8 +64,8 @@ Run the release script with the target semantic version and build number:
 
 ```bash
 ./scripts/release-dmg.sh \
-  --version 1.4.1 \
-  --build 9 \
+  --version 1.5.0 \
+  --build 10 \
   --sparkle-public-key "<YOUR_BASE64_ED25519_PUBLIC_KEY>"
 ```
 

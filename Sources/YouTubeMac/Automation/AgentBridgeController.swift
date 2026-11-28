@@ -535,6 +535,21 @@ public final class AgentBridgeController: AgentCommandExecutor {
         case "add_bookmark":
             return executeAddBookmark(args: args, coordinator: coordinator)
 
+        case "ab_loop_control":
+            return executeABLoopControl(args: args, coordinator: coordinator)
+
+        case "set_video_aspect":
+            return executeSetVideoAspect(args: args, coordinator: coordinator)
+
+        case "step_frame":
+            return executeStepFrame(args: args, coordinator: coordinator)
+
+        case "manage_watch_queue":
+            return executeManageWatchQueue(args: args, currentTier: currentTier, coordinator: coordinator)
+
+        case "manage_video_notes":
+            return await executeManageVideoNotes(args: args, coordinator: coordinator)
+
         default:
             return .failure(code: "unknown_tool", message: "Unknown tool '\(name)'.")
         }
@@ -1747,6 +1762,452 @@ public final class AgentBridgeController: AgentCommandExecutor {
                 "note": .string(AgentSecurity.sanitizeWebText(bookmark.note, maxLength: 240).text)
             ])
         )
+    }
+
+    private func executeABLoopControl(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
+        guard let action = args["action"]?.stringValue else {
+            return .failure(code: "invalid_arguments", message: "Missing action.")
+        }
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard let controller = resolveWindow(
+            idString: winID,
+            fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+        ) else {
+            return .failure(code: "no_window", message: "No open GlassGrid You window.")
+        }
+        guard let tab = resolveTab(args: args, in: controller, defaultTab: controller.activeMediaTab) else {
+            return .failure(code: "not_found", message: "Target tab not found.")
+        }
+        guard tab.mediaStatus.hasVideo else {
+            return .failure(code: "no_active_video", message: "No active video in the target tab.")
+        }
+
+        let duration = tab.timeline.duration
+        if action != "clear" {
+            guard duration.isFinite, duration > 0, duration < 86_400 else {
+                return .failure(code: "livestream_unsupported", message: "A-B loop is unavailable on livestreams or unknown-duration streams.")
+            }
+        }
+
+        switch action {
+        case "set_a":
+            if let start = args["start_seconds"]?.doubleValue {
+                guard start.isFinite, start >= 0 else {
+                    return .failure(code: "invalid_arguments", message: "start_seconds must be >= 0.")
+                }
+                var next = tab.abLoop
+                next.startSeconds = start
+                if let end = next.endSeconds, end <= start + ABLoopRange.minimumSpanSeconds {
+                    next.endSeconds = nil
+                    next.isEnabled = false
+                } else if next.endSeconds != nil {
+                    next.isEnabled = true
+                }
+                tab.abLoop = next.clamped(duration: duration)
+            } else {
+                controller.setABLoopStart(for: tab)
+            }
+            return .success(
+                "Loop Start (A) Set",
+                data: abLoopJSON(tab.abLoop)
+            )
+
+        case "set_b":
+            let end = args["end_seconds"]?.doubleValue ?? tab.timeline.currentTime
+            guard end.isFinite, end >= 0 else {
+                return .failure(code: "invalid_arguments", message: "end_seconds must be >= 0.")
+            }
+            let start = tab.abLoop.startSeconds ?? 0
+            guard end > start + ABLoopRange.minimumSpanSeconds else {
+                return .failure(code: "invalid_arguments", message: "Loop end (B) must be at least 0.5s after A.")
+            }
+            guard controller.setABLoopRange(startSeconds: start, endSeconds: end, for: tab) else {
+                return .failure(code: "invalid_arguments", message: "Unable to set A-B loop range.")
+            }
+            return .success("Loop End (B) Set", data: abLoopJSON(tab.abLoop))
+
+        case "toggle":
+            guard tab.abLoop.clamped(duration: duration).isComplete else {
+                return .failure(code: "ab_loop_incomplete", message: "Set both A and B points before toggling A-B loop.")
+            }
+            controller.toggleABLoop(for: tab)
+            return .success(
+                tab.abLoop.isEnabled ? "A-B Loop On" : "A-B Loop Off",
+                data: abLoopJSON(tab.abLoop)
+            )
+
+        case "clear":
+            controller.clearABLoop(for: tab)
+            return .success("A-B Loop Cleared", data: abLoopJSON(tab.abLoop))
+
+        case "set_range":
+            guard let start = args["start_seconds"]?.doubleValue,
+                  let end = args["end_seconds"]?.doubleValue,
+                  start.isFinite, end.isFinite,
+                  start >= 0, end > start + ABLoopRange.minimumSpanSeconds else {
+                return .failure(code: "invalid_arguments", message: "set_range requires start_seconds >= 0 and end_seconds > start_seconds + 0.5.")
+            }
+            guard controller.setABLoopRange(startSeconds: start, endSeconds: end, for: tab) else {
+                return .failure(code: "invalid_arguments", message: "Unable to apply A-B loop range.")
+            }
+            return .success("A-B Loop Active", data: abLoopJSON(tab.abLoop))
+
+        default:
+            return .failure(code: "invalid_arguments", message: "Invalid ab_loop_control action '\(action)'.")
+        }
+    }
+
+    private func abLoopJSON(_ loop: ABLoopRange) -> JSONValue {
+        .object([
+            "startSeconds": loop.startSeconds.map(JSONValue.double) ?? .null,
+            "endSeconds": loop.endSeconds.map(JSONValue.double) ?? .null,
+            "isEnabled": .bool(loop.isEnabled),
+            "isComplete": .bool(loop.isComplete)
+        ])
+    }
+
+    private func executeSetVideoAspect(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
+        guard let modeRaw = args["mode"]?.stringValue?.lowercased() else {
+            return .failure(code: "invalid_arguments", message: "Missing mode.")
+        }
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard let controller = resolveWindow(
+            idString: winID,
+            fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+        ) else {
+            return .failure(code: "no_window", message: "No open GlassGrid You window.")
+        }
+        guard let tab = resolveTab(args: args, in: controller, defaultTab: controller.activeMediaTab) else {
+            return .failure(code: "not_found", message: "Target tab not found.")
+        }
+
+        let targetMode: VideoAspectMode
+        switch modeRaw {
+        case "fit":
+            targetMode = .fit
+        case "fill":
+            targetMode = .fill
+        case "toggle":
+            targetMode = tab.isAspectFillEnabled ? .fit : .fill
+        default:
+            return .failure(code: "invalid_arguments", message: "mode must be fit, fill, or toggle.")
+        }
+
+        let activeURL = tab.webView.url ?? tab.url
+        if targetMode == .fill && !VideoAspectMode.canApplyAspectFill(for: activeURL) {
+            return .failure(code: "drm_protected", message: "21:9 Aspect Fill is unavailable on FairPlay DRM-protected streams.")
+        }
+        guard controller.setVideoAspect(targetMode, for: tab) else {
+            return .failure(code: "drm_protected", message: "21:9 Aspect Fill is unavailable for this stream.")
+        }
+        return .success(
+            targetMode == .fill ? "21:9 Aspect Fill" : "Fit to Frame",
+            data: .object(["aspectMode": .string(targetMode.rawValue)])
+        )
+    }
+
+    private func executeStepFrame(args: [String: JSONValue], coordinator: AppCoordinator) -> AgentCommandOutcome {
+        guard let dirRaw = args["direction"]?.stringValue?.lowercased(),
+              dirRaw == "forward" || dirRaw == "backward" else {
+            return .failure(code: "invalid_arguments", message: "direction must be forward or backward.")
+        }
+        let fps = args["fps"]?.doubleValue ?? 30.0
+        guard fps.isFinite, fps >= 15.0, fps <= 120.0 else {
+            return .failure(code: "invalid_arguments", message: "fps must be between 15 and 120.")
+        }
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        guard let controller = resolveWindow(
+            idString: winID,
+            fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+        ) else {
+            return .failure(code: "no_window", message: "No open GlassGrid You window.")
+        }
+        guard let tab = resolveTab(args: args, in: controller, defaultTab: controller.activeMediaTab) else {
+            return .failure(code: "not_found", message: "Target tab not found.")
+        }
+        guard tab.mediaStatus.hasVideo else {
+            return .failure(code: "no_active_video", message: "No active video in the target tab.")
+        }
+        let activeURL = tab.webView.url ?? tab.url
+        guard VideoAspectMode.canApplyAspectFill(for: activeURL) else {
+            return .failure(code: "drm_protected", message: "Frame step is unavailable on FairPlay DRM-protected streams.")
+        }
+        let duration = tab.timeline.duration
+        guard duration.isFinite, duration > 0, duration < 86_400 else {
+            return .failure(code: "livestream_unsupported", message: "Frame step is unavailable on livestreams.")
+        }
+        let forward = (dirRaw == "forward")
+        guard tab.stepVideoFrame(forward: forward, fps: fps) else {
+            return .failure(code: "step_failed", message: "Unable to step frame.")
+        }
+        return .success(
+            forward ? "Stepped Frame Forward (+1f)" : "Stepped Frame Backward (−1f)",
+            data: .object(["direction": .string(dirRaw), "fps": .double(fps)])
+        )
+    }
+
+    private func executeManageWatchQueue(
+        args: [String: JSONValue],
+        currentTier: AgentPermissionLevel,
+        coordinator: AppCoordinator
+    ) -> AgentCommandOutcome {
+        guard let action = args["action"]?.stringValue?.lowercased() else {
+            return .failure(code: "invalid_arguments", message: "Missing action.")
+        }
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+
+        switch action {
+        case "list":
+            let itemsJSON: [JSONValue] = coordinator.settings.watchQueue.map { item in
+                .object([
+                    "id": .string(item.id.uuidString),
+                    "videoID": item.videoID.map(JSONValue.string) ?? .null,
+                    "url": .string(item.urlString),
+                    "title": .string(AgentSecurity.sanitizeWebText(item.title, maxLength: AgentSecurity.maxWebTitleLength).text),
+                    "channel": .string(AgentSecurity.sanitizeWebText(item.channel, maxLength: AgentSecurity.maxChannelNameLength).text),
+                    "durationSeconds": item.durationSeconds.map(JSONValue.double) ?? .null
+                ])
+            }
+            return .success(
+                "Watch Queue (\(itemsJSON.count))",
+                data: .object([
+                    "contentTrust": .string(AgentSecurity.untrustedWebContentTag),
+                    "count": .int(itemsJSON.count),
+                    "items": .array(itemsJSON)
+                ])
+            )
+
+        case "add", "play_next":
+            guard let rawURL = args["url"]?.stringValue else {
+                return .failure(code: "invalid_arguments", message: "url is required for \(action).")
+            }
+            let validatedURL: URL
+            switch AgentSecurity.validateURL(rawURL, tier: currentTier) {
+            case .success(let valid):
+                validatedURL = valid
+            case .failure(let err):
+                let code = (err == .tierRestrictedCompanionDomain) ? "permission_denied" : "invalid_url"
+                return .failure(code: code, message: err.message)
+            }
+            let title = args["title"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard let item = WatchQueueItem(
+                urlString: validatedURL.absoluteString,
+                title: title.isEmpty ? (validatedURL.host ?? "Video") : title,
+                tier: currentTier
+            ) else {
+                return .failure(code: "invalid_url", message: "Invalid or unauthorized queue URL.")
+            }
+            let playNext = (action == "play_next")
+            if let controller = resolveWindow(idString: winID, fallback: coordinator.commandTarget) {
+                controller.enqueueInWatchQueue(item, playNext: playNext)
+            } else {
+                coordinator.settings.watchQueue = WatchQueuePolicy.enqueue(item, into: coordinator.settings.watchQueue, playNext: playNext)
+            }
+            return .success(
+                playNext ? "Playing Next: \(item.title)" : "Queued: \(item.title)",
+                data: .object([
+                    "itemID": .string(item.id.uuidString),
+                    "queueCount": .int(coordinator.settings.watchQueue.count)
+                ])
+            )
+
+        case "advance":
+            guard let controller = resolveWindow(
+                idString: winID,
+                fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+            ) else {
+                return .failure(code: "no_window", message: "No open GlassGrid You window.")
+            }
+            guard !controller.hasLiveFullscreenTab else {
+                return .failure(code: "blocked_by_fullscreen", message: "Cannot advance queue while a video is in WebKit fullscreen.")
+            }
+            guard let next = controller.popNextWatchQueueItem() else {
+                return .failure(code: "queue_empty", message: "Watch Queue is empty.")
+            }
+            if let url = next.url {
+                controller.navigateSelectedTab(to: url)
+            }
+            return .success(
+                "Playing Next: \(next.title)",
+                data: .object([
+                    "itemID": .string(next.id.uuidString),
+                    "url": .string(next.urlString),
+                    "remainingCount": .int(coordinator.settings.watchQueue.count)
+                ])
+            )
+
+        case "remove":
+            guard let rawID = args["item_id"]?.stringValue,
+                  let uuid = UUID(uuidString: rawID),
+                  coordinator.settings.watchQueue.contains(where: { $0.id == uuid }) else {
+                return .failure(code: "not_found", message: "Watch Queue item not found.")
+            }
+            if let controller = resolveWindow(idString: winID, fallback: coordinator.commandTarget) {
+                controller.removeWatchQueueItem(id: uuid)
+            } else {
+                coordinator.settings.watchQueue = WatchQueuePolicy.remove(id: uuid, from: coordinator.settings.watchQueue)
+            }
+            return .success(
+                "Removed Queue Item",
+                data: .object(["queueCount": .int(coordinator.settings.watchQueue.count)])
+            )
+
+        case "clear":
+            if let controller = resolveWindow(idString: winID, fallback: coordinator.commandTarget) {
+                controller.clearWatchQueue()
+            } else {
+                coordinator.settings.watchQueue = []
+            }
+            return .success("Cleared Watch Queue", data: .object(["queueCount": .int(0)]))
+
+        default:
+            return .failure(code: "invalid_arguments", message: "Invalid manage_watch_queue action '\(action)'.")
+        }
+    }
+
+    private func executeManageVideoNotes(args: [String: JSONValue], coordinator: AppCoordinator) async -> AgentCommandOutcome {
+        guard let action = args["action"]?.stringValue?.lowercased() else {
+            return .failure(code: "invalid_arguments", message: "Missing action.")
+        }
+        let winID = args["window_id"]?.stringValue
+        if let winID, resolveWindow(idString: winID, fallback: nil) == nil {
+            return .failure(code: "not_found", message: "Window '\(winID)' not found.")
+        }
+        let controller = resolveWindow(
+            idString: winID,
+            fallback: coordinator.nowPlayingController ?? coordinator.commandTarget
+        )
+        let activeTab = controller?.activeMediaTab ?? controller?.selectedTab
+        let activeTabURL = activeTab.map { $0.pendingLazyURL ?? $0.url }
+        let activeVideoID = activeTabURL.flatMap { YouTubeURLRouter.extractVideoID(from: $0) }
+
+        let rawVideoID = args["video_id"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedVideoID = (rawVideoID?.isEmpty == false) ? rawVideoID! : (activeVideoID ?? "")
+        guard !resolvedVideoID.isEmpty, ReturnYouTubeDislikeClient.isValidVideoID(resolvedVideoID) else {
+            return .failure(code: "no_active_video", message: "Provide a valid video_id or play a YouTube video.")
+        }
+
+        let resolvedTitle: String = {
+            if let controller, let activeTab, activeVideoID == resolvedVideoID {
+                let raw = activeTab.mediaStatus.title.isEmpty ? controller.effectiveTitle(for: activeTab) : activeTab.mediaStatus.title
+                return raw.isEmpty ? "YouTube Video" : raw
+            }
+            return coordinator.settings.videoNotesByVideoID[resolvedVideoID]?.title ?? "YouTube Video"
+        }()
+
+        switch action {
+        case "get":
+            let entry = coordinator.settings.videoNotesByVideoID[resolvedVideoID]
+            return .success(
+                entry == nil ? "No Note Saved" : "Fetched Video Note",
+                data: .object([
+                    "contentTrust": .string(AgentSecurity.untrustedWebContentTag),
+                    "videoID": .string(resolvedVideoID),
+                    "title": .string(AgentSecurity.sanitizeWebText(entry?.title ?? resolvedTitle, maxLength: AgentSecurity.maxWebTitleLength).text),
+                    "markdown": .string(entry?.markdown ?? ""),
+                    "exists": .bool(entry != nil)
+                ])
+            )
+
+        case "set":
+            guard let markdown = args["markdown"]?.stringValue else {
+                return .failure(code: "invalid_arguments", message: "markdown is required for action=set.")
+            }
+            if let controller {
+                controller.saveNote(markdown: markdown, forVideoID: resolvedVideoID, title: resolvedTitle)
+            } else {
+                let entry = VideoNoteEntry(videoID: resolvedVideoID, title: resolvedTitle, markdown: markdown)
+                var map = coordinator.settings.videoNotesByVideoID
+                if entry.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    map.removeValue(forKey: resolvedVideoID)
+                } else {
+                    map[resolvedVideoID] = entry
+                }
+                coordinator.settings.videoNotesByVideoID = map
+            }
+            let saved = coordinator.settings.videoNotesByVideoID[resolvedVideoID]
+            return .success(
+                "Saved Video Note",
+                data: .object([
+                    "videoID": .string(resolvedVideoID),
+                    "markdown": .string(saved?.markdown ?? "")
+                ])
+            )
+
+        case "append":
+            guard let addition = args["markdown"]?.stringValue else {
+                return .failure(code: "invalid_arguments", message: "markdown is required for action=append.")
+            }
+            let existing = coordinator.settings.videoNotesByVideoID[resolvedVideoID]?.markdown ?? ""
+            let combined = existing.isEmpty ? addition : (existing + "\n" + addition)
+            if let controller {
+                controller.saveNote(markdown: combined, forVideoID: resolvedVideoID, title: resolvedTitle)
+            } else {
+                let entry = VideoNoteEntry(videoID: resolvedVideoID, title: resolvedTitle, markdown: combined)
+                var map = coordinator.settings.videoNotesByVideoID
+                map[resolvedVideoID] = entry
+                coordinator.settings.videoNotesByVideoID = map
+            }
+            let saved = coordinator.settings.videoNotesByVideoID[resolvedVideoID]
+            return .success(
+                "Appended to Video Note",
+                data: .object([
+                    "videoID": .string(resolvedVideoID),
+                    "markdown": .string(saved?.markdown ?? "")
+                ])
+            )
+
+        case "clear":
+            var map = coordinator.settings.videoNotesByVideoID
+            map.removeValue(forKey: resolvedVideoID)
+            coordinator.settings.videoNotesByVideoID = map
+            return .success("Cleared Video Note", data: .object(["videoID": .string(resolvedVideoID)]))
+
+        case "export_markdown":
+            let includeTimestamps = args["include_timestamps"]?.boolValue ?? true
+            let noteMarkdown = coordinator.settings.videoNotesByVideoID[resolvedVideoID]?.markdown ?? ""
+            let matchingBookmarks = coordinator.settings.videoBookmarks.filter { $0.videoID == resolvedVideoID }
+            let matchingTab = controller?.tabs.first {
+                YouTubeURLRouter.extractVideoID(from: $0.pendingLazyURL ?? $0.url) == resolvedVideoID
+            }
+            let chapters = matchingTab?.chapters ?? []
+            let transcript = (matchingTab != nil) ? await matchingTab?.fetchOnDemandTranscript() : nil
+            let urlStr = (matchingTab?.pendingLazyURL ?? matchingTab?.url)?.absoluteString
+                ?? "https://www.youtube.com/watch?v=\(resolvedVideoID)"
+            let exported = TranscriptMarkdownExporter.exportMarkdown(
+                title: resolvedTitle,
+                videoID: resolvedVideoID,
+                urlString: urlStr,
+                transcript: transcript,
+                bookmarks: matchingBookmarks,
+                chapters: chapters,
+                noteMarkdown: noteMarkdown,
+                includeTimestamps: includeTimestamps
+            )
+            return .success(
+                "Exported Video Markdown",
+                data: .object([
+                    "contentTrust": .string(AgentSecurity.untrustedWebContentTag),
+                    "videoID": .string(resolvedVideoID),
+                    "markdown": .string(exported)
+                ])
+            )
+
+        default:
+            return .failure(code: "invalid_arguments", message: "Invalid manage_video_notes action '\(action)'.")
+        }
     }
 
     // MARK: - Snapshot Builders (All Web Fields Sanitized + Tagged)

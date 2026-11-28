@@ -436,9 +436,29 @@ struct PopulatedHomeDashboardView: View {
     }
 
     private var filteredChannelInbox: [ChannelInboxEntry] {
-        controller.channelInboxEntries.filter {
+        controller.filteredChannelInboxEntries.filter {
             !controller.settings.contentFilterConfig.matches(title: $0.title, channel: $0.channelName)
         }
+    }
+
+    private var channelFoldersWithPins: [PinnedFolder] {
+        controller.settings.pinnedFolders.filter { folder in
+            !ChannelInboxFilterHelper.channelIDs(
+                for: .folder(folder.id),
+                folders: controller.settings.pinnedFolders,
+                pins: controller.settings.pinnedItems,
+                watchedChannels: controller.settings.watchedChannels
+            ).isEmpty
+        }
+    }
+
+    private var hasUngroupedChannelPins: Bool {
+        !ChannelInboxFilterHelper.channelIDs(
+            for: .ungrouped,
+            folders: controller.settings.pinnedFolders,
+            pins: controller.settings.pinnedItems,
+            watchedChannels: controller.settings.watchedChannels
+        ).isEmpty
     }
 
     private var filteredBookmarks: [VideoBookmark] {
@@ -577,14 +597,37 @@ struct PopulatedHomeDashboardView: View {
                     }
                 }
 
-                // Channel Inbox (Opt-in Cookieless RSS Strip)
-                if !filteredChannelInbox.isEmpty {
-                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                        HStack {
+                // Channel Inbox (Opt-in Cookieless RSS Strip + Per-Folder Decks)
+                if !controller.channelInboxEntries.isEmpty || !channelFoldersWithPins.isEmpty {
+                    VStack(alignment: .leading, spacing: AppSpacing.md) {
+                        HStack(spacing: AppSpacing.sm) {
                             Label("Channel Inbox", systemImage: "tray.full.fill")
                                 .font(AppFont.subhead(weight: .semibold))
                                 .foregroundStyle(.primary)
+
                             Spacer()
+
+                            Button {
+                                controller.toggleChannelInboxHideWatched()
+                            } label: {
+                                let hiding = controller.settings.channelInboxHideWatched
+                                HStack(spacing: AppSpacing.xs) {
+                                    Image(systemName: hiding ? "eye.slash.fill" : "eye")
+                                        .font(AppIconFont.xs(weight: .semibold))
+                                    Text("Hide Watched")
+                                        .font(AppFont.caption(weight: hiding ? .semibold : .medium))
+                                }
+                                .foregroundStyle(hiding ? AppleTheme.accentText : AppleTheme.textSecondary)
+                                .padding(.horizontal, AppSpacing.md)
+                                .minHitTarget(24, shape: Capsule(style: .continuous))
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(hiding ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .help("Hide videos marked as watched in Channel Inbox")
+
                             Button {
                                 Task { @MainActor in
                                     await controller.refreshChannelInbox()
@@ -600,60 +643,79 @@ struct PopulatedHomeDashboardView: View {
                             .disabled(controller.isLoadingChannelInbox)
                         }
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 14) {
-                                ForEach(filteredChannelInbox) { entry in
-                                    VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                                        CachedThumbnailImage(
-                                            url: controller.effectiveThumbnailURL(for: entry.watchURL, fallback: entry.thumbnailURL),
-                                            fallbackURL: entry.thumbnailURL,
-                                            placeholderIconSize: 18
-                                        )
-                                            .frame(width: 212, height: 119)
-                                            .clipped()
-                                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
-                                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
-                                            )
-
-                                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                                            Text(entry.title)
-                                                .font(AppFont.callout(weight: .medium))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-
-                                            Text(entry.channelName)
-                                                .font(AppFont.caption)
-                                                .foregroundStyle(AppleTheme.textSecondary)
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
+                        if !channelFoldersWithPins.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                LiquidGlassGroup(spacing: 6) {
+                                    HStack(spacing: 6) {
+                                        LiquidGlassFilterPill(
+                                            title: "All",
+                                            systemImage: "tray.full",
+                                            isSelected: controller.settings.channelInboxFilter == .all
+                                        ) {
+                                            selectChannelInboxFilter(.all)
                                         }
-                                        .frame(width: 212, alignment: .leading)
-                                    }
-                                    .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
-                                    .onTapGesture {
-                                        if let url = entry.watchURL {
-                                            controller.navigateSelectedTab(to: url)
-                                        }
-                                    }
-                                    .task(id: "\(entry.videoID)-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)") {
-                                        controller.ensureDeArrowBrandingLoaded(forVideoID: entry.videoID)
-                                    }
-                                    .contextMenu {
-                                        if let url = entry.watchURL {
-                                            Button("Open in New Tab") {
-                                                controller.createTab(url: url, select: true)
+
+                                        ForEach(channelFoldersWithPins) { folder in
+                                            LiquidGlassFilterPill(
+                                                title: folder.name,
+                                                systemImage: "folder.fill",
+                                                isSelected: controller.settings.channelInboxFilter == .folder(folder.id)
+                                            ) {
+                                                selectChannelInboxFilter(.folder(folder.id))
                                             }
-                                            Button("Open in Multiview") {
-                                                controller.addTileToMultiview(url: url)
+                                        }
+
+                                        if hasUngroupedChannelPins {
+                                            LiquidGlassFilterPill(
+                                                title: "Ungrouped",
+                                                systemImage: "tray",
+                                                isSelected: controller.settings.channelInboxFilter == .ungrouped
+                                            ) {
+                                                selectChannelInboxFilter(.ungrouped)
                                             }
                                         }
                                     }
+                                    .padding(.vertical, 2)
                                 }
                             }
-                            .padding(.vertical, 2)
+                        }
+
+                        if filteredChannelInbox.isEmpty {
+                            HStack(spacing: AppSpacing.md) {
+                                Text(
+                                    controller.settings.channelInboxHideWatched
+                                        ? "All uploads in this deck are marked watched."
+                                        : "No recent RSS uploads in this folder deck."
+                                )
+                                .font(AppFont.caption)
+                                .foregroundStyle(AppleTheme.textSecondary)
+
+                                if controller.settings.channelInboxHideWatched {
+                                    Button("Show Watched") {
+                                        controller.toggleChannelInboxHideWatched()
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(AppFont.caption(weight: .semibold))
+                                    .foregroundStyle(AppleTheme.accentText)
+                                } else if controller.settings.channelInboxFilter != .all {
+                                    Button("Show All") {
+                                        selectChannelInboxFilter(.all)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(AppFont.caption(weight: .semibold))
+                                    .foregroundStyle(AppleTheme.accentText)
+                                }
+                            }
+                            .padding(.vertical, AppSpacing.xs)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 14) {
+                                    ForEach(filteredChannelInbox) { entry in
+                                        channelInboxCard(entry: entry)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
                         }
                     }
                 }
@@ -847,6 +909,169 @@ struct PopulatedHomeDashboardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AppleTheme.canvasColor, ignoresSafeAreaEdges: [])
+    }
+
+    private func selectChannelInboxFilter(_ filter: ChannelInboxFilter) {
+        controller.settings.channelInboxFilter = filter
+        Task { @MainActor in
+            await controller.refreshChannelInbox()
+        }
+    }
+
+    @ViewBuilder
+    private func channelInboxCard(entry: ChannelInboxEntry) -> some View {
+        let isWatched = controller.settings.watchedInboxVideoIDSet.contains(entry.videoID)
+
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            ZStack(alignment: .topTrailing) {
+                CachedThumbnailImage(
+                    url: controller.effectiveThumbnailURL(for: entry.watchURL, fallback: entry.thumbnailURL),
+                    fallbackURL: entry.thumbnailURL,
+                    placeholderIconSize: 18
+                )
+                .frame(width: 212, height: 119)
+                .clipped()
+                .opacity(isWatched ? 0.68 : 1.0)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.75)
+                )
+
+                if isWatched {
+                    Label("Watched", systemImage: "checkmark.circle.fill")
+                        .font(AppFont.micro(weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, AppSpacing.sm)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.72), in: Capsule(style: .continuous))
+                        .padding(AppSpacing.sm)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
+            .onTapGesture {
+                if let url = entry.watchURL {
+                    controller.markInboxVideoWatched(entry.videoID, watched: true)
+                    controller.navigateSelectedTab(to: url)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                Text(entry.title)
+                    .font(AppFont.callout(weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Text(entry.channelName)
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(width: 212, alignment: .leading)
+
+            HStack(spacing: AppSpacing.xs) {
+                Button {
+                    controller.markInboxVideoWatched(entry.videoID, watched: !isWatched)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: isWatched ? "checkmark.circle.fill" : "checkmark.circle")
+                            .font(AppIconFont.xs(weight: .semibold))
+                        Text(isWatched ? "Watched" : "Mark Watched")
+                            .font(AppFont.micro(weight: .medium))
+                    }
+                    .foregroundStyle(isWatched ? AppleTheme.accentText : AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.sm)
+                    .minHitTarget(22, shape: Capsule(style: .continuous))
+                    .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                }
+                .buttonStyle(.plain)
+
+                if let url = entry.watchURL {
+                    Button {
+                        if let item = WatchQueueItem(
+                            videoID: entry.videoID,
+                            urlString: url.absoluteString,
+                            title: entry.title,
+                            channel: entry.channelName
+                        ) {
+                            controller.enqueueInWatchQueue(item, playNext: false)
+                        }
+                    } label: {
+                        Text("+ Queue")
+                            .font(AppFont.micro(weight: .medium))
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(22, shape: Capsule(style: .continuous))
+                            .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        if let item = WatchQueueItem(
+                            videoID: entry.videoID,
+                            urlString: url.absoluteString,
+                            title: entry.title,
+                            channel: entry.channelName
+                        ) {
+                            controller.enqueueInWatchQueue(item, playNext: true)
+                        }
+                    } label: {
+                        Text("Play Next")
+                            .font(AppFont.micro(weight: .semibold))
+                            .foregroundStyle(AppleTheme.accentText)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(22, shape: Capsule(style: .continuous))
+                            .appleGlass(in: Capsule(style: .continuous), tint: AppleTheme.accentText.opacity(0.12), interactive: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .task(id: "\(entry.videoID)-\(controller.settings.deArrowEnabled)-\(controller.settings.deArrowThumbnailsEnabled)") {
+            controller.ensureDeArrowBrandingLoaded(forVideoID: entry.videoID)
+        }
+        .contextMenu {
+            if let url = entry.watchURL {
+                Button("Play Now") {
+                    controller.markInboxVideoWatched(entry.videoID, watched: true)
+                    controller.navigateSelectedTab(to: url)
+                }
+                Button("Play Next in Queue") {
+                    if let item = WatchQueueItem(
+                        videoID: entry.videoID,
+                        urlString: url.absoluteString,
+                        title: entry.title,
+                        channel: entry.channelName
+                    ) {
+                        controller.enqueueInWatchQueue(item, playNext: true)
+                    }
+                }
+                Button("Add to Up Next Queue") {
+                    if let item = WatchQueueItem(
+                        videoID: entry.videoID,
+                        urlString: url.absoluteString,
+                        title: entry.title,
+                        channel: entry.channelName
+                    ) {
+                        controller.enqueueInWatchQueue(item, playNext: false)
+                    }
+                }
+                Divider()
+                Button("Open in New Tab") {
+                    controller.createTab(url: url, select: true)
+                }
+                Button("Open in Multiview") {
+                    controller.addTileToMultiview(url: url)
+                }
+                Divider()
+            }
+            Button(isWatched ? "Mark Unwatched" : "Mark Watched") {
+                controller.markInboxVideoWatched(entry.videoID, watched: !isWatched)
+            }
+        }
     }
 }
 

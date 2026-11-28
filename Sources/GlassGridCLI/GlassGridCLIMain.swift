@@ -325,6 +325,111 @@ enum GlassGridCLIMain {
                 toolArgs["note"] = .string(note)
             }
             mapped = .success(("add_bookmark", toolArgs))
+        case "ab-loop", "ab_loop":
+            let sub = (args.first ?? "toggle").lowercased()
+            switch sub {
+            case "set-a", "set_a", "a":
+                mapped = .success(("ab_loop_control", ["action": .string("set_a")]))
+            case "set-b", "set_b", "b":
+                mapped = .success(("ab_loop_control", ["action": .string("set_b")]))
+            case "toggle", "clear":
+                mapped = .success(("ab_loop_control", ["action": .string(sub)]))
+            case "set-range", "set_range", "range":
+                if args.count >= 3,
+                   let start = Double(args[1]), start.isFinite, start >= 0,
+                   let end = Double(args[2]), end.isFinite, end >= 0 {
+                    mapped = .success(("ab_loop_control", [
+                        "action": .string("set_range"),
+                        "start_seconds": .double(start),
+                        "end_seconds": .double(end)
+                    ]))
+                } else {
+                    mapped = .failure(CLIUsageError("Usage: glassgrid ab-loop set-range <start_seconds> <end_seconds>"))
+                }
+            default:
+                mapped = .failure(CLIUsageError("Usage: glassgrid ab-loop <set-a|set-b|toggle|clear|set-range <start> <end>>"))
+            }
+        case "aspect":
+            let mode = (args.first ?? "toggle").lowercased()
+            if ["fit", "fill", "toggle"].contains(mode) {
+                mapped = .success(("set_video_aspect", ["mode": .string(mode)]))
+            } else {
+                mapped = .failure(CLIUsageError("Usage: glassgrid aspect <fit|fill|toggle>"))
+            }
+        case "frame-step", "frame_step":
+            let rawDir = (args.first ?? "forward").lowercased()
+            let direction: String?
+            switch rawDir {
+            case "forward", "fwd", "+": direction = "forward"
+            case "backward", "back", "-": direction = "backward"
+            default: direction = nil
+            }
+            if let direction {
+                var toolArgs: [String: JSONValue] = ["direction": .string(direction)]
+                if let rawFPS = args.dropFirst().first {
+                    if let fps = Double(rawFPS), fps.isFinite, fps >= 15, fps <= 120 {
+                        toolArgs["fps"] = .double(fps)
+                        mapped = .success(("step_frame", toolArgs))
+                    } else {
+                        mapped = .failure(CLIUsageError("Usage: glassgrid frame-step <forward|backward> [15..120]"))
+                    }
+                } else {
+                    mapped = .success(("step_frame", toolArgs))
+                }
+            } else {
+                mapped = .failure(CLIUsageError("Usage: glassgrid frame-step <forward|backward> [fps]"))
+            }
+        case "queue":
+            let sub = (args.first ?? "list").lowercased()
+            switch sub {
+            case "list", "advance", "clear":
+                mapped = .success(("manage_watch_queue", ["action": .string(sub)]))
+            case "add", "play-next", "play_next":
+                let actionName = (sub == "add") ? "add" : "play_next"
+                if let url = args.dropFirst().first {
+                    var toolArgs: [String: JSONValue] = ["action": .string(actionName), "url": .string(url)]
+                    let title = args.dropFirst(2).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !title.isEmpty {
+                        toolArgs["title"] = .string(title)
+                    }
+                    mapped = .success(("manage_watch_queue", toolArgs))
+                } else {
+                    mapped = .failure(CLIUsageError("Usage: glassgrid queue \(sub) <https-url> [title...]"))
+                }
+            case "remove":
+                if let itemID = args.dropFirst().first, !itemID.isEmpty {
+                    mapped = .success(("manage_watch_queue", ["action": .string("remove"), "item_id": .string(itemID)]))
+                } else {
+                    mapped = .failure(CLIUsageError("Usage: glassgrid queue remove <item-id>"))
+                }
+            default:
+                mapped = .failure(CLIUsageError("Usage: glassgrid queue <list|add|play-next|advance|remove|clear>"))
+            }
+        case "notes":
+            let sub = (args.first ?? "get").lowercased()
+            switch sub {
+            case "get", "clear":
+                var toolArgs: [String: JSONValue] = ["action": .string(sub)]
+                if let videoID = args.dropFirst().first, !videoID.isEmpty {
+                    toolArgs["video_id"] = .string(videoID)
+                }
+                mapped = .success(("manage_video_notes", toolArgs))
+            case "set", "append":
+                let text = args.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    mapped = .success(("manage_video_notes", ["action": .string(sub), "markdown": .string(text)]))
+                } else {
+                    mapped = .failure(CLIUsageError("Usage: glassgrid notes \(sub) <markdown...>"))
+                }
+            case "export", "export-markdown", "export_markdown":
+                var toolArgs: [String: JSONValue] = ["action": .string("export_markdown")]
+                if let videoID = args.dropFirst().first, !videoID.isEmpty {
+                    toolArgs["video_id"] = .string(videoID)
+                }
+                mapped = .success(("manage_video_notes", toolArgs))
+            default:
+                mapped = .failure(CLIUsageError("Usage: glassgrid notes <get|set|append|clear|export>"))
+            }
         default:
             mapped = .failure(CLIUsageError("Unknown command '\(command)'. Run 'glassgrid --help' for usage."))
         }
@@ -409,6 +514,11 @@ enum GlassGridCLIMain {
           sync-all                                 Sync all Multiview streams to live edge or primary
           ghost-mode [on|off|toggle]               Toggle Floating Mini-Player click-through Ghost Mode
           bookmark [note...]                       Save a timestamped bookmark for the active video
+          ab-loop <set-a|set-b|toggle|clear|set-range>
+          aspect <fit|fill|toggle>                 Toggle Aspect Fit / Aspect Fill on non-DRM video
+          frame-step <forward|backward> [fps]      Step one frame forward or backward on non-DRM VOD
+          queue <list|add|play-next|advance|remove|clear>
+          notes <get|set|append|clear|export>      Manage per-video Markdown study notes
 
         OPTIONS:
           --json                                   Print structured JSON output

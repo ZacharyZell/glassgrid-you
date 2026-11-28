@@ -1167,6 +1167,10 @@ public enum EnhancementScript {
                 setDatasetFlag(root, 'ytmacAutoTheater', isStdYT && cfg.autoTheaterMode);
                 setDatasetFlag(root, 'ytmacRedirectShorts', isStdYT && cfg.redirectShortsToWatch);
 
+                const activeVideo = getMainVideo();
+                const hasDRMKeys = Boolean(activeVideo && (activeVideo.mediaKeys || activeVideo.webkitKeys));
+                setDatasetFlag(root, 'ytmacAspectFill', !isYTTV && !bypassed && !hasDRMKeys && Boolean(cfg.aspectFill));
+
                 if (isStdYT) {
                     setDatasetFlag(root, 'ytmacCleanBox', ytCleanBox);
                     lastCleanBoxEligible = onWatch;
@@ -1703,6 +1707,10 @@ public enum EnhancementScript {
                 for (let i = 0; i < sponsorState.segments.length; i += 1) {
                     if (sponsorState.skippedIndices.has(i)) continue;
                     const seg = sponsorState.segments[i];
+                    const cat = String(seg[2] || 'sponsor').toLowerCase();
+                    if (cat === 'poi_highlight') {
+                        continue;
+                    }
                     if (isSponsorTimeSuppressed(seg[0])) {
                         sponsorState.skippedIndices.add(i);
                         continue;
@@ -2084,6 +2092,9 @@ public enum EnhancementScript {
                     }, { passive: true });
                 }
                 video.addEventListener('timeupdate', () => {
+                    if (isYouTubeTVHost() || video.mediaKeys || video.webkitKeys) {
+                        setDatasetFlag(document.documentElement, 'ytmacAspectFill', false);
+                    }
                     checkSponsorSkip(video);
                     if (isScrubbing) return;
                     emitMediaState(false);
@@ -3301,6 +3312,32 @@ public enum EnhancementScript {
         """
     }
 
+    public static func stepVideoFrameScript(forward: Bool, fps: Double = 30.0) -> String {
+        let safeFPS = min(max(fps.isFinite ? fps : 30.0, 15.0), 120.0)
+        let stepSeconds = (forward ? 1.0 : -1.0) / safeFPS
+        let stepString = String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), stepSeconds)
+        return """
+        (() => {
+            \(resolveMainVideoSnippet)
+            if (!v) return false;
+            if (location.hostname.toLowerCase() === 'tv.youtube.com' || v.mediaKeys || v.webkitKeys) {
+                return false;
+            }
+            if (!Number.isFinite(v.duration) || v.duration <= 0) {
+                return false;
+            }
+            if (!v.paused && typeof v.pause === 'function') {
+                v.pause();
+            }
+            const current = Number.isFinite(v.currentTime) ? v.currentTime : 0;
+            const nextTime = Math.min(Math.max(current + (\(stepString)), 0), v.duration);
+            v.currentTime = nextTime;
+            if (typeof window.__ytmacEmitStateNow === 'function') window.__ytmacEmitStateNow();
+            return true;
+        })();
+        """
+    }
+
     public static let focusYouTubeSearchScript = """
     (() => {
         const input = document.querySelector('input#search, input[name="search_query"]');
@@ -3382,7 +3419,8 @@ public enum EnhancementScript {
           "cleanBoxStreamingPlayers": \(boolString(config.cleanBoxStreamingPlayers)),
           "cleanBoxBypassed": \(boolString(config.cleanBoxBypassed)),
           "contentFilterKeywords": [\(filterKeywordsJSON)],
-          "contentFilterChannels": [\(filterChannelsJSON)]
+          "contentFilterChannels": [\(filterChannelsJSON)],
+          "aspectFill": \(boolString(config.aspectFill))
         }
         """
     }
@@ -3506,6 +3544,10 @@ public enum EnhancementScript {
         border: 0 !important;
         transform: none !important;
         object-fit: contain !important;
+    }
+
+    html[data-ytmac-host="web"][data-ytmac-clean-box="true"][data-ytmac-aspect-fill="true"] [data-ytmac-cb="video"] {
+        object-fit: cover !important;
     }
     """
 
@@ -3751,6 +3793,10 @@ public enum EnhancementScript {
         left: 0 !important;
         top: 0 !important;
         object-fit: contain !important;
+    }
+
+    html[data-ytmac-aspect-fill="true"][data-ytmac-host="youtube"] #movie_player video.html5-main-video {
+        object-fit: cover !important;
     }
     """
 }

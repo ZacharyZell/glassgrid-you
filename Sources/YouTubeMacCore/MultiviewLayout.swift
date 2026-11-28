@@ -1284,3 +1284,128 @@ public enum MultiviewPresetTransferCodec {
         return sanitized
     }
 }
+
+/// Video aspect presentation mode for standard YouTube and non-DRM players.
+public enum VideoAspectMode: String, CaseIterable, Codable, Sendable {
+    case fit
+    case fill
+
+    public var title: String {
+        switch self {
+        case .fit: return "Fit (Letterbox)"
+        case .fill: return "Fill (Crop)"
+        }
+    }
+
+    public var systemImage: String {
+        switch self {
+        case .fit: return "arrow.down.right.and.arrow.up.left"
+        case .fill: return "arrow.up.left.and.arrow.down.right"
+        }
+    }
+
+    public static func canApplyAspectFill(for url: URL) -> Bool {
+        MultiviewGridLayout.shouldMaskWebViewLayer(for: url)
+    }
+}
+
+/// Per-tile Watch-Along synchronization offset entry clamped within `-300...300` seconds.
+public struct MultiviewSyncOffsetEntry: Equatable, Hashable, Codable, Sendable {
+    public let tabID: UUID
+    public var offsetSeconds: Double
+
+    public init(tabID: UUID, offsetSeconds: Double = 0) {
+        self.tabID = tabID
+        self.offsetSeconds = MultiviewWatchAlongSync.clampOffset(offsetSeconds)
+    }
+}
+
+/// Pure offset-aware Multiview Watch-Along sync helpers for VOD and DVR live streams.
+public enum MultiviewWatchAlongSync {
+    public static let minOffsetSeconds: Double = -300.0
+    public static let maxOffsetSeconds: Double = 300.0
+
+    public static func clampOffset(_ raw: Double) -> Double {
+        guard raw.isFinite else { return 0 }
+        return min(max(raw, minOffsetSeconds), maxOffsetSeconds)
+    }
+
+    public static func computeTargetTime(
+        masterTime: Double,
+        tileOffsetSeconds: Double,
+        tileDuration: Double?,
+        isLive: Bool,
+        minSeekable: Double? = nil,
+        maxSeekable: Double? = nil
+    ) -> Double? {
+        guard masterTime.isFinite, masterTime >= 0 else {
+            return nil
+        }
+        let rawTarget = masterTime + clampOffset(tileOffsetSeconds)
+        if isLive {
+            if let minS = minSeekable, minS.isFinite,
+               let maxS = maxSeekable, maxS.isFinite, maxS >= minS {
+                return min(max(rawTarget, minS), maxS)
+            }
+            if let maxS = maxSeekable, maxS.isFinite, maxS >= 0 {
+                return min(max(rawTarget, 0), maxS)
+            }
+            return max(0, rawTarget)
+        }
+        if let dur = tileDuration, dur.isFinite, dur > 0 {
+            return min(max(rawTarget, 0), dur)
+        }
+        return max(0, rawTarget)
+    }
+
+    public static func computeRateAdjustments(
+        samples: [MultiviewSyncSample],
+        masterTabID: UUID?,
+        isAutoSyncEnabled: Bool,
+        offsetsByTabID: [UUID: Double],
+        currentRates: [UUID: Double] = [:]
+    ) -> [MultiviewRateAdjustment] {
+        guard isAutoSyncEnabled, samples.count >= 2 else { return [] }
+        let master = masterTabID.flatMap { id in samples.first(where: { $0.tabID == id }) } ?? samples[0]
+        guard master.isPlaying, master.currentTime.isFinite, master.currentTime >= 0 else {
+            return []
+        }
+
+        let masterOffset = clampOffset(offsetsByTabID[master.tabID] ?? 0)
+        var adjustments: [MultiviewRateAdjustment] = []
+
+        for sample in samples where sample.tabID != master.tabID {
+            guard sample.isPlaying, sample.currentTime.isFinite, sample.currentTime >= 0 else {
+                continue
+            }
+            let sampleOffset = clampOffset(offsetsByTabID[sample.tabID] ?? 0)
+            let expectedTime = master.currentTime + (sampleOffset - masterOffset)
+            let drift = sample.currentTime - expectedTime
+            let absDrift = abs(drift)
+
+            if !sample.isLive && !master.isLive && absDrift > MultiviewSyncPlanner.maxVODCatchupWindowSeconds {
+                continue
+            }
+
+            let targetRate: Double
+            if absDrift <= MultiviewSyncPlanner.restoreDriftSeconds {
+                targetRate = 1.0
+            } else if absDrift > MultiviewSyncPlanner.triggerDriftSeconds {
+                targetRate = drift > 0 ? MultiviewSyncPlanner.slowCatchupRate : MultiviewSyncPlanner.fastCatchupRate
+            } else if let existing = currentRates[sample.tabID], abs(existing - 1.0) >= 0.02 {
+                targetRate = existing
+            } else {
+                targetRate = 1.0
+            }
+
+            adjustments.append(
+                MultiviewRateAdjustment(
+                    tabID: sample.tabID,
+                    targetRate: targetRate,
+                    driftSeconds: drift
+                )
+            )
+        }
+        return adjustments
+    }
+}

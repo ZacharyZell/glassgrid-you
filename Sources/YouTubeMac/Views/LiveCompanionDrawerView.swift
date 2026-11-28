@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 import YouTubeMacCore
 
 /// Trailing Liquid Glass Live Companion Drawer displaying fantasy matchups, active-in-stream players,
-/// live scores with 1-click stream pinning, read-only prediction markets, lazy live chat, and quick web-tile launchers.
+/// live scores with 1-click stream pinning, read-only prediction markets, persistent Notes & Transcript workspace,
+/// lazy live chat, and quick web-tile launchers.
 struct LiveCompanionDrawerView: View {
     @Bindable var controller: AppController
     @Bindable var store: LivePulseStore
@@ -18,10 +20,34 @@ struct LiveCompanionDrawerView: View {
     @State private var showUpcomingPlayers: Bool = false
     @State private var showRosterPlaysInMatchup: Bool = true
     @State private var showRosterPlaysInScores: Bool = false
+    @State private var showKeyPlaysInMatchup: Bool = false
+    @State private var showKeyPlaysInScores: Bool = false
     @State private var expandedPlayGameIDs: Set<String> = []
     @State private var isPinEmptyStatePopoverPresented: Bool = false
     @State private var isSpoilerPopoverPresented: Bool = false
     @State private var manualChatTabID: UUID?
+    @State private var selectedChatTileTabID: UUID?
+    @State private var noteDraft: String = ""
+    @State private var loadedNoteVideoID: String = ""
+    @State private var loadedNoteVideoTitle: String = ""
+    @State private var bookmarkNoteDraft: String = ""
+    @State private var transcriptSearchQuery: String = ""
+    @State private var followTranscriptPlayback: Bool = true
+    @State private var copiedStudyPacketFeedback: Bool = false
+    @State private var bookmarkedCueIDFeedback: Int?
+    @State private var isPeekingMaskedScores: Bool = false
+
+    private var isScoresMasked: Bool {
+        controller.settings.livePulseMaskScores && !isPeekingMaskedScores
+    }
+
+    private var isSportsTabActive: Bool {
+        store.selectedDrawerTab.requiresLivePulseSports
+    }
+
+    private var isSportsOptInRequired: Bool {
+        isSportsTabActive && !controller.settings.livePulseEnabled
+    }
 
     private var isResolvedDark: Bool {
         switch controller.settings.appearance {
@@ -158,11 +184,21 @@ struct LiveCompanionDrawerView: View {
             drawerHeader
             Divider().opacity(0.35)
 
-            contextAndFiltersBar
-            Divider().opacity(0.28)
+            if isSportsTabActive && !isSportsOptInRequired {
+                contextAndFiltersBar
+                Divider().opacity(0.28)
+            }
 
-            if store.selectedDrawerTab == .chat {
+            if isSportsOptInRequired {
+                ScrollView(.vertical, showsIndicators: false) {
+                    livePulseOptInCard(for: store.selectedDrawerTab)
+                        .padding(10)
+                }
+            } else if store.selectedDrawerTab == .chat {
                 chatTabContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if store.selectedDrawerTab == .notes {
+                notesTabContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
@@ -176,7 +212,7 @@ struct LiveCompanionDrawerView: View {
                             scoresTabContent
                         case .markets:
                             marketsTabContent
-                        case .chat:
+                        case .notes, .chat:
                             EmptyView()
                         }
                     }
@@ -202,32 +238,55 @@ struct LiveCompanionDrawerView: View {
 
     // MARK: - 36pt Drawer Header (Omit WindowDragArea — topHeaderBar owns window drag)
 
+    private enum DrawerStripDisplayMode {
+        case fullTitles
+        case compactSelectedTitle
+        case iconsOnly
+    }
+
     @ViewBuilder
     private var drawerHeader: some View {
         HStack(spacing: AppSpacing.xxs) {
-            // Segmented Mode Picker (overflow-safe at 280–440pt across 5 tabs)
+            // Segmented Mode Picker (overflow-safe at 280–440pt across all 6 tabs)
             ViewThatFits(in: .horizontal) {
-                drawerTabSegmentedStrip(compactIcons: false)
-                drawerTabSegmentedStrip(compactIcons: true)
+                drawerTabSegmentedStrip(mode: .fullTitles)
+                drawerTabSegmentedStrip(mode: .compactSelectedTitle)
+                drawerTabSegmentedStrip(mode: .iconsOnly)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    drawerTabSegmentedStrip(compactIcons: false)
+                    drawerTabSegmentedStrip(mode: .fullTitles)
                 }
             }
 
             Spacer(minLength: AppSpacing.xxs)
 
             HStack(spacing: 0) {
-                LivePulseRefreshButton(
-                    isRefreshing: store.isRefreshing,
-                    lastUpdatedAt: snapshot.lastUpdatedAt,
-                    lastManualRefreshCompletedAt: store.lastManualRefreshCompletedAt,
-                    providerStatus: snapshot.providerStatus,
-                    isEnabled: controller.settings.livePulseEnabled,
-                    isFrozen: isFrozen,
-                    iconFont: AppIconFont.sm(weight: .semibold),
-                    checkmarkFont: AppIconFont.sm(weight: .bold)
-                ) {
-                    store.refreshNow()
+                if isSportsTabActive {
+                    Button {
+                        controller.settings.livePulseMaskScores.toggle()
+                        isPeekingMaskedScores = false
+                    } label: {
+                        Image(systemName: controller.settings.livePulseMaskScores ? "eye.slash.fill" : "eye")
+                            .font(AppIconFont.sm(weight: .semibold))
+                            .foregroundStyle(controller.settings.livePulseMaskScores ? AppleTheme.accentText : AppleTheme.textSecondary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isFrozen)
+                    .help(controller.settings.livePulseMaskScores ? "DVR Score Mask On — Click to reveal scores & odds" : "Mask Live Scores & Odds (DVR Spoiler Shield)")
+
+                    LivePulseRefreshButton(
+                        isRefreshing: store.isRefreshing,
+                        lastUpdatedAt: snapshot.lastUpdatedAt,
+                        lastManualRefreshCompletedAt: store.lastManualRefreshCompletedAt,
+                        providerStatus: snapshot.providerStatus,
+                        isEnabled: controller.settings.livePulseEnabled,
+                        isFrozen: isFrozen,
+                        iconFont: AppIconFont.sm(weight: .semibold),
+                        checkmarkFont: AppIconFont.sm(weight: .bold)
+                    ) {
+                        store.refreshNow()
+                    }
                 }
 
                 Button {
@@ -250,15 +309,24 @@ struct LiveCompanionDrawerView: View {
     }
 
     @ViewBuilder
-    private func drawerTabSegmentedStrip(compactIcons: Bool) -> some View {
-        HStack(spacing: compactIcons ? 1 : 0) {
+    private func drawerTabSegmentedStrip(mode: DrawerStripDisplayMode) -> some View {
+        HStack(spacing: mode == .fullTitles ? 0 : 1) {
             ForEach(LivePulseDrawerTab.allCases) { tab in
                 let isSelected = store.selectedDrawerTab == tab
                 Button {
                     store.selectedDrawerTab = tab
                 } label: {
                     Group {
-                        if compactIcons {
+                        switch mode {
+                        case .fullTitles:
+                            Text(tab.title)
+                                .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, AppSpacing.xs)
+                                .frame(minWidth: 24, minHeight: 24)
+
+                        case .compactSelectedTitle:
                             HStack(spacing: 3) {
                                 Image(systemName: tab.symbolName)
                                     .font(AppIconFont.xs(weight: isSelected ? .semibold : .medium))
@@ -270,14 +338,12 @@ struct LiveCompanionDrawerView: View {
                                 }
                             }
                             .padding(.horizontal, isSelected ? AppSpacing.sm : AppSpacing.xs)
-                            .frame(minWidth: 24, minHeight: 24)
-                        } else {
-                            Text(tab.title)
-                                .font(AppFont.caption(weight: isSelected ? .semibold : .medium))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .padding(.horizontal, AppSpacing.xs)
-                                .frame(minWidth: 24, minHeight: 24)
+                            .frame(minWidth: 22, minHeight: 24)
+
+                        case .iconsOnly:
+                            Image(systemName: tab.symbolName)
+                                .font(AppIconFont.xs(weight: isSelected ? .semibold : .medium))
+                                .frame(width: 22, height: 24)
                         }
                     }
                     .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.78))
@@ -453,7 +519,7 @@ struct LiveCompanionDrawerView: View {
                     .foregroundStyle(AppleTheme.accentText)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(game.map { "\($0.away.abbreviation) \($0.away.score) – \($0.home.score) \($0.home.abbreviation)" } ?? sourceLabel)
+                    Text(game.map { isScoresMasked ? "\($0.away.abbreviation) • - • \($0.home.abbreviation)" : "\($0.away.abbreviation) \($0.away.score) – \($0.home.score) \($0.home.abbreviation)" } ?? sourceLabel)
                         .font(AppFont.caption(weight: .semibold, tabular: true))
                         .lineLimit(1)
                     HStack(spacing: AppSpacing.xs) {
@@ -613,7 +679,8 @@ struct LiveCompanionDrawerView: View {
             }()
             let allAvailablePlays = store.filteredPlays(for: targetGameID, rosterOnly: false)
             if !allAvailablePlays.isEmpty {
-                let displayedPlays = store.filteredPlays(for: targetGameID, rosterOnly: showRosterPlaysInMatchup)
+                let rosterFiltered = store.filteredPlays(for: targetGameID, rosterOnly: showRosterPlaysInMatchup)
+                let displayedPlays = showKeyPlaysInMatchup ? rosterFiltered.filter(\.isKeyPlay) : rosterFiltered
                 matchupPlayByPlayCard(
                     gameID: targetGameID,
                     plays: displayedPlays,
@@ -637,17 +704,18 @@ struct LiveCompanionDrawerView: View {
         }()
 
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            HStack(spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.xs) {
                 Text("Play-by-Play · \(gameLabel)")
                     .font(AppFont.caption(weight: .semibold))
                     .foregroundStyle(AppleTheme.textSecondary)
                     .lineLimit(1)
                 Spacer()
+                keyPlaysToggleChip(isOn: $showKeyPlaysInMatchup)
                 rosterPlaysToggleChip(isOn: $showRosterPlaysInMatchup)
             }
 
-            if plays.isEmpty && hasAnyPlays && showRosterPlaysInMatchup {
-                Text("No recent plays involving your fantasy roster.")
+            if plays.isEmpty && hasAnyPlays && (showRosterPlaysInMatchup || showKeyPlaysInMatchup) {
+                Text(showKeyPlaysInMatchup ? "No recent key plays matching your filters." : "No recent plays involving your fantasy roster.")
                     .font(AppFont.caption)
                     .foregroundStyle(AppleTheme.textMuted)
                     .padding(.vertical, AppSpacing.xs)
@@ -1033,9 +1101,10 @@ struct LiveCompanionDrawerView: View {
     private func scoreCard(_ game: LiveGame) -> some View {
         let isPinnedToActive = isGamePinned(game)
         let isStreamMatch = snapshot.activeGameIDs.contains(game.id)
-        let isFlashing = controller.settings.livePulseScoringFlashes && snapshot.scoringFlashGameIDs.contains(game.id)
+        let isFlashing = !isScoresMasked && controller.settings.livePulseScoringFlashes && snapshot.scoringFlashGameIDs.contains(game.id)
         let allGamePlays = store.filteredPlays(for: game.id, rosterOnly: false)
-        let displayedPlays = store.filteredPlays(for: game.id, rosterOnly: showRosterPlaysInScores)
+        let rosterFiltered = store.filteredPlays(for: game.id, rosterOnly: showRosterPlaysInScores)
+        let displayedPlays = showKeyPlaysInScores ? rosterFiltered.filter(\.isKeyPlay) : rosterFiltered
         let isPlaysExpanded = expandedPlayGameIDs.contains(game.id)
 
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
@@ -1106,7 +1175,8 @@ struct LiveCompanionDrawerView: View {
                     awayAbbreviation: game.away.abbreviation,
                     homeAbbreviation: game.home.abbreviation,
                     awayProb: awayWin,
-                    homeProb: homeWin
+                    homeProb: homeWin,
+                    history: game.espnWinProbHistory
                 )
             }
 
@@ -1156,16 +1226,17 @@ struct LiveCompanionDrawerView: View {
 
             if isPlaysExpanded && !allGamePlays.isEmpty {
                 Divider().opacity(0.25)
-                HStack(spacing: AppSpacing.sm) {
+                HStack(spacing: AppSpacing.xs) {
                     Text("Play-by-Play")
                         .font(AppFont.caption(weight: .semibold))
                         .foregroundStyle(AppleTheme.textSecondary)
                     Spacer()
+                    keyPlaysToggleChip(isOn: $showKeyPlaysInScores)
                     rosterPlaysToggleChip(isOn: $showRosterPlaysInScores)
                 }
 
-                if displayedPlays.isEmpty && showRosterPlaysInScores {
-                    Text("No recent plays involving your fantasy roster.")
+                if displayedPlays.isEmpty && (showRosterPlaysInScores || showKeyPlaysInScores) {
+                    Text(showKeyPlaysInScores ? "No recent key plays matching your filters." : "No recent plays involving your fantasy roster.")
                         .font(AppFont.caption)
                         .foregroundStyle(AppleTheme.textMuted)
                         .padding(.vertical, AppSpacing.xxs)
@@ -1256,9 +1327,24 @@ struct LiveCompanionDrawerView: View {
 
             Spacer()
 
-            Text(league == .f1 ? "P\(team.score)" : "\(team.score)")
-                .font(AppFont.subhead(weight: .bold, tabular: true))
-                .liveNumericTransition(enabled: animationsEnabled, value: team.score)
+            if isScoresMasked {
+                Button {
+                    isPeekingMaskedScores.toggle()
+                } label: {
+                    Text("•")
+                        .font(AppFont.subhead(weight: .bold, tabular: true))
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.sm)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.07), in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Score Masked (DVR Shield) — Click to peek")
+            } else {
+                Text(league == .f1 ? "P\(team.score)" : "\(team.score)")
+                    .font(AppFont.subhead(weight: .bold, tabular: true))
+                    .liveNumericTransition(enabled: animationsEnabled, value: team.score)
+            }
         }
     }
 
@@ -1267,7 +1353,8 @@ struct LiveCompanionDrawerView: View {
         awayAbbreviation: String,
         homeAbbreviation: String,
         awayProb: Double,
-        homeProb: Double
+        homeProb: Double,
+        history: [WinProbabilityPoint]
     ) -> some View {
         let clampedAway = max(0.0, min(1.0, awayProb))
         let clampedHome = max(0.0, min(1.0, homeProb))
@@ -1277,36 +1364,156 @@ struct LiveCompanionDrawerView: View {
         let homePct = max(0, 100 - awayPct)
         let awayFavored = awayPct >= homePct
 
-        VStack(spacing: 3) {
-            HStack(spacing: AppSpacing.xs) {
-                Text("\(awayAbbreviation) \(awayPct)%")
-                    .font(AppFont.micro(weight: awayFavored ? .bold : .medium, tabular: true))
-                    .foregroundStyle(awayFavored ? Color.primary : AppleTheme.textSecondary)
-                Spacer()
-                Text("Win Prob")
-                    .font(AppFont.micro(weight: .medium))
-                    .foregroundStyle(AppleTheme.textMuted)
-                Spacer()
-                Text("\(homePct)% \(homeAbbreviation)")
-                    .font(AppFont.micro(weight: awayFavored ? .medium : .bold, tabular: true))
-                    .foregroundStyle(awayFavored ? AppleTheme.textSecondary : Color.primary)
+        if isScoresMasked {
+            Button {
+                isPeekingMaskedScores.toggle()
+            } label: {
+                VStack(spacing: 3) {
+                    HStack(spacing: AppSpacing.xs) {
+                        Text("\(awayAbbreviation) •")
+                            .font(AppFont.micro(weight: .medium, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                        Spacer()
+                        Text("Win Prob Masked")
+                            .font(AppFont.micro(weight: .medium))
+                            .foregroundStyle(AppleTheme.textMuted)
+                        Spacer()
+                        Text("• \(homeAbbreviation)")
+                            .font(AppFont.micro(weight: .medium, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(0.14))
+                        .frame(height: 4)
+                }
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Click to peek win probability & sparkline")
+        } else {
+            VStack(spacing: 4) {
+                HStack(spacing: AppSpacing.xs) {
+                    Text("\(awayAbbreviation) \(awayPct)%")
+                        .font(AppFont.micro(weight: awayFavored ? .bold : .medium, tabular: true))
+                        .foregroundStyle(awayFavored ? Color.primary : AppleTheme.textSecondary)
+                    Spacer()
+                    Text("Win Prob")
+                        .font(AppFont.micro(weight: .medium))
+                        .foregroundStyle(AppleTheme.textMuted)
+                    Spacer()
+                    Text("\(homePct)% \(homeAbbreviation)")
+                        .font(AppFont.micro(weight: awayFavored ? .medium : .bold, tabular: true))
+                        .foregroundStyle(awayFavored ? AppleTheme.textSecondary : Color.primary)
+                }
+
+                if history.count >= 2 {
+                    winProbabilitySparkline(
+                        history: history,
+                        lineColor: awayFavored ? AppleTheme.accentText : AppleTheme.positive
+                    )
+                    .frame(height: 28)
+                }
+
+                GeometryReader { geo in
+                    let width = max(1, geo.size.width)
+                    let awayWidth = max(2, width * normalizedAway)
+                    HStack(spacing: 1) {
+                        Capsule(style: .continuous)
+                            .fill(awayFavored ? AppleTheme.accentFill : Color.primary.opacity(0.20))
+                            .frame(width: awayWidth, height: 4)
+                        Capsule(style: .continuous)
+                            .fill(awayFavored ? Color.primary.opacity(0.20) : AppleTheme.positive)
+                            .frame(maxWidth: .infinity, maxHeight: 4)
+                    }
+                }
+                .frame(height: 4)
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    @ViewBuilder
+    private func winProbabilitySparkline(
+        history: [WinProbabilityPoint],
+        lineColor: Color
+    ) -> some View {
+        Canvas { context, size in
+            let w = size.width
+            let h = size.height
+            guard w > 4, h > 4, history.count >= 2 else { return }
+
+            let insetY: CGFloat = 3
+            let usableH = max(1, h - insetY * 2)
+            let midY = insetY + usableH * 0.5
+
+            var midPath = Path()
+            midPath.move(to: CGPoint(x: 0, y: midY))
+            midPath.addLine(to: CGPoint(x: w, y: midY))
+            context.stroke(
+                midPath,
+                with: .color(Color.primary.opacity(0.14)),
+                style: StrokeStyle(lineWidth: 0.75, dash: [3, 3])
+            )
+
+            let stepX = w / CGFloat(max(1, history.count - 1))
+            var linePath = Path()
+            var fillPath = Path()
+            var lastPoint = CGPoint.zero
+
+            for (idx, sample) in history.enumerated() {
+                let x = CGFloat(idx) * stepX
+                let clamped = max(0.0, min(1.0, sample.homeWinProb))
+                let y = insetY + usableH * CGFloat(1.0 - clamped)
+                let pt = CGPoint(x: x, y: y)
+                if idx == 0 {
+                    linePath.move(to: pt)
+                    fillPath.move(to: CGPoint(x: x, y: midY))
+                    fillPath.addLine(to: pt)
+                } else {
+                    linePath.addLine(to: pt)
+                    fillPath.addLine(to: pt)
+                }
+                lastPoint = pt
             }
 
-            GeometryReader { geo in
-                let width = max(1, geo.size.width)
-                let awayWidth = max(2, width * normalizedAway)
-                HStack(spacing: 1) {
-                    Capsule(style: .continuous)
-                        .fill(awayFavored ? AppleTheme.accentFill : Color.primary.opacity(0.20))
-                        .frame(width: awayWidth, height: 4)
-                    Capsule(style: .continuous)
-                        .fill(awayFavored ? Color.primary.opacity(0.20) : AppleTheme.positive)
-                        .frame(maxWidth: .infinity, maxHeight: 4)
-                }
-            }
-            .frame(height: 4)
+            fillPath.addLine(to: CGPoint(x: lastPoint.x, y: midY))
+            fillPath.closeSubpath()
+
+            context.fill(fillPath, with: .color(lineColor.opacity(0.14)))
+            context.stroke(
+                linePath,
+                with: .color(lineColor),
+                style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+            )
+
+            let dotRect = CGRect(x: lastPoint.x - 2.5, y: lastPoint.y - 2.5, width: 5, height: 5)
+            context.fill(Path(ellipseIn: dotRect), with: .color(lineColor))
         }
-        .padding(.vertical, 2)
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func keyPlaysToggleChip(isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: isOn.wrappedValue ? "bolt.fill" : "bolt")
+                    .font(AppIconFont.xs(weight: .semibold))
+                Text("Key Plays")
+                    .font(AppFont.micro(weight: .semibold))
+            }
+            .foregroundStyle(isOn.wrappedValue ? AppleTheme.accentText : AppleTheme.textSecondary)
+            .padding(.horizontal, AppSpacing.sm)
+            .minHitTarget(24, shape: Capsule(style: .continuous))
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isOn.wrappedValue ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
+            )
+        }
+        .buttonStyle(.plain)
+        .help("Filter play-by-play to high-impact key plays")
     }
 
     @ViewBuilder
@@ -1364,17 +1571,25 @@ struct LiveCompanionDrawerView: View {
                             .padding(.vertical, 1)
                             .background(AppleTheme.positive, in: Capsule(style: .continuous))
                     }
+                    if play.isKeyPlay {
+                        Text("KEY")
+                            .font(AppFont.micro(weight: .bold))
+                            .foregroundStyle(AppleTheme.accentText)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(AppleTheme.accentText.opacity(0.15), in: Capsule(style: .continuous))
+                    }
                     Spacer(minLength: 0)
                     if let away = play.awayScore, let home = play.homeScore {
-                        Text("\(away)–\(home)")
+                        Text(isScoresMasked ? "• - •" : "\(away)–\(home)")
                             .font(AppFont.micro(weight: .semibold, tabular: true))
                             .foregroundStyle(AppleTheme.textSecondary)
                     }
                 }
 
                 Text(play.text)
-                    .font(AppFont.caption(weight: play.isScoringPlay ? .medium : .regular))
-                    .foregroundStyle(play.isScoringPlay ? Color.primary : Color.primary.opacity(0.86))
+                    .font(AppFont.caption(weight: (play.isScoringPlay || play.isKeyPlay) ? .medium : .regular))
+                    .foregroundStyle((play.isScoringPlay || play.isKeyPlay) ? Color.primary : Color.primary.opacity(0.86))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1384,7 +1599,11 @@ struct LiveCompanionDrawerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
-                .fill(play.isScoringPlay ? AppleTheme.positive.opacity(0.08) : Color.primary.opacity(0.035))
+                .fill(
+                    play.isScoringPlay
+                        ? AppleTheme.positive.opacity(0.08)
+                        : (play.isKeyPlay ? AppleTheme.accentText.opacity(0.06) : Color.primary.opacity(0.035))
+                )
         )
     }
 
@@ -1468,17 +1687,32 @@ struct LiveCompanionDrawerView: View {
 
                 Spacer()
 
-                if let d1 = quote.delta1m, abs(d1) >= 0.005 {
-                    deltaPill(label: "1m", delta: d1)
-                }
-                if let d5 = quote.delta5m, abs(d5) >= 0.005 {
-                    deltaPill(label: "5m", delta: d5)
-                }
+                if isScoresMasked {
+                    Button {
+                        isPeekingMaskedScores.toggle()
+                    } label: {
+                        Text("• - •")
+                            .font(AppFont.subhead(weight: .bold, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .padding(.vertical, 1)
+                            .background(Color.primary.opacity(0.07), in: Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Market Odds Masked (DVR Shield) — Click to peek")
+                } else {
+                    if let d1 = quote.delta1m, abs(d1) >= 0.005 {
+                        deltaPill(label: "1m", delta: d1)
+                    }
+                    if let d5 = quote.delta5m, abs(d5) >= 0.005 {
+                        deltaPill(label: "5m", delta: d5)
+                    }
 
-                Text("\(pct)%")
-                    .font(AppFont.subhead(weight: .bold, tabular: true))
-                    .foregroundStyle(isStreamMatch ? AppleTheme.accentText : Color.primary)
-                    .liveNumericTransition(enabled: animationsEnabled, value: pct)
+                    Text("\(pct)%")
+                        .font(AppFont.subhead(weight: .bold, tabular: true))
+                        .foregroundStyle(isStreamMatch ? AppleTheme.accentText : Color.primary)
+                        .liveNumericTransition(enabled: animationsEnabled, value: pct)
+                }
             }
         }
         .padding(9)
@@ -1501,13 +1735,633 @@ struct LiveCompanionDrawerView: View {
             .background(color.opacity(0.14), in: Capsule(style: .continuous))
     }
 
-    // MARK: - Tab 5: Chat (Strictly Lazy & HTTPS Allowlisted)
+    // MARK: - Tab 5: Notes & Transcript Workspace (Zero Sports Polling)
+
+    @ViewBuilder
+    private var notesTabContent: some View {
+        let targetTab = activeTargetTab
+        let targetURL = targetTab.map { $0.pendingLazyURL ?? $0.url }
+        let videoID = targetURL.flatMap { YouTubeURLRouter.extractVideoID(from: $0) } ?? ""
+        let videoTitle = targetTab.map {
+            let mediaTitle = $0.mediaStatus.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return mediaTitle.isEmpty ? controller.effectiveTitle(for: $0) : mediaTitle
+        } ?? "YouTube Video"
+        let channelName = targetTab?.mediaStatus.channel ?? ""
+        let currentTime = targetTab?.timeline.currentTime ?? controller.activeTimeline?.currentTime ?? 0
+        let hasVideo = targetTab?.mediaStatus.hasVideo ?? controller.nowPlayingStatus.hasVideo
+        let matchingTranscript: YouTubeTranscript? = {
+            guard let t = controller.currentTranscript else { return nil }
+            if videoID.isEmpty || t.videoID == videoID {
+                return t
+            }
+            return nil
+        }()
+        let scopedBookmarks: [VideoBookmark] = {
+            if !videoID.isEmpty {
+                return controller.settings.videoBookmarks.filter { $0.videoID == videoID }
+            }
+            return Array(controller.settings.videoBookmarks.prefix(12))
+        }()
+        let filteredCues = matchingTranscript?.matching(query: transcriptSearchQuery) ?? []
+        let activeCueID: Int? = {
+            guard let cues = matchingTranscript?.cues, !cues.isEmpty else { return nil }
+            if let exact = cues.first(where: { cue in
+                let nextBoundary = cue.startSeconds + max(cue.durationSeconds, 4.0)
+                return currentTime >= cue.startSeconds && currentTime < nextBoundary
+            }) {
+                return exact.id
+            }
+            return cues.last(where: { $0.startSeconds <= currentTime })?.id
+        }()
+
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 10) {
+                // Header + Export Actions
+                VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                    HStack(spacing: AppSpacing.xs) {
+                        Image(systemName: "note.text")
+                            .font(AppIconFont.xs(weight: .semibold))
+                            .foregroundStyle(AppleTheme.accentText)
+                        Text(videoTitle)
+                            .font(AppFont.caption(weight: .semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: AppSpacing.xs)
+                        if !videoID.isEmpty {
+                            Text(videoID)
+                                .font(AppFont.micro(weight: .medium, tabular: true))
+                                .foregroundStyle(AppleTheme.textMuted)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
+                        }
+                    }
+
+                    HStack(spacing: AppSpacing.xs) {
+                        Button {
+                            exportObsidianMarkdown(
+                                title: videoTitle,
+                                videoID: videoID,
+                                urlString: targetURL?.absoluteString,
+                                transcript: matchingTranscript,
+                                bookmarks: scopedBookmarks
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text("Export .md…")
+                                    .font(AppFont.caption(weight: .semibold))
+                            }
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, AppSpacing.md)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isFrozen || (noteDraft.isEmpty && scopedBookmarks.isEmpty && (matchingTranscript?.cues.isEmpty ?? true)))
+                        .help("Export Obsidian Markdown (.md)…")
+
+                        Button {
+                            copyAIStudyPacket(
+                                title: videoTitle,
+                                videoID: videoID,
+                                urlString: targetURL?.absoluteString,
+                                transcript: matchingTranscript,
+                                bookmarks: scopedBookmarks
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: copiedStudyPacketFeedback ? "checkmark" : "sparkles")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text(copiedStudyPacketFeedback ? "Copied Packet" : "AI Study Packet")
+                                    .font(AppFont.caption(weight: .semibold))
+                            }
+                            .foregroundStyle(copiedStudyPacketFeedback ? AppleTheme.positive : AppleTheme.accentText)
+                            .padding(.horizontal, AppSpacing.md)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(copiedStudyPacketFeedback ? AppleTheme.positive.opacity(0.15) : AppleTheme.accentText.opacity(0.14))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isFrozen || (scopedBookmarks.isEmpty && controller.activeChapters.isEmpty && (matchingTranscript?.cues.isEmpty ?? true)))
+                        .help("Copy AI Study Packet to Clipboard")
+                    }
+                }
+                .padding(9)
+                .background(Color.primary.opacity(isResolvedDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+
+                // Scratchpad Notes Editor
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack(spacing: AppSpacing.xs) {
+                        Text("Scratchpad Notes")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                        Spacer()
+                        if hasVideo {
+                            Button {
+                                let stamp = "[\(MediaState.formatTime(currentTime))] "
+                                if noteDraft.isEmpty || noteDraft.hasSuffix("\n") || noteDraft.hasSuffix(" ") {
+                                    noteDraft.append(stamp)
+                                } else {
+                                    noteDraft.append("\n\(stamp)")
+                                }
+                            } label: {
+                                Text("+ \(MediaState.formatTime(currentTime))")
+                                    .font(AppFont.micro(weight: .semibold, tabular: true))
+                                    .foregroundStyle(AppleTheme.accentText)
+                                    .padding(.horizontal, AppSpacing.sm)
+                                    .minHitTarget(22, shape: Capsule(style: .continuous))
+                                    .background(AppleTheme.accentText.opacity(0.12), in: Capsule(style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isFrozen || videoID.isEmpty)
+                            .help("Insert current timestamp into notes")
+                        }
+                        Text("\(noteDraft.count)/\(VideoNoteEntry.maxMarkdownLength)")
+                            .font(AppFont.micro(tabular: true))
+                            .foregroundStyle(AppleTheme.textMuted)
+                    }
+
+                    ZStack(alignment: .topLeading) {
+                        if noteDraft.isEmpty {
+                            Text(videoID.isEmpty ? "Open a YouTube video to save per-video Markdown notes…" : "Write timestamped study notes in Markdown…")
+                                .font(AppFont.caption)
+                                .foregroundStyle(AppleTheme.textMuted)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 6)
+                                .allowsHitTesting(false)
+                        }
+                        TextEditor(text: $noteDraft)
+                            .font(AppFont.caption)
+                            .scrollContentBackground(.hidden)
+                            .disabled(isFrozen || videoID.isEmpty)
+                            .frame(minHeight: 84, maxHeight: 128)
+                    }
+                    .padding(4)
+                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
+                }
+                .padding(9)
+                .background(Color.primary.opacity(isResolvedDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+
+                // Timestamped Bookmarks Quick Add & Jump List
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack {
+                        Text("Bookmarks")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                        if !scopedBookmarks.isEmpty {
+                            Text("\(scopedBookmarks.count)")
+                                .font(AppFont.micro(weight: .semibold, tabular: true))
+                                .foregroundStyle(AppleTheme.textMuted)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Color.primary.opacity(0.07), in: Capsule(style: .continuous))
+                        }
+                        Spacer()
+                    }
+
+                    HStack(spacing: AppSpacing.xs) {
+                        TextField("Add timestamp note…", text: $bookmarkNoteDraft)
+                            .textFieldStyle(.roundedBorder)
+                            .font(AppFont.caption)
+                            .disabled(!hasVideo || isFrozen)
+                            .onSubmit {
+                                submitNotesBookmark(
+                                    title: videoTitle,
+                                    urlString: targetURL?.absoluteString,
+                                    videoID: videoID,
+                                    channel: channelName,
+                                    timestampSeconds: currentTime,
+                                    hasVideo: hasVideo
+                                )
+                            }
+
+                        Button {
+                            submitNotesBookmark(
+                                title: videoTitle,
+                                urlString: targetURL?.absoluteString,
+                                videoID: videoID,
+                                channel: channelName,
+                                timestampSeconds: currentTime,
+                                hasVideo: hasVideo
+                            )
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "plus")
+                                    .font(AppIconFont.xs(weight: .bold))
+                                Text(hasVideo ? MediaState.formatTime(currentTime) : "Add")
+                                    .font(AppFont.micro(weight: .bold, tabular: true))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Capsule(style: .continuous).fill(hasVideo ? AppleTheme.accentFill : Color.primary.opacity(0.18)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!hasVideo || isFrozen)
+                    }
+
+                    if scopedBookmarks.isEmpty {
+                        Text("No bookmarks for this video yet.")
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textMuted)
+                            .padding(.top, 2)
+                    } else {
+                        VStack(spacing: AppSpacing.xxs) {
+                            ForEach(scopedBookmarks.prefix(12)) { bookmark in
+                                HStack(spacing: AppSpacing.xs) {
+                                    Button {
+                                        controller.jumpToBookmark(bookmark)
+                                    } label: {
+                                        HStack(spacing: AppSpacing.xs) {
+                                            Text(bookmark.formattedTimestamp)
+                                                .font(AppFont.micro(weight: .bold, tabular: true))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 2)
+                                                .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
+
+                                            Text(bookmark.note.isEmpty ? bookmark.title : bookmark.note)
+                                                .font(AppFont.caption(weight: .medium))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                            Spacer(minLength: 0)
+                                        }
+                                        .minHitTarget(24, shape: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isFrozen)
+
+                                    Button {
+                                        controller.removeVideoBookmark(id: bookmark.id)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(AppIconFont.xs)
+                                            .foregroundStyle(AppleTheme.textMuted)
+                                            .minHitTarget(22, shape: Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isFrozen)
+                                    .help("Delete Bookmark")
+                                }
+                                .padding(.horizontal, AppSpacing.xs)
+                                .padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+                            }
+                        }
+                    }
+                }
+                .padding(9)
+                .background(Color.primary.opacity(isResolvedDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+
+                // Live Auto-Scrolling Transcript
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack(spacing: AppSpacing.xs) {
+                        Text("Transcript")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textSecondary)
+
+                        Spacer()
+
+                        Button {
+                            followTranscriptPlayback.toggle()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: followTranscriptPlayback ? "scope" : "pause.circle")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                Text("Follow")
+                                    .font(AppFont.micro(weight: .semibold))
+                            }
+                            .foregroundStyle(followTranscriptPlayback ? AppleTheme.accentText : AppleTheme.textSecondary)
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(22, shape: Capsule(style: .continuous))
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(followTranscriptPlayback ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.06))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Follow Playback — Auto-scroll transcript to current video position")
+
+                        Button {
+                            Task { @MainActor in
+                                _ = await controller.fetchCurrentTabTranscript()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(AppIconFont.xs(weight: .semibold))
+                                .foregroundStyle(AppleTheme.textSecondary)
+                                .minHitTarget(22, shape: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(controller.isFetchingTranscript || isFrozen)
+                        .help("Refresh Transcript")
+                    }
+
+                    HStack(spacing: AppSpacing.xs) {
+                        Image(systemName: "magnifyingglass")
+                            .font(AppIconFont.xs)
+                            .foregroundStyle(AppleTheme.textMuted)
+                        TextField("Search transcript…", text: $transcriptSearchQuery)
+                            .textFieldStyle(.plain)
+                            .font(AppFont.caption)
+                        if !transcriptSearchQuery.isEmpty {
+                            Button {
+                                transcriptSearchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(AppIconFont.xs)
+                                    .foregroundStyle(AppleTheme.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, AppSpacing.sm)
+                    .frame(height: 24)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
+
+                    if controller.isFetchingTranscript {
+                        HStack(spacing: AppSpacing.sm) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Reading captions on demand…")
+                                .font(AppFont.caption)
+                                .foregroundStyle(AppleTheme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 80)
+                    } else if filteredCues.isEmpty {
+                        VStack(spacing: AppSpacing.xs) {
+                            Text(matchingTranscript == nil || matchingTranscript?.cues.isEmpty == true
+                                 ? "No captions loaded for this video."
+                                 : "No lines match \"\(transcriptSearchQuery)\".")
+                                .font(AppFont.caption)
+                                .foregroundStyle(AppleTheme.textMuted)
+                            if matchingTranscript == nil || matchingTranscript?.cues.isEmpty == true, !videoID.isEmpty {
+                                Button("Load Transcript") {
+                                    Task { @MainActor in
+                                        _ = await controller.fetchCurrentTabTranscript()
+                                    }
+                                }
+                                .font(AppFont.caption(weight: .semibold))
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(isFrozen)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 72)
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical, showsIndicators: true) {
+                                LazyVStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                                    ForEach(filteredCues) { cue in
+                                        let isCurrent = activeCueID == cue.id
+                                        let isJustBookmarked = bookmarkedCueIDFeedback == cue.id
+                                        HStack(alignment: .top, spacing: AppSpacing.xs) {
+                                            Button {
+                                                controller.seek(to: cue.startSeconds)
+                                            } label: {
+                                                HStack(alignment: .top, spacing: AppSpacing.xs) {
+                                                    Text(cue.formattedTimestamp)
+                                                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                                                        .foregroundStyle(isCurrent ? AppleTheme.accentText : AppleTheme.textSecondary)
+                                                        .frame(width: 40, alignment: .leading)
+                                                    Text(cue.text)
+                                                        .font(AppFont.caption(weight: isCurrent ? .medium : .regular))
+                                                        .foregroundStyle(isCurrent ? Color.primary : Color.primary.opacity(0.86))
+                                                        .multilineTextAlignment(.leading)
+                                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                                }
+                                                .padding(.vertical, 3)
+                                                .padding(.leading, 4)
+                                                .contentShape(Rectangle())
+                                            }
+                                            .buttonStyle(.plain)
+                                            .disabled(isFrozen)
+
+                                            Button {
+                                                let resolvedURL = targetURL?.absoluteString ?? "https://www.youtube.com/watch?v=\(videoID)"
+                                                controller.addBookmark(
+                                                    title: videoTitle,
+                                                    urlString: resolvedURL,
+                                                    videoID: videoID.isEmpty ? nil : videoID,
+                                                    channel: channelName,
+                                                    note: cue.text,
+                                                    timestampSeconds: cue.startSeconds
+                                                )
+                                                bookmarkedCueIDFeedback = cue.id
+                                                Task { @MainActor in
+                                                    try? await Task.sleep(for: .milliseconds(1200))
+                                                    if bookmarkedCueIDFeedback == cue.id {
+                                                        bookmarkedCueIDFeedback = nil
+                                                    }
+                                                }
+                                            } label: {
+                                                Image(systemName: isJustBookmarked ? "bookmark.fill" : "bookmark")
+                                                    .font(AppIconFont.xs(weight: .semibold))
+                                                    .foregroundStyle(isJustBookmarked ? AppleTheme.positive : AppleTheme.textMuted)
+                                                    .minHitTarget(22, shape: Circle())
+                                            }
+                                            .buttonStyle(.plain)
+                                            .disabled(isFrozen)
+                                            .help("Bookmark Cue at \(cue.formattedTimestamp)")
+                                        }
+                                        .id(cue.id)
+                                        .padding(.horizontal, 4)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
+                                                .fill(isCurrent ? AppleTheme.accentText.opacity(0.14) : Color.primary.opacity(0.03))
+                                        )
+                                    }
+                                }
+                            }
+                            .frame(height: 220)
+                            .onChange(of: activeCueID) { _, newCueID in
+                                guard followTranscriptPlayback,
+                                      transcriptSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                      let newCueID else {
+                                    return
+                                }
+                                if animationsEnabled {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        proxy.scrollTo(newCueID, anchor: .center)
+                                    }
+                                } else {
+                                    proxy.scrollTo(newCueID, anchor: .center)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(9)
+                .background(Color.primary.opacity(isResolvedDark ? 0.06 : 0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+            }
+            .padding(10)
+        }
+        .onAppear {
+            loadNoteDraftIfNeeded(videoID: videoID, title: videoTitle)
+            if !videoID.isEmpty,
+               !controller.isFetchingTranscript,
+               controller.currentTranscript?.videoID != videoID {
+                Task { @MainActor in
+                    _ = await controller.fetchCurrentTabTranscript()
+                }
+            }
+        }
+        .onChange(of: videoID) { _, nextVideoID in
+            if !loadedNoteVideoID.isEmpty, loadedNoteVideoID != nextVideoID {
+                controller.saveNote(markdown: noteDraft, forVideoID: loadedNoteVideoID, title: loadedNoteVideoTitle)
+            }
+            loadNoteDraftIfNeeded(videoID: nextVideoID, title: videoTitle)
+            if !nextVideoID.isEmpty,
+               !controller.isFetchingTranscript,
+               controller.currentTranscript?.videoID != nextVideoID {
+                Task { @MainActor in
+                    _ = await controller.fetchCurrentTabTranscript()
+                }
+            }
+        }
+        .task(id: "\(videoID)::\(noteDraft)") {
+            guard !videoID.isEmpty, loadedNoteVideoID == videoID else { return }
+            let existing = controller.noteEntry(forVideoID: videoID)?.markdown ?? ""
+            guard noteDraft != existing else { return }
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled else { return }
+            controller.saveNote(markdown: noteDraft, forVideoID: videoID, title: videoTitle)
+        }
+        .onDisappear {
+            if !loadedNoteVideoID.isEmpty {
+                let existing = controller.noteEntry(forVideoID: loadedNoteVideoID)?.markdown ?? ""
+                if noteDraft != existing {
+                    controller.saveNote(markdown: noteDraft, forVideoID: loadedNoteVideoID, title: loadedNoteVideoTitle)
+                }
+            }
+        }
+    }
+
+    private func loadNoteDraftIfNeeded(videoID: String, title: String) {
+        loadedNoteVideoID = videoID
+        loadedNoteVideoTitle = title
+        noteDraft = videoID.isEmpty ? "" : (controller.noteEntry(forVideoID: videoID)?.markdown ?? "")
+    }
+
+    private func submitNotesBookmark(
+        title: String,
+        urlString: String?,
+        videoID: String,
+        channel: String,
+        timestampSeconds: Double,
+        hasVideo: Bool
+    ) {
+        guard hasVideo else { return }
+        let trimmed = bookmarkNoteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedURL = urlString ?? (videoID.isEmpty ? "https://www.youtube.com/" : "https://www.youtube.com/watch?v=\(videoID)")
+        controller.addBookmark(
+            title: title,
+            urlString: resolvedURL,
+            videoID: videoID.isEmpty ? nil : videoID,
+            channel: channel,
+            note: trimmed,
+            timestampSeconds: timestampSeconds
+        )
+        bookmarkNoteDraft = ""
+    }
+
+    private func copyAIStudyPacket(
+        title: String,
+        videoID: String,
+        urlString: String?,
+        transcript: YouTubeTranscript?,
+        bookmarks: [VideoBookmark]
+    ) {
+        let packet = TranscriptMarkdownExporter.formatAIStudyPacket(
+            title: title,
+            videoID: videoID,
+            urlString: urlString,
+            transcript: transcript,
+            bookmarks: bookmarks,
+            chapters: controller.activeChapters
+        )
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(packet, forType: .string)
+        copiedStudyPacketFeedback = true
+        controller.showHUD(icon: "sparkles", message: "Copied AI Study Packet")
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1400))
+            copiedStudyPacketFeedback = false
+        }
+    }
+
+    private func exportObsidianMarkdown(
+        title: String,
+        videoID: String,
+        urlString: String?,
+        transcript: YouTubeTranscript?,
+        bookmarks: [VideoBookmark]
+    ) {
+        let markdown = TranscriptMarkdownExporter.exportMarkdown(
+            title: title,
+            videoID: videoID,
+            urlString: urlString,
+            transcript: transcript,
+            bookmarks: bookmarks,
+            chapters: controller.activeChapters,
+            noteMarkdown: noteDraft
+        )
+        let safePrefix = title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = safePrefix.isEmpty ? "YouTube-Notes" : String(safePrefix.prefix(48))
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "\(baseName).md"
+        panel.title = "Export Obsidian Markdown"
+        panel.message = "Save Markdown notes, bookmarks, chapters, and transcript."
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+        do {
+            try markdown.write(to: destinationURL, atomically: true, encoding: .utf8)
+            controller.showHUD(icon: "checkmark.circle.fill", message: "Exported Markdown")
+        } catch {
+            controller.showHUD(icon: "exclamationmark.triangle", message: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Tab 6: Chat (Strictly Lazy, HTTPS Allowlisted & Multiview Tile Switcher)
 
     @ViewBuilder
     private var chatTabContent: some View {
-        let tab = activeTargetTab
+        let multiviewChatTargets: [(slot: Int, tab: BrowserTab, chatURL: URL)] = controller.isMultiviewActive
+            ? controller.multiviewTabs.enumerated().compactMap { idx, tileTab in
+                let rawURL = tileTab.pendingLazyURL ?? tileTab.url
+                guard let resolved = CompanionChatURLValidator.chatURL(forStreamURL: rawURL, darkMode: isResolvedDark),
+                      CompanionChatURLValidator.isAllowedChatURL(resolved) else {
+                    return nil
+                }
+                return (slot: idx + 1, tab: tileTab, chatURL: resolved)
+            }
+            : []
+
+        let activeMultiviewTarget: (slot: Int, tab: BrowserTab, chatURL: URL)? = {
+            guard multiviewChatTargets.count >= 2 else { return nil }
+            if let selectedID = selectedChatTileTabID,
+               let matched = multiviewChatTargets.first(where: { $0.tab.id == selectedID }) {
+                return matched
+            }
+            if let audioID = controller.multiviewAudioTab?.id,
+               let audioMatch = multiviewChatTargets.first(where: { $0.tab.id == audioID }) {
+                return audioMatch
+            }
+            return multiviewChatTargets.first
+        }()
+
+        let tab = activeMultiviewTarget?.tab ?? activeTargetTab
         let streamURL = tab.map { $0.pendingLazyURL ?? $0.url }
-        let chatURL = streamURL.flatMap {
+        let chatURL = activeMultiviewTarget?.chatURL ?? streamURL.flatMap {
             CompanionChatURLValidator.chatURL(forStreamURL: $0, darkMode: isResolvedDark)
         }
         let isLiveOrTwitch: Bool = {
@@ -1519,42 +2373,79 @@ struct LiveCompanionDrawerView: View {
             return isTwitch || isYouTubeLive
         }()
 
-        if let tab,
-           let chatURL,
-           CompanionChatURLValidator.isAllowedChatURL(chatURL),
-           (isLiveOrTwitch || manualChatTabID == tab.id) {
-            LazyCompanionChatWebView(url: chatURL, isResolvedDark: isResolvedDark)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(isFrozen ? 0.7 : 1.0)
-                .allowsHitTesting(!isFrozen)
-        } else {
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: AppSpacing.md) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(AppIconFont.hero(weight: .medium))
-                        .foregroundStyle(AppleTheme.accentText)
-                    Text("Live Chat Unavailable")
-                        .font(AppFont.callout(weight: .semibold))
-                        .multilineTextAlignment(.center)
-                    Text("Focus an active YouTube live stream or Twitch channel to load its popout chat here.")
-                        .font(AppFont.caption)
-                        .foregroundStyle(AppleTheme.textSecondary)
-                        .multilineTextAlignment(.center)
-
-                    if let tab,
-                       let chatURL,
-                       CompanionChatURLValidator.isAllowedChatURL(chatURL) {
-                        Button("Load YouTube Live Chat") {
-                            manualChatTabID = tab.id
+        VStack(spacing: 0) {
+            if multiviewChatTargets.count >= 2, let activeMultiviewTarget {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AppSpacing.xs) {
+                        ForEach(multiviewChatTargets, id: \.tab.id) { target in
+                            let isSelected = target.tab.id == activeMultiviewTarget.tab.id
+                            Button {
+                                selectedChatTileTabID = target.tab.id
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("Tile \(target.slot)")
+                                        .font(AppFont.caption(weight: isSelected ? .semibold : .medium, tabular: true))
+                                    if target.tab.id == controller.multiviewAudioTab?.id {
+                                        Image(systemName: "speaker.wave.2.fill")
+                                            .font(AppIconFont.xs)
+                                    }
+                                }
+                                .foregroundStyle(isSelected ? AppleTheme.accentText : Color.primary.opacity(0.78))
+                                .padding(.horizontal, AppSpacing.sm)
+                                .minHitTarget(24, shape: Capsule(style: .continuous))
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(isSelected ? AppleTheme.accentText.opacity(0.16) : Color.primary.opacity(0.06))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isFrozen)
+                            .help(controller.effectiveTitle(for: target.tab))
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, AppSpacing.sm)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(AppSpacing.xl)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
-                .padding(10)
+                Divider().opacity(0.28)
+            }
+
+            if let tab,
+               let chatURL,
+               CompanionChatURLValidator.isAllowedChatURL(chatURL),
+               (isLiveOrTwitch || manualChatTabID == tab.id) {
+                LazyCompanionChatWebView(url: chatURL, isResolvedDark: isResolvedDark)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(isFrozen ? 0.7 : 1.0)
+                    .allowsHitTesting(!isFrozen)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: AppSpacing.md) {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(AppIconFont.hero(weight: .medium))
+                            .foregroundStyle(AppleTheme.accentText)
+                        Text("Live Chat Unavailable")
+                            .font(AppFont.callout(weight: .semibold))
+                            .multilineTextAlignment(.center)
+                        Text("Focus an active YouTube live stream or Twitch channel to load its popout chat here.")
+                            .font(AppFont.caption)
+                            .foregroundStyle(AppleTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+
+                        if let tab,
+                           let chatURL,
+                           CompanionChatURLValidator.isAllowedChatURL(chatURL) {
+                            Button("Load YouTube Live Chat") {
+                                manualChatTabID = tab.id
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(AppSpacing.xl)
+                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
+                    .padding(10)
+                }
             }
         }
     }
@@ -1694,7 +2585,7 @@ struct LiveCompanionDrawerView: View {
                                     .font(AppFont.micro(weight: .bold))
                                     .foregroundStyle(AppleTheme.textSecondary)
                                     .frame(width: 28, alignment: .leading)
-                                Text("\(game.away.abbreviation) \(game.away.score) – \(game.home.score) \(game.home.abbreviation)")
+                                Text(isScoresMasked ? "\(game.away.abbreviation) • - • \(game.home.abbreviation)" : "\(game.away.abbreviation) \(game.away.score) – \(game.home.score) \(game.home.abbreviation)")
                                     .font(AppFont.caption(weight: .medium, tabular: true))
                                 Spacer()
                                 Text(game.clock ?? game.statusDetail)
@@ -1714,6 +2605,54 @@ struct LiveCompanionDrawerView: View {
         }
         .padding(10)
         .frame(width: 250)
+    }
+
+    @ViewBuilder
+    private func livePulseOptInCard(for tab: LivePulseDrawerTab) -> some View {
+        VStack(spacing: AppSpacing.md) {
+            Image(systemName: tab.symbolName)
+                .font(AppIconFont.hero(weight: .medium))
+                .foregroundStyle(AppleTheme.accentText)
+            Text("Live Pulse Sports is Off")
+                .font(AppFont.callout(weight: .semibold))
+                .multilineTextAlignment(.center)
+            Text("Cookieless ESPN, Sleeper, Kalshi, and Polymarket feeds are opt-in and completely idle until enabled. Switch to Notes or Chat anytime without turning on sports polling.")
+                .font(AppFont.caption)
+                .foregroundStyle(AppleTheme.textSecondary)
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: AppSpacing.sm) {
+                Button {
+                    controller.settings.livePulseEnabled = true
+                    controller.syncLivePulseStreamSignals()
+                    store.reconcileLifecycle()
+                } label: {
+                    Text("Enable Live Pulse")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, AppSpacing.lg)
+                        .minHitTarget(28, shape: Capsule(style: .continuous))
+                        .background(AppleTheme.accentFill, in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(isFrozen)
+
+                SettingsLink {
+                    Text("Settings…")
+                        .font(AppFont.caption(weight: .semibold))
+                        .foregroundStyle(AppleTheme.accentText)
+                        .padding(.horizontal, AppSpacing.md)
+                        .minHitTarget(28, shape: Capsule(style: .continuous))
+                        .background(AppleTheme.accentText.opacity(0.14), in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(isFrozen)
+            }
+            .padding(.top, AppSpacing.xxs)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(AppSpacing.xl)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
     }
 
     @ViewBuilder

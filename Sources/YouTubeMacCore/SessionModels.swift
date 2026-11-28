@@ -461,3 +461,167 @@ public struct ContentFilterConfig: Equatable, Codable, Sendable {
 }
 
 public typealias ContentFilterRules = ContentFilterConfig
+
+/// Validated HTTPS item in the persistent Up Next Watch Queue.
+public struct WatchQueueItem: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public let videoID: String?
+    public let urlString: String
+    public let title: String
+    public let channel: String
+    public let durationSeconds: Double?
+    public let addedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case videoID
+        case urlString
+        case title
+        case channel
+        case durationSeconds
+        case addedAt
+    }
+
+    public init?(
+        id: UUID = UUID(),
+        videoID: String? = nil,
+        urlString: String,
+        title: String,
+        channel: String = "",
+        durationSeconds: Double? = nil,
+        addedAt: Date = Date(),
+        tier: AgentPermissionLevel = .playbackAndNavigation
+    ) {
+        guard case .success(let validatedURL) = AgentSecurity.validateURL(urlString, tier: tier) else {
+            return nil
+        }
+        let resolvedVideoID = videoID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? YouTubeURLRouter.extractVideoID(from: validatedURL)
+        let cleanTitle = AgentSecurity.sanitizeWebText(title, maxLength: AgentSecurity.maxWebTitleLength).text
+        let fallbackTitle = validatedURL.host ?? "Video"
+        let cleanChannel = AgentSecurity.sanitizeWebText(channel, maxLength: AgentSecurity.maxChannelNameLength).text
+        let cleanDuration = durationSeconds.flatMap { ($0.isFinite && $0 > 0) ? $0 : nil }
+
+        self.id = id
+        self.videoID = resolvedVideoID
+        self.urlString = validatedURL.absoluteString
+        self.title = cleanTitle.isEmpty ? fallbackTitle : cleanTitle
+        self.channel = cleanChannel
+        self.durationSeconds = cleanDuration
+        self.addedAt = addedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedID = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        let rawVideoID = try container.decodeIfPresent(String.self, forKey: .videoID)
+        let rawURLString = try container.decode(String.self, forKey: .urlString)
+        let rawTitle = try container.decode(String.self, forKey: .title)
+        let rawChannel = try container.decodeIfPresent(String.self, forKey: .channel) ?? ""
+        let rawDuration = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        let rawAddedAt = try container.decodeIfPresent(Date.self, forKey: .addedAt) ?? Date()
+
+        guard let validated = WatchQueueItem(
+            id: decodedID,
+            videoID: rawVideoID,
+            urlString: rawURLString,
+            title: rawTitle,
+            channel: rawChannel,
+            durationSeconds: rawDuration,
+            addedAt: rawAddedAt,
+            tier: .playbackAndNavigation
+        ) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .urlString,
+                in: container,
+                debugDescription: "Invalid or unsafe WatchQueueItem URL."
+            )
+        }
+        self = validated
+    }
+
+    public var url: URL? {
+        URL(string: urlString)
+    }
+
+    public var deduplicationKey: String {
+        if let videoID, !videoID.isEmpty {
+            return "vid:\(videoID)"
+        }
+        return "url:\(urlString.lowercased())"
+    }
+}
+
+/// Pure, bounded Watch Queue transitions and Sleep Timer / Multiview auto-advance policy.
+public enum WatchQueuePolicy {
+    public static let maxItems: Int = 100
+
+    public static func enqueue(
+        _ item: WatchQueueItem,
+        into queue: [WatchQueueItem],
+        playNext: Bool = false
+    ) -> [WatchQueueItem] {
+        let key = item.deduplicationKey
+        var filtered = queue.filter { $0.deduplicationKey != key && $0.id != item.id }
+        if playNext {
+            filtered.insert(item, at: 0)
+        } else {
+            filtered.append(item)
+        }
+        if filtered.count > maxItems {
+            filtered = Array(filtered.prefix(maxItems))
+        }
+        return filtered
+    }
+
+    public static func remove(id: UUID, from queue: [WatchQueueItem]) -> [WatchQueueItem] {
+        queue.filter { $0.id != id }
+    }
+
+    public static func move(
+        fromOffsets source: IndexSet,
+        toOffset destination: Int,
+        in queue: [WatchQueueItem]
+    ) -> [WatchQueueItem] {
+        guard !source.isEmpty else { return queue }
+        var remaining = queue
+        let moving = source.sorted().compactMap { idx -> WatchQueueItem? in
+            guard remaining.indices.contains(idx) else { return nil }
+            return remaining[idx]
+        }
+        for idx in source.sorted(by: >) where remaining.indices.contains(idx) {
+            remaining.remove(at: idx)
+        }
+        let removedBeforeDest = source.filter { $0 < destination }.count
+        let targetIndex = min(max(0, destination - removedBeforeDest), remaining.count)
+        remaining.insert(contentsOf: moving, at: targetIndex)
+        return remaining
+    }
+
+    public static func popNext(from queue: [WatchQueueItem]) -> (next: WatchQueueItem?, remaining: [WatchQueueItem]) {
+        guard let first = queue.first else {
+            return (nil, queue)
+        }
+        return (first, Array(queue.dropFirst()))
+    }
+
+    public static func shouldAutoAdvance(
+        isQueueNonEmpty: Bool,
+        sleepTimerOption: SleepTimerOption?,
+        isMultiviewActive: Bool
+    ) -> Bool {
+        guard isQueueNonEmpty, !isMultiviewActive else {
+            return false
+        }
+        if sleepTimerOption == .endOfVideo {
+            return false
+        }
+        return true
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+}

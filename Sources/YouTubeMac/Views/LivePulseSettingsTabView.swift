@@ -57,6 +57,11 @@ struct LivePulseSettingsTabView: View {
                     }
                 }
                 .disabled(!settings.livePulseEnabled)
+
+                Toggle("Mask Live Scores & Odds (DVR Spoiler Shield)", isOn: $settings.livePulseMaskScores)
+                Text("Replaces live scores, win probabilities, player point deltas, and market odds with • - • across the Ticker Bar, Companion Drawer, Notch HUD, and Menu Bar.")
+                    .font(AppFont.caption)
+                    .foregroundStyle(AppleTheme.textSecondary)
             }
 
             Section("Primary Leagues") {

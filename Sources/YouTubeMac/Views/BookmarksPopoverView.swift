@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import YouTubeMacCore
 
-/// Dark-HUD Liquid Glass popover for creating, browsing, and jumping to saved timestamped video bookmarks (`⌘⇧K`).
+/// Dark-HUD Liquid Glass popover for creating, browsing, exporting, and jumping to saved timestamped video bookmarks (`⌘⇧K`).
 struct BookmarksPopoverView: View {
     let bookmarks: [VideoBookmark]
     let currentVideoTitle: String
@@ -10,8 +12,19 @@ struct BookmarksPopoverView: View {
     let onAddBookmark: (String) -> Void
     let onJump: (VideoBookmark) -> Void
     let onDelete: (UUID) -> Void
+    var currentVideoID: String = ""
+    var currentURLString: String? = nil
+    var transcript: YouTubeTranscript? = nil
+    var chapters: [VideoChapter] = []
+    var noteMarkdown: String = ""
 
     @State private var noteText = ""
+
+    private var canExportMarkdown: Bool {
+        !bookmarks.isEmpty
+            || !noteMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !(transcript?.cues.isEmpty ?? true)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
@@ -151,6 +164,29 @@ struct BookmarksPopoverView: View {
                 }
                 .frame(maxHeight: 260)
             }
+
+            Divider()
+
+            HStack {
+                Button {
+                    exportBookmarksMarkdown()
+                } label: {
+                    HStack(spacing: AppSpacing.xs) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(AppIconFont.xs(weight: .semibold))
+                        Text("Export Bookmarks & Notes (.md)…")
+                            .font(AppFont.caption(weight: .semibold))
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, AppSpacing.md)
+                    .minHitTarget(26, shape: Capsule(style: .continuous))
+                    .background(Color.primary.opacity(0.09), in: Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canExportMarkdown)
+
+                Spacer()
+            }
         }
         .padding(AppSpacing.lg)
         .frame(width: 340)
@@ -165,5 +201,42 @@ struct BookmarksPopoverView: View {
         let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
         onAddBookmark(trimmed)
         noteText = ""
+    }
+
+    private func exportBookmarksMarkdown() {
+        let resolvedTitle = currentVideoTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "YouTube Bookmarks"
+            : currentVideoTitle
+        let resolvedVideoID = currentVideoID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scopedBookmarks: [VideoBookmark] = {
+            if !resolvedVideoID.isEmpty {
+                let matching = bookmarks.filter { $0.videoID == resolvedVideoID }
+                if !matching.isEmpty { return matching }
+            }
+            return bookmarks
+        }()
+        let markdown = TranscriptMarkdownExporter.exportMarkdown(
+            title: resolvedTitle,
+            videoID: resolvedVideoID,
+            urlString: currentURLString,
+            transcript: transcript,
+            bookmarks: scopedBookmarks,
+            chapters: chapters,
+            noteMarkdown: noteMarkdown
+        )
+        let safePrefix = resolvedTitle
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = safePrefix.isEmpty ? "YouTube-Bookmarks" : String(safePrefix.prefix(48))
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "\(baseName)-notes.md"
+        panel.title = "Export Bookmarks & Notes"
+        panel.message = "Save Obsidian-ready Markdown with your bookmarks, notes, chapters, and transcript."
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+        try? markdown.write(to: destinationURL, atomically: true, encoding: .utf8)
     }
 }

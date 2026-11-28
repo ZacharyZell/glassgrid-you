@@ -163,6 +163,77 @@ public enum AgentURLActionParser {
             }
             return .success(ParsedURLAction(toolName: "set_sleep_timer", arguments: ["option": .string(option)]))
 
+        case "ab-loop", "ab_loop":
+            let action = (params["action"] ?? "toggle").lowercased()
+            guard ["set_a", "set_b", "toggle", "clear", "set_range"].contains(action) else {
+                return .failure(AgentURLActionError("Unsupported ab-loop action."))
+            }
+            var args: [String: JSONValue] = ["action": .string(action)]
+            if let rawStart = params["start"] ?? params["start_seconds"],
+               let start = Double(rawStart), start.isFinite, start >= 0 {
+                args["start_seconds"] = .double(start)
+            }
+            if let rawEnd = params["end"] ?? params["end_seconds"],
+               let end = Double(rawEnd), end.isFinite, end >= 0 {
+                args["end_seconds"] = .double(end)
+            }
+            if let rawSlot = params["slot"], let slot = Int(rawSlot), (1...4).contains(slot) {
+                args["slot"] = .int(slot)
+            }
+            return .success(ParsedURLAction(toolName: "ab_loop_control", arguments: args))
+
+        case "aspect":
+            let mode = (params["mode"] ?? "toggle").lowercased()
+            guard ["fit", "fill", "toggle"].contains(mode) else {
+                return .failure(AgentURLActionError("Unsupported aspect mode."))
+            }
+            var args: [String: JSONValue] = ["mode": .string(mode)]
+            if let rawSlot = params["slot"], let slot = Int(rawSlot), (1...4).contains(slot) {
+                args["slot"] = .int(slot)
+            }
+            return .success(ParsedURLAction(toolName: "set_video_aspect", arguments: args))
+
+        case "frame-step", "frame_step":
+            let rawDir = (params["direction"] ?? "forward").lowercased()
+            let direction: String
+            switch rawDir {
+            case "forward", "fwd": direction = "forward"
+            case "backward", "back": direction = "backward"
+            default:
+                return .failure(AgentURLActionError("Unsupported frame-step direction."))
+            }
+            var args: [String: JSONValue] = ["direction": .string(direction)]
+            if let rawFPS = params["fps"], let fps = Double(rawFPS), fps.isFinite, fps >= 15, fps <= 120 {
+                args["fps"] = .double(fps)
+            }
+            if let rawSlot = params["slot"], let slot = Int(rawSlot), (1...4).contains(slot) {
+                args["slot"] = .int(slot)
+            }
+            return .success(ParsedURLAction(toolName: "step_frame", arguments: args))
+
+        case "queue":
+            let action = (params["action"] ?? "list").lowercased()
+            guard ["list", "add", "play_next", "advance", "remove", "clear"].contains(action) else {
+                return .failure(AgentURLActionError("Unsupported queue action."))
+            }
+            var args: [String: JSONValue] = ["action": .string(action)]
+            if action == "add" || action == "play_next" {
+                guard let rawURL = params["url"],
+                      case .success(let validated) = AgentSecurity.validateURL(rawURL, tier: .playbackAndNavigation) else {
+                    return .failure(AgentURLActionError("queue \(action) requires a valid YouTube or streaming service https:// URL."))
+                }
+                args["url"] = .string(validated.absoluteString)
+                if let title = params["title"]?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                    args["title"] = .string(title)
+                }
+            } else if action == "remove" {
+                guard let itemID = params["item_id"]?.trimmingCharacters(in: .whitespacesAndNewlines), !itemID.isEmpty else {
+                    return .failure(AgentURLActionError("queue remove requires item_id."))
+                }
+                args["item_id"] = .string(itemID)
+            }
+            return .success(ParsedURLAction(toolName: "manage_watch_queue", arguments: args))
+
         default:
             return .failure(AgentURLActionError("Action '\(verb)' is not permitted via URL scheme."))
         }

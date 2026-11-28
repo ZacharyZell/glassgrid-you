@@ -18,6 +18,7 @@ struct SidebarView: View {
     @State private var isServicesExpanded = true
     @State private var servicePendingReset: StreamingService?
     @State private var isPresetsExpanded = true
+    @State private var isWatchQueueExpanded = true
     @State private var renamingPresetID: UUID?
     @State private var renamePresetDraft = ""
     @State private var renamingPinID: UUID?
@@ -181,6 +182,8 @@ struct SidebarView: View {
                                 sidebarRow(for: destination)
                             }
                         }
+
+                        watchQueueSection
 
                         VStack(alignment: .leading, spacing: AppSpacing.xxs) {
                             HStack(spacing: AppSpacing.xs) {
@@ -696,6 +699,20 @@ struct SidebarView: View {
                             .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
                     }
 
+                    if isHovered && folderHasChannelPins(folder: folder) {
+                        Button {
+                            openFolderInChannelInbox(folder: folder)
+                        } label: {
+                            Image(systemName: "tray.full")
+                                .font(AppIconFont.xs(weight: .semibold))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .frame(width: 20, height: 20)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Filter Channel Inbox to \(folder.name)")
+                    }
+
                     Image(systemName: folder.isExpanded ? "chevron.down" : "chevron.right")
                         .font(AppIconFont.xs(weight: .semibold))
                         .foregroundStyle(AppleTheme.textMuted)
@@ -724,6 +741,11 @@ struct SidebarView: View {
                         controller.openFolderInTabs(id: folder.id)
                     }
                     .disabled(controller.anyTabInFullscreen)
+                    if folderHasChannelPins(folder: folder) {
+                        Button("Open Folder in Channel Inbox") {
+                            openFolderInChannelInbox(folder: folder)
+                        }
+                    }
                     Divider()
                 }
                 Button("Rename Folder…") {
@@ -1061,6 +1083,166 @@ struct SidebarView: View {
             _ = try controller.importMultiviewPresets(from: data)
         } catch {
             controller.showHUD(icon: "exclamationmark.triangle", message: error.localizedDescription)
+        }
+    }
+
+    @ViewBuilder
+    private var watchQueueSection: some View {
+        let queue = controller.settings.watchQueue
+        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+            HStack(spacing: AppSpacing.xs) {
+                Button {
+                    withAnimation(.snappy(duration: 0.18, extraBounce: 0)) {
+                        isWatchQueueExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: AppSpacing.xs) {
+                        sectionHeader("Up Next")
+                        if !queue.isEmpty {
+                            Text("\(queue.count)")
+                                .font(AppFont.micro(weight: .semibold, tabular: true))
+                                .foregroundStyle(AppleTheme.accentText)
+                                .padding(.horizontal, AppSpacing.xs)
+                                .padding(.vertical, 1)
+                                .background(Capsule(style: .continuous).fill(AppleTheme.accentText.opacity(0.14)))
+                        }
+                        Spacer()
+                        Image(systemName: isWatchQueueExpanded ? "chevron.down" : "chevron.right")
+                            .font(AppIconFont.xs(weight: .semibold))
+                            .foregroundStyle(AppleTheme.textMuted)
+                    }
+                    .minHitTarget(24, shape: Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if let first = queue.first {
+                    Button("Next") {
+                        controller.playWatchQueueItem(first)
+                    }
+                    .buttonStyle(.plain)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.accentText)
+                    .padding(.horizontal, AppSpacing.xs)
+                    .minHitTarget(24)
+                    .help("Play Next: \(first.title)")
+
+                    Button("Clear") {
+                        controller.clearWatchQueue()
+                    }
+                    .buttonStyle(.plain)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                    .padding(.horizontal, AppSpacing.xs)
+                    .minHitTarget(24)
+                    .help("Clear Up Next Queue")
+                } else if let tab = controller.selectedTab,
+                          tab.mediaStatus.hasVideo,
+                          let item = WatchQueueItem(
+                            videoID: YouTubeURLRouter.extractVideoID(from: tab.url),
+                            urlString: tab.url.absoluteString,
+                            title: controller.effectiveTitle(for: tab),
+                            channel: tab.mediaStatus.channel
+                          ) {
+                    Button("+ Add") {
+                        controller.enqueueInWatchQueue(item, playNext: false)
+                    }
+                    .buttonStyle(.plain)
+                    .font(AppFont.caption(weight: .medium))
+                    .foregroundStyle(AppleTheme.accentText)
+                    .padding(.horizontal, AppSpacing.xs)
+                    .minHitTarget(24)
+                    .help("Add current video to Up Next Queue")
+                }
+            }
+
+            if isWatchQueueExpanded {
+                if queue.isEmpty {
+                    Text("Queue videos from Inbox or tabs")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.vertical, AppSpacing.xs)
+                } else {
+                    ForEach(queue.prefix(8)) { item in
+                        HStack(spacing: AppSpacing.xs) {
+                            Button {
+                                controller.playWatchQueueItem(item)
+                            } label: {
+                                HStack(spacing: AppSpacing.sm) {
+                                    Image(systemName: "play.fill")
+                                        .font(AppIconFont.xs(weight: .semibold))
+                                        .foregroundStyle(AppleTheme.accentText)
+                                        .frame(width: 14, alignment: .center)
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(item.title)
+                                            .font(AppFont.caption(weight: .medium))
+                                            .foregroundStyle(Color.primary.opacity(0.90))
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                        if !item.channel.isEmpty {
+                                            Text(item.channel)
+                                                .font(AppFont.micro)
+                                                .foregroundStyle(AppleTheme.textSecondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                controller.removeWatchQueueItem(id: item.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(AppIconFont.xs(weight: .semibold))
+                                    .foregroundStyle(AppleTheme.textMuted)
+                                    .frame(width: 20, height: 20)
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("Remove from Up Next Queue")
+                        }
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.vertical, AppSpacing.xs)
+                        .contextMenu {
+                            Button("Play Now") {
+                                controller.playWatchQueueItem(item)
+                            }
+                            Button("Remove from Queue", role: .destructive) {
+                                controller.removeWatchQueueItem(id: item.id)
+                            }
+                        }
+                    }
+
+                    if queue.count > 8 {
+                        Text("+\(queue.count - 8) more queued")
+                            .font(AppFont.micro)
+                            .foregroundStyle(AppleTheme.textMuted)
+                            .padding(.horizontal, AppSpacing.lg)
+                            .padding(.vertical, AppSpacing.xxs)
+                    }
+                }
+            }
+        }
+    }
+
+    private func folderHasChannelPins(folder: PinnedFolder) -> Bool {
+        !ChannelInboxFilterHelper.channelIDs(
+            for: .folder(folder.id),
+            folders: controller.settings.pinnedFolders,
+            pins: controller.settings.pinnedItems,
+            watchedChannels: controller.settings.watchedChannels
+        ).isEmpty
+    }
+
+    private func openFolderInChannelInbox(folder: PinnedFolder) {
+        controller.settings.channelInboxFilter = .folder(folder.id)
+        controller.navigateSelectedTab(to: .home)
+        Task { @MainActor in
+            await controller.refreshChannelInbox()
         }
     }
 

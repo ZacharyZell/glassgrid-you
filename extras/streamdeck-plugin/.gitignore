@@ -1,0 +1,4 @@
+node_modules/
+*.streamDeckPlugin
+com.glassgridyou.streamdeck.sdPlugin/bin/
+.DS_Store

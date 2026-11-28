@@ -291,6 +291,8 @@ public enum SponsorSegmentCategory: String, CaseIterable, Codable, Identifiable,
     case intro
     case outro
     case interaction
+    case musicOfftopic = "music_offtopic"
+    case poiHighlight = "poi_highlight"
 
     public static let defaultEnabled: [SponsorSegmentCategory] = [.sponsor]
     public static let defaultCategorySet: Set<String> = [SponsorSegmentCategory.sponsor.rawValue]
@@ -304,6 +306,8 @@ public enum SponsorSegmentCategory: String, CaseIterable, Codable, Identifiable,
         case .intro: return "Intro / Intermission"
         case .outro: return "Outro / Credits"
         case .interaction: return "Subscribe / Interaction"
+        case .musicOfftopic: return "Non-Music Section"
+        case .poiHighlight: return "Highlight"
         }
     }
 
@@ -314,7 +318,17 @@ public enum SponsorSegmentCategory: String, CaseIterable, Codable, Identifiable,
         case .intro: return "Intro"
         case .outro: return "Outro"
         case .interaction: return "Interaction"
+        case .musicOfftopic: return "Non-Music"
+        case .poiHighlight: return "Highlight"
         }
+    }
+
+    public var isAutoSkipped: Bool {
+        self != .poiHighlight
+    }
+
+    public var isPointHighlight: Bool {
+        self == .poiHighlight
     }
 }
 
@@ -336,6 +350,122 @@ public struct SponsorSegment: Equatable, Codable, Sendable {
 
     public var categoryDisplayName: String {
         categoryEnum?.displayName ?? category.capitalized
+    }
+
+    /// Returns a normalized `0...1` timeline fraction range for scrubber ticks/markers,
+    /// or `nil` when `duration` or segment timestamps are invalid/out-of-range.
+    public func normalizedRange(duration: Double) -> ClosedRange<Double>? {
+        guard duration.isFinite, duration > 0, duration < 86_400,
+              start.isFinite, end.isFinite,
+              start >= 0, end >= start, start <= duration else {
+            return nil
+        }
+        let lo = min(max(start / duration, 0.0), 1.0)
+        let hi = min(max(end / duration, lo), 1.0)
+        return lo...hi
+    }
+}
+
+/// User-defined A-B playback loop interval with minimum span and anti-oscillation re-seek cooldown.
+public struct ABLoopRange: Equatable, Hashable, Codable, Sendable {
+    public static let minimumSpanSeconds: Double = 0.5
+    public static let minimumReseekIntervalSeconds: TimeInterval = 0.4
+    public static let empty = ABLoopRange()
+
+    public var startSeconds: Double?
+    public var endSeconds: Double?
+    public var isEnabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case startSeconds
+        case endSeconds
+        case isEnabled
+    }
+
+    public init(startSeconds: Double? = nil, endSeconds: Double? = nil, isEnabled: Bool = false) {
+        self.startSeconds = startSeconds
+        self.endSeconds = endSeconds
+        self.isEnabled = isEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        startSeconds = try container.decodeIfPresent(Double.self, forKey: .startSeconds)
+        endSeconds = try container.decodeIfPresent(Double.self, forKey: .endSeconds)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+    }
+
+    public var isComplete: Bool {
+        guard let start = startSeconds, let end = endSeconds,
+              start.isFinite, end.isFinite,
+              start >= 0, end > start + Self.minimumSpanSeconds else {
+            return false
+        }
+        return true
+    }
+
+    /// Sanitizes non-finite/negative endpoints, clamps against `duration` when finite positive,
+    /// and invalidates `endSeconds` if the resulting span is not strictly greater than `minimumSpanSeconds`.
+    public func clamped(duration: Double?) -> ABLoopRange {
+        let maxDuration: Double? = {
+            guard let duration, duration.isFinite, duration > 0 else { return nil }
+            return duration
+        }()
+
+        let cleanStart: Double? = startSeconds.flatMap { raw in
+            guard raw.isFinite else { return nil }
+            let floored = max(0.0, raw)
+            return maxDuration.map { min(floored, $0) } ?? floored
+        }
+
+        var cleanEnd: Double? = endSeconds.flatMap { raw in
+            guard raw.isFinite else { return nil }
+            let floored = max(0.0, raw)
+            return maxDuration.map { min(floored, $0) } ?? floored
+        }
+
+        if let start = cleanStart, let end = cleanEnd, end <= start + Self.minimumSpanSeconds {
+            cleanEnd = nil
+        } else if cleanStart == nil, cleanEnd != nil {
+            // Leave orphan B point intact until A is set, or keep sanitized
+        }
+
+        let validComplete: Bool
+        if let start = cleanStart, let end = cleanEnd {
+            validComplete = end > start + Self.minimumSpanSeconds
+        } else {
+            validComplete = false
+        }
+
+        return ABLoopRange(
+            startSeconds: cleanStart,
+            endSeconds: cleanEnd,
+            isEnabled: validComplete ? isEnabled : false
+        )
+    }
+
+    /// Returns `startSeconds` when playback reaches `endSeconds - 0.12` and cooldown has elapsed,
+    /// allowing free manual scrubbing before `A`.
+    public func shouldTriggerLoopJump(
+        currentTime: Double,
+        duration: Double?,
+        lastSeekAt: Date?,
+        now: Date = Date()
+    ) -> Double? {
+        let normalized = clamped(duration: duration)
+        guard normalized.isEnabled, normalized.isComplete,
+              let start = normalized.startSeconds,
+              let end = normalized.endSeconds,
+              currentTime.isFinite, currentTime >= 0 else {
+            return nil
+        }
+        if let lastSeekAt, now.timeIntervalSince(lastSeekAt) < Self.minimumReseekIntervalSeconds {
+            return nil
+        }
+        guard currentTime >= end - 0.12 else {
+            return nil
+        }
+        return start
     }
 }
 
@@ -896,7 +1026,7 @@ public struct MediaState: Equatable, Sendable {
 }
 
 /// Configuration snapshot synced to the injected YouTube distraction-free & playback script.
-public struct DistractionFreeConfig: Equatable, Sendable {
+public struct DistractionFreeConfig: Equatable, Codable, Sendable {
     public var hideShorts: Bool
     public var redirectShortsToWatch: Bool
     public var cleanWebChrome: Bool
@@ -920,6 +1050,34 @@ public struct DistractionFreeConfig: Equatable, Sendable {
     public var cleanBoxBypassed: Bool
     public var contentFilterKeywords: [String]
     public var contentFilterChannels: [String]
+    public var aspectFill: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case hideShorts
+        case redirectShortsToWatch
+        case cleanWebChrome
+        case hideWebHeader
+        case autoTheaterMode
+        case hideEndScreens
+        case hideWatchRecommendations
+        case hideComments
+        case hideHomeFeed
+        case disableAmbientMode
+        case autoDismissContinueWatching
+        case preferOriginalAudio
+        case preferredQuality
+        case defaultPlaybackRate
+        case sponsorBlockEnabled
+        case appearance
+        case focusModeActive
+        case miniPlayerActive
+        case multiviewTileActive
+        case cleanBoxStreamingPlayers
+        case cleanBoxBypassed
+        case contentFilterKeywords
+        case contentFilterChannels
+        case aspectFill
+    }
 
     public init(
         hideShorts: Bool = true,
@@ -944,7 +1102,8 @@ public struct DistractionFreeConfig: Equatable, Sendable {
         cleanBoxStreamingPlayers: Bool = true,
         cleanBoxBypassed: Bool = false,
         contentFilterKeywords: [String] = [],
-        contentFilterChannels: [String] = []
+        contentFilterChannels: [String] = [],
+        aspectFill: Bool = false
     ) {
         self.hideShorts = hideShorts
         self.redirectShortsToWatch = redirectShortsToWatch
@@ -969,6 +1128,36 @@ public struct DistractionFreeConfig: Equatable, Sendable {
         self.cleanBoxBypassed = cleanBoxBypassed
         self.contentFilterKeywords = contentFilterKeywords
         self.contentFilterChannels = contentFilterChannels
+        self.aspectFill = aspectFill
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawRate = try container.decodeIfPresent(Double.self, forKey: .defaultPlaybackRate) ?? 1.0
+        self.hideShorts = try container.decodeIfPresent(Bool.self, forKey: .hideShorts) ?? true
+        self.redirectShortsToWatch = try container.decodeIfPresent(Bool.self, forKey: .redirectShortsToWatch) ?? true
+        self.cleanWebChrome = try container.decodeIfPresent(Bool.self, forKey: .cleanWebChrome) ?? true
+        self.hideWebHeader = try container.decodeIfPresent(Bool.self, forKey: .hideWebHeader) ?? false
+        self.autoTheaterMode = try container.decodeIfPresent(Bool.self, forKey: .autoTheaterMode) ?? true
+        self.hideEndScreens = try container.decodeIfPresent(Bool.self, forKey: .hideEndScreens) ?? true
+        self.hideWatchRecommendations = try container.decodeIfPresent(Bool.self, forKey: .hideWatchRecommendations) ?? false
+        self.hideComments = try container.decodeIfPresent(Bool.self, forKey: .hideComments) ?? false
+        self.hideHomeFeed = try container.decodeIfPresent(Bool.self, forKey: .hideHomeFeed) ?? false
+        self.disableAmbientMode = try container.decodeIfPresent(Bool.self, forKey: .disableAmbientMode) ?? true
+        self.autoDismissContinueWatching = try container.decodeIfPresent(Bool.self, forKey: .autoDismissContinueWatching) ?? true
+        self.preferOriginalAudio = try container.decodeIfPresent(Bool.self, forKey: .preferOriginalAudio) ?? true
+        self.preferredQuality = try container.decodeIfPresent(PreferredVideoQuality.self, forKey: .preferredQuality) ?? .auto
+        self.defaultPlaybackRate = min(max(rawRate.isFinite ? rawRate : 1.0, 0.25), 4.0)
+        self.sponsorBlockEnabled = try container.decodeIfPresent(Bool.self, forKey: .sponsorBlockEnabled) ?? false
+        self.appearance = try container.decodeIfPresent(AppAppearance.self, forKey: .appearance) ?? .system
+        self.focusModeActive = try container.decodeIfPresent(Bool.self, forKey: .focusModeActive) ?? false
+        self.miniPlayerActive = try container.decodeIfPresent(Bool.self, forKey: .miniPlayerActive) ?? false
+        self.multiviewTileActive = try container.decodeIfPresent(Bool.self, forKey: .multiviewTileActive) ?? false
+        self.cleanBoxStreamingPlayers = try container.decodeIfPresent(Bool.self, forKey: .cleanBoxStreamingPlayers) ?? true
+        self.cleanBoxBypassed = try container.decodeIfPresent(Bool.self, forKey: .cleanBoxBypassed) ?? false
+        self.contentFilterKeywords = try container.decodeIfPresent([String].self, forKey: .contentFilterKeywords) ?? []
+        self.contentFilterChannels = try container.decodeIfPresent([String].self, forKey: .contentFilterChannels) ?? []
+        self.aspectFill = try container.decodeIfPresent(Bool.self, forKey: .aspectFill) ?? false
     }
 
     public var effectiveTilePlayerActive: Bool {

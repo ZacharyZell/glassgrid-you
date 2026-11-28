@@ -67,6 +67,10 @@ struct LivePulseTickerBar: View {
             || (player.lastDeltaPoints.map { abs($0) >= 0.05 } ?? false)
     }
 
+    private var isScoresMasked: Bool {
+        controller.settings.livePulseMaskScores
+    }
+
     private func makePlayerRailItem(
         _ player: FantasyPlayerLine,
         isBench: Bool,
@@ -74,7 +78,10 @@ struct LivePulseTickerBar: View {
     ) -> TickerRailItem {
         let deltaText: String
         let isPos: Bool?
-        if let delta = player.lastDeltaPoints, abs(delta) >= 0.05 {
+        if isScoresMasked {
+            deltaText = "• - •"
+            isPos = nil
+        } else if let delta = player.lastDeltaPoints, abs(delta) >= 0.05 {
             let arrow = delta >= 0 ? "▲" : "▼"
             deltaText = String(format: "%@%.1f %@", delta >= 0 ? "+" : "", delta, arrow)
             isPos = delta >= 0
@@ -88,7 +95,7 @@ struct LivePulseTickerBar: View {
             badge: isBench ? "BN" : (player.isRedZone ? "RZ" : player.position),
             isBench: isBench,
             text: "\(abbreviatedPlayerName(player.name)) \(deltaText)",
-            detail: player.liveStatLine,
+            detail: isScoresMasked ? nil : player.liveStatLine,
             isPositive: isPos,
             targetTab: .players,
             gameID: player.matchedGameID
@@ -242,19 +249,26 @@ struct LivePulseTickerBar: View {
             }
 
             for quote in prioritizedMarkets.prefix(4) {
-                let pct = Int((quote.yesProbability * 100.0).rounded())
-                let delta = quote.delta1m ?? quote.delta5m
-                let deltaSuffix: String
+                let text: String
                 let isPos: Bool?
-                if let delta, abs(delta) >= 0.005 {
-                    let deltaPct = Int((delta * 100.0).rounded())
-                    let arrow = deltaPct >= 0 ? "▲" : "▼"
-                    let sign = deltaPct >= 0 ? "+" : ""
-                    deltaSuffix = " \(arrow)\(sign)\(deltaPct)%"
-                    isPos = deltaPct >= 0
-                } else {
-                    deltaSuffix = ""
+                if isScoresMasked {
+                    text = "\(quote.outcomeLabel) • - •"
                     isPos = nil
+                } else {
+                    let pct = Int((quote.yesProbability * 100.0).rounded())
+                    let delta = quote.delta1m ?? quote.delta5m
+                    let deltaSuffix: String
+                    if let delta, abs(delta) >= 0.005 {
+                        let deltaPct = Int((delta * 100.0).rounded())
+                        let arrow = deltaPct >= 0 ? "▲" : "▼"
+                        let sign = deltaPct >= 0 ? "+" : ""
+                        deltaSuffix = " \(arrow)\(sign)\(deltaPct)%"
+                        isPos = deltaPct >= 0
+                    } else {
+                        deltaSuffix = ""
+                        isPos = nil
+                    }
+                    text = "\(quote.outcomeLabel) \(pct)%\(deltaSuffix)"
                 }
                 items.append(
                     TickerRailItem(
@@ -262,8 +276,8 @@ struct LivePulseTickerBar: View {
                         kind: .marketTick,
                         badge: quote.provider == .kalshi ? "KALSHI" : "POLY",
                         isBench: false,
-                        text: "\(quote.outcomeLabel) \(pct)%\(deltaSuffix)",
-                        detail: quote.title,
+                        text: text,
+                        detail: isScoresMasked ? nil : quote.title,
                         isPositive: isPos,
                         targetTab: .markets,
                         gameID: quote.matchedGameID
@@ -296,6 +310,9 @@ struct LivePulseTickerBar: View {
         }()
 
         if let matchup = prioritizedMatchup {
+            if isScoresMasked {
+                return "\(matchup.league.displayName) • - •"
+            }
             return String(
                 format: "%@ %.1f–%.1f",
                 matchup.league.displayName,
@@ -305,6 +322,11 @@ struct LivePulseTickerBar: View {
         }
         if case .matchedGame(let gameID, _, _, let sourceLabel) = snapshot.primaryContext {
             if let game = snapshot.games.first(where: { $0.id == gameID }) {
+                if isScoresMasked {
+                    return game.league == .f1
+                        ? "\(game.home.abbreviation) • · \(game.away.abbreviation) •"
+                        : "\(game.away.abbreviation) • - • \(game.home.abbreviation)"
+                }
                 if game.league == .f1 {
                     return "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
                 }
@@ -345,6 +367,9 @@ struct LivePulseTickerBar: View {
                     .layoutPriority(0)
 
                 spoilerDelayPill
+                    .layoutPriority(1)
+
+                maskScoresPill
                     .layoutPriority(1)
 
                 Spacer(minLength: 2)
@@ -522,6 +547,36 @@ struct LivePulseTickerBar: View {
         }
     }
 
+    @ViewBuilder
+    private var maskScoresPill: some View {
+        let isMasked = controller.settings.livePulseMaskScores
+        Button {
+            controller.settings.livePulseMaskScores.toggle()
+        } label: {
+            HStack(spacing: AppSpacing.xs) {
+                Image(systemName: isMasked ? "eye.slash.fill" : "eye")
+                    .font(AppIconFont.xs(weight: .semibold))
+                if isMasked {
+                    Text("Masked")
+                        .font(AppFont.caption(weight: .semibold))
+                }
+            }
+            .foregroundStyle(isMasked ? AppleTheme.accentText : AppleTheme.textSecondary)
+            .padding(.horizontal, isMasked ? AppSpacing.sm : 0)
+            .frame(minWidth: 24, minHeight: 24)
+            .appleGlass(
+                in: Capsule(style: .continuous),
+                tint: isMasked ? AppleTheme.accentText.opacity(0.16) : nil,
+                interactive: true
+            )
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .disabled(isFrozen)
+        .help(isMasked ? "DVR Score Shield On — Click to reveal live scores & odds" : "Mask Live Scores & Odds (DVR Spoiler Shield)")
+    }
+
     // MARK: - Center Reactive Rail
 
     @ViewBuilder
@@ -543,7 +598,8 @@ struct LivePulseTickerBar: View {
             }
             .buttonStyle(.plain)
             .disabled(isFrozen)
-        } else if controller.settings.livePulseEnabled,
+        } else if !isScoresMasked,
+                  controller.settings.livePulseEnabled,
                   controller.settings.livePulseScoringFlashes,
                   let alert = store.activeScoringFlashAlert {
             Button {
@@ -1014,6 +1070,12 @@ struct LivePulseTickerBar: View {
     }
 
     private func formattedRailGameScore(_ game: LiveGame) -> String {
+        if isScoresMasked {
+            if game.league == .f1 {
+                return "\(game.home.abbreviation) • · \(game.away.abbreviation) •"
+            }
+            return "\(game.away.abbreviation) • - • \(game.home.abbreviation)"
+        }
         if game.league == .f1 {
             return "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
         }
@@ -1021,6 +1083,14 @@ struct LivePulseTickerBar: View {
     }
 
     private func formattedPopoverGameScore(_ game: LiveGame) -> String {
+        if isScoresMasked {
+            if game.league == .f1 {
+                return "\(game.home.abbreviation) • · \(game.away.abbreviation) •"
+            }
+            let awayRank = game.away.rank.map { "#\($0) " } ?? ""
+            let homeRank = game.home.rank.map { "#\($0) " } ?? ""
+            return "\(awayRank)\(game.away.abbreviation) • - • \(homeRank)\(game.home.abbreviation)"
+        }
         if game.league == .f1 {
             return "\(game.home.abbreviation) P\(game.home.score) · \(game.away.abbreviation) P\(game.away.score)"
         }

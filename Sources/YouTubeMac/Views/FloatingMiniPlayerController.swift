@@ -28,6 +28,8 @@ private final class MiniPlayerHoverState {
     var splitRatios: MultiviewSplitRatios = .default
     var tileVolumes: [UUID: Int] = [:]
     var hasCustomMix: Bool = false
+    var isOffsetsLocked: Bool = false
+    var isRYDEnabled: Bool = false
 
     var isHeaderVisible: Bool {
         isHovered || isPopoverPresented || isOptionPeekActive
@@ -401,19 +403,45 @@ private final class FlippedMiniPlayerContainerView: NSView {
     }
 }
 
-/// Isolated `2pt` bottom progress hairline observing `PlaybackTimeline` (hidden on live streams).
+/// Isolated `2pt` bottom progress hairline observing `BrowserTab` (hidden on live streams).
 private struct MiniPlayerProgressHairlineView: View {
-    let timeline: PlaybackTimeline
+    let tab: BrowserTab
 
     var body: some View {
+        let timeline = tab.timeline
         if timeline.duration.isFinite && timeline.duration > 0 && timeline.duration < 86400 {
             GeometryReader { proxy in
+                let width = max(1, proxy.size.width)
                 ZStack(alignment: .leading) {
                     Rectangle()
                         .fill(Color.white.opacity(0.18))
+
+                    ForEach(Array(tab.currentSponsorSegments.enumerated()), id: \.offset) { _, segment in
+                        if let range = segment.normalizedRange(duration: timeline.duration) {
+                            let segX = width * range.lowerBound
+                            let segW = max(2, width * (range.upperBound - range.lowerBound))
+                            Rectangle()
+                                .fill(SponsorSegmentVisual.color(for: segment).opacity(0.90))
+                                .frame(width: segW)
+                                .offset(x: min(segX, max(0, width - segW)))
+                        }
+                    }
+
+                    if tab.abLoop.isComplete,
+                       let start = tab.abLoop.startSeconds,
+                       let end = tab.abLoop.endSeconds {
+                        let lo = min(max(start / timeline.duration, 0), 1)
+                        let hi = min(max(end / timeline.duration, lo), 1)
+                        let loopW = max(2, width * (hi - lo))
+                        Rectangle()
+                            .fill(Color.orange.opacity(tab.abLoop.isEnabled ? 0.72 : 0.36))
+                            .frame(width: loopW)
+                            .offset(x: width * lo)
+                    }
+
                     Rectangle()
                         .fill(AppleTheme.accentFill.opacity(0.92))
-                        .frame(width: proxy.size.width * min(max(timeline.progressFraction, 0), 1))
+                        .frame(width: width * min(max(timeline.progressFraction, 0), 1))
                 }
             }
             .frame(height: 2)
@@ -554,10 +582,18 @@ private struct FloatingMiniPlayerOverlayView: View {
     let onDragEnded: () -> Void
     let onDock: () -> Void
     let onClose: () -> Void
+    var onSetABLoopStart: (() -> Void)? = nil
+    var onSetABLoopEnd: (() -> Void)? = nil
+    var onToggleABLoop: (() -> Void)? = nil
+    var onClearABLoop: (() -> Void)? = nil
+    var onStepFrame: ((Bool) -> Void)? = nil
+    var onToggleAspectFill: (() -> Void)? = nil
+    var onJumpToHighlight: (() -> Void)? = nil
+    var isRYDEnabledOverride: Bool? = nil
 
     @State private var isDisplayOptionsPresented = false
     @State private var airPlayFeedbackMessage: String?
-    private let speedPresets: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    private let speedPresets: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
 
     var body: some View {
         let panelW = hoverState.panelSize.width
@@ -824,7 +860,10 @@ private struct FloatingMiniPlayerOverlayView: View {
                                         VStack(alignment: .leading, spacing: AppSpacing.sm) {
                                             Text("Playback Speed")
                                                 .font(AppFont.caption(weight: .semibold))
-                                            HStack(spacing: AppSpacing.xs) {
+                                            LazyVGrid(
+                                                columns: Array(repeating: GridItem(.flexible(), spacing: AppSpacing.xs), count: 5),
+                                                spacing: AppSpacing.xs
+                                            ) {
                                                 ForEach(speedPresets, id: \.self) { rate in
                                                     let isSelected = abs(tab.mediaStatus.playbackRate - rate) < 0.03
                                                     Button {
@@ -832,7 +871,7 @@ private struct FloatingMiniPlayerOverlayView: View {
                                                     } label: {
                                                         Text(MediaStatus.formatPlaybackRate(rate))
                                                             .font(AppFont.micro(weight: isSelected ? .semibold : .medium, tabular: true))
-                                                            .padding(.horizontal, AppSpacing.sm)
+                                                            .frame(maxWidth: .infinity)
                                                             .minHitTarget(24, shape: Capsule(style: .continuous))
                                                             .background(
                                                                 Capsule(style: .continuous)
@@ -844,6 +883,10 @@ private struct FloatingMiniPlayerOverlayView: View {
                                                 }
                                             }
                                         }
+
+                                        Divider()
+
+                                        precisionPlaybackOptionsSection
 
                                         Divider()
 
@@ -982,6 +1025,196 @@ private struct FloatingMiniPlayerOverlayView: View {
             onPopoverVisibilityChanged(open)
         }
     }
+
+    @ViewBuilder
+    private var precisionPlaybackOptionsSection: some View {
+        let currentURL = tab.webView.url ?? tab.url
+        let canAspectFill = VideoAspectMode.canApplyAspectFill(for: currentURL)
+        let abLoop = tab.abLoop
+        let highlight = tab.activeHighlightSegment
+        let showRYD = (isRYDEnabledOverride ?? true) ? tab.currentRYDStats : nil
+
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack {
+                Text("Precision Playback")
+                    .font(AppFont.caption(weight: .semibold))
+                Spacer()
+                if let stats = showRYD {
+                    HStack(spacing: 3) {
+                        Image(systemName: "hand.thumbsup.fill")
+                            .font(AppIconFont.xs(weight: .semibold))
+                        if let pct = stats.likePercentage {
+                            Text("\(pct)%")
+                                .font(AppFont.micro(weight: .semibold, tabular: true))
+                        }
+                        Text("· \(stats.formattedDislikes)")
+                            .font(AppFont.micro(weight: .medium, tabular: true))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                    .padding(.horizontal, AppSpacing.sm)
+                    .padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+                    .help("Return YouTube Dislike estimate: \(stats.likes) likes · \(stats.formattedDislikes) dislikes")
+                }
+            }
+
+            HStack(spacing: AppSpacing.xs) {
+                Button {
+                    if let onSetABLoopStart {
+                        onSetABLoopStart()
+                    } else {
+                        var next = tab.abLoop
+                        next.startSeconds = tab.timeline.currentTime
+                        next = next.clamped(duration: tab.timeline.duration)
+                        if next.isComplete { next.isEnabled = true }
+                        tab.abLoop = next
+                    }
+                } label: {
+                    Text(abLoop.startSeconds.map { "A \(MediaState.formatTime($0))" } ?? "Set A")
+                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                        .padding(.horizontal, AppSpacing.sm)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                        .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                        .foregroundStyle(abLoop.startSeconds != nil ? AppleTheme.accentText : Color.primary)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    if let onSetABLoopEnd {
+                        onSetABLoopEnd()
+                    } else {
+                        var next = tab.abLoop
+                        next.endSeconds = tab.timeline.currentTime
+                        next = next.clamped(duration: tab.timeline.duration)
+                        if next.isComplete { next.isEnabled = true }
+                        tab.abLoop = next
+                    }
+                } label: {
+                    Text(abLoop.endSeconds.map { "B \(MediaState.formatTime($0))" } ?? "Set B")
+                        .font(AppFont.micro(weight: .semibold, tabular: true))
+                        .padding(.horizontal, AppSpacing.sm)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                        .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                        .foregroundStyle(abLoop.endSeconds != nil ? AppleTheme.accentText : Color.primary)
+                }
+                .buttonStyle(.plain)
+
+                if abLoop.isComplete {
+                    Button {
+                        if let onToggleABLoop {
+                            onToggleABLoop()
+                        } else {
+                            tab.abLoop.isEnabled.toggle()
+                        }
+                    } label: {
+                        Text(abLoop.isEnabled ? "Loop On" : "Loop")
+                            .font(AppFont.micro(weight: .semibold))
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Capsule(style: .continuous).fill(abLoop.isEnabled ? AppleTheme.accentFill : Color.primary.opacity(0.08)))
+                            .foregroundStyle(abLoop.isEnabled ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if abLoop.startSeconds != nil || abLoop.endSeconds != nil {
+                    Button {
+                        if let onClearABLoop {
+                            onClearABLoop()
+                        } else {
+                            tab.abLoop = .empty
+                        }
+                    } label: {
+                        Text("Clear")
+                            .font(AppFont.micro(weight: .medium))
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                            .foregroundStyle(AppleTheme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack(spacing: AppSpacing.xs) {
+                if canAspectFill {
+                    Button {
+                        if let onStepFrame {
+                            onStepFrame(false)
+                        } else {
+                            tab.stepVideoFrame(forward: false)
+                        }
+                    } label: {
+                        Text("−1f")
+                            .font(AppFont.micro(weight: .semibold, tabular: true))
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                            .foregroundStyle(Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Step Frame Backward")
+
+                    Button {
+                        if let onStepFrame {
+                            onStepFrame(true)
+                        } else {
+                            tab.stepVideoFrame(forward: true)
+                        }
+                    } label: {
+                        Text("+1f")
+                            .font(AppFont.micro(weight: .semibold, tabular: true))
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                            .foregroundStyle(Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Step Frame Forward")
+
+                    Button {
+                        if let onToggleAspectFill {
+                            onToggleAspectFill()
+                        } else {
+                            tab.isAspectFillEnabled.toggle()
+                        }
+                    } label: {
+                        Text("21:9 Fill")
+                            .font(AppFont.micro(weight: .semibold))
+                            .padding(.horizontal, AppSpacing.sm)
+                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                            .background(Capsule(style: .continuous).fill(tab.isAspectFillEnabled ? AppleTheme.accentFill : Color.primary.opacity(0.08)))
+                            .foregroundStyle(tab.isAspectFillEnabled ? Color.white : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Toggle 21:9 Aspect Fill")
+                }
+
+                if let highlight {
+                    Button {
+                        if let onJumpToHighlight {
+                            onJumpToHighlight()
+                        } else {
+                            tab.seekTo(seconds: highlight.start)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "sparkle")
+                                .font(AppIconFont.xs(weight: .semibold))
+                            Text("Highlight")
+                                .font(AppFont.micro(weight: .semibold))
+                        }
+                        .padding(.horizontal, AppSpacing.sm)
+                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                        .background(Capsule(style: .continuous).fill(AppleTheme.accentFill))
+                        .foregroundStyle(Color.white)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Jump to Highlight (\(MediaState.formatTime(highlight.start)))")
+                }
+            }
+        }
+    }
 }
 
 /// Compact Liquid Glass hover top bar (`44pt` tall) for the Floating Multiview Grid Mini-Player.
@@ -1008,6 +1241,9 @@ private struct FloatingMultiviewHeaderOverlayView: View {
     let onDragEnded: () -> Void
     let onDock: () -> Void
     let onClose: () -> Void
+    var onMasterTogglePlayPauseAll: (() -> Void)? = nil
+    var onToggleLockOffsets: (() -> Void)? = nil
+    var onResetOffsets: (() -> Void)? = nil
 
     @State private var isDisplayOptionsPresented = false
 
@@ -1391,40 +1627,103 @@ private struct FloatingMultiviewHeaderOverlayView: View {
 
                                         Divider()
 
-                                        HStack(spacing: AppSpacing.md) {
-                                            Button(action: onPlayAll) {
-                                                HStack(spacing: AppSpacing.xs) {
-                                                    Image(systemName: "play.fill")
-                                                        .font(AppIconFont.xs(weight: .medium))
-                                                    Text("Play All")
-                                                        .font(AppFont.caption(weight: .medium))
+                                        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                                            HStack(spacing: AppSpacing.sm) {
+                                                Button {
+                                                    if let onMasterTogglePlayPauseAll {
+                                                        onMasterTogglePlayPauseAll()
+                                                    } else {
+                                                        let anyPlaying = hoverState.hostedTabs.contains { $0.mediaStatus.isPlaying }
+                                                        if anyPlaying {
+                                                            onPauseAll()
+                                                        } else {
+                                                            onPlayAll()
+                                                        }
+                                                    }
+                                                } label: {
+                                                    HStack(spacing: AppSpacing.xs) {
+                                                        Image(systemName: "playpause.fill")
+                                                            .font(AppIconFont.xs(weight: .medium))
+                                                        Text("Play/Pause All")
+                                                            .font(AppFont.caption(weight: .medium))
+                                                    }
+                                                    .padding(.horizontal, AppSpacing.md)
+                                                    .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(Color.primary.opacity(0.10))
+                                                    )
+                                                    .foregroundStyle(Color.primary)
                                                 }
-                                                .padding(.horizontal, AppSpacing.md)
-                                                .minHitTarget(24, shape: Capsule(style: .continuous))
-                                                .background(
-                                                    Capsule(style: .continuous)
-                                                        .fill(Color.primary.opacity(0.10))
-                                                )
-                                                .foregroundStyle(Color.primary)
-                                            }
-                                            .buttonStyle(.plain)
+                                                .buttonStyle(.plain)
 
-                                            Button(action: onPauseAll) {
-                                                HStack(spacing: AppSpacing.xs) {
-                                                    Image(systemName: "pause.fill")
-                                                        .font(AppIconFont.xs(weight: .medium))
-                                                    Text("Pause All")
-                                                        .font(AppFont.caption(weight: .medium))
+                                                if let onToggleLockOffsets {
+                                                    Button(action: onToggleLockOffsets) {
+                                                        HStack(spacing: AppSpacing.xs) {
+                                                            Image(systemName: hoverState.isOffsetsLocked ? "lock.fill" : "lock.open")
+                                                                .font(AppIconFont.xs(weight: .medium))
+                                                            Text(hoverState.isOffsetsLocked ? "Offsets Locked" : "Lock Offsets")
+                                                                .font(AppFont.caption(weight: hoverState.isOffsetsLocked ? .semibold : .medium))
+                                                        }
+                                                        .padding(.horizontal, AppSpacing.md)
+                                                        .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                        .background(
+                                                            Capsule(style: .continuous)
+                                                                .fill(hoverState.isOffsetsLocked ? AppleTheme.accentFill : Color.primary.opacity(0.10))
+                                                        )
+                                                        .foregroundStyle(hoverState.isOffsetsLocked ? Color.white : Color.primary)
+                                                    }
+                                                    .buttonStyle(.plain)
                                                 }
-                                                .padding(.horizontal, AppSpacing.md)
-                                                .minHitTarget(24, shape: Capsule(style: .continuous))
-                                                .background(
-                                                    Capsule(style: .continuous)
-                                                        .fill(Color.primary.opacity(0.10))
-                                                )
-                                                .foregroundStyle(Color.primary)
+
+                                                if let onResetOffsets, hoverState.isOffsetsLocked {
+                                                    Button(action: onResetOffsets) {
+                                                        Text("Reset")
+                                                            .font(AppFont.caption(weight: .medium))
+                                                            .padding(.horizontal, AppSpacing.sm)
+                                                            .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+                                                            .foregroundStyle(AppleTheme.textSecondary)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
                                             }
-                                            .buttonStyle(.plain)
+
+                                            HStack(spacing: AppSpacing.md) {
+                                                Button(action: onPlayAll) {
+                                                    HStack(spacing: AppSpacing.xs) {
+                                                        Image(systemName: "play.fill")
+                                                            .font(AppIconFont.xs(weight: .medium))
+                                                        Text("Play All")
+                                                            .font(AppFont.caption(weight: .medium))
+                                                    }
+                                                    .padding(.horizontal, AppSpacing.md)
+                                                    .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(Color.primary.opacity(0.10))
+                                                    )
+                                                    .foregroundStyle(Color.primary)
+                                                }
+                                                .buttonStyle(.plain)
+
+                                                Button(action: onPauseAll) {
+                                                    HStack(spacing: AppSpacing.xs) {
+                                                        Image(systemName: "pause.fill")
+                                                            .font(AppIconFont.xs(weight: .medium))
+                                                        Text("Pause All")
+                                                            .font(AppFont.caption(weight: .medium))
+                                                    }
+                                                    .padding(.horizontal, AppSpacing.md)
+                                                    .minHitTarget(24, shape: Capsule(style: .continuous))
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(Color.primary.opacity(0.10))
+                                                    )
+                                                    .foregroundStyle(Color.primary)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
                                         }
                                     }
                                     .padding(AppSpacing.lg)
@@ -1885,6 +2184,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         tab: BrowserTab,
         allSpaces: Bool,
         opacity: Double = 1.0,
+        isRYDEnabled: Bool? = nil,
         onSeek: @escaping (Double) -> Void,
         onTogglePlay: @escaping () -> Void,
         onToggleMute: @escaping () -> Void,
@@ -1892,7 +2192,14 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onAirPlayResult: @escaping (AirPlayPickerResult) -> Void,
         onOpenDisplaysSettings: @escaping () -> Void,
         onDock: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onSetABLoopStart: (() -> Void)? = nil,
+        onSetABLoopEnd: (() -> Void)? = nil,
+        onToggleABLoop: (() -> Void)? = nil,
+        onClearABLoop: (() -> Void)? = nil,
+        onStepFrame: ((Bool) -> Void)? = nil,
+        onToggleAspectFill: (() -> Void)? = nil,
+        onJumpToHighlight: (() -> Void)? = nil
     ) {
         guard tab.webView.fullscreenState == .notInFullscreen, !hasLiveFullscreenTab else { return }
 
@@ -1933,6 +2240,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         installSingleOverlay(
             in: panel,
             tab: tab,
+            isRYDEnabled: isRYDEnabled,
             onSeek: onSeek,
             onTogglePlay: onTogglePlay,
             onToggleMute: onToggleMute,
@@ -1940,7 +2248,14 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onAirPlayResult: onAirPlayResult,
             onOpenDisplaysSettings: onOpenDisplaysSettings,
             onDock: onDock,
-            onClose: onClose
+            onClose: onClose,
+            onSetABLoopStart: onSetABLoopStart,
+            onSetABLoopEnd: onSetABLoopEnd,
+            onToggleABLoop: onToggleABLoop,
+            onClearABLoop: onClearABLoop,
+            onStepFrame: onStepFrame,
+            onToggleAspectFill: onToggleAspectFill,
+            onJumpToHighlight: onJumpToHighlight
         )
         installProgressHairline(in: panel, tab: tab)
         panel.ignoresMouseEvents = false
@@ -1959,6 +2274,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         opacity: Double = 1.0,
         tileVolumes: [UUID: Int] = [:],
         hasCustomMix: Bool = false,
+        isOffsetsLocked: Bool = false,
         onFocusAudio: @escaping (UUID) -> Void,
         onCycleLayout: @escaping () -> Void,
         onSelectLayout: @escaping (MultiviewLayoutMode) -> Void,
@@ -1969,7 +2285,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onSetTileVolume: @escaping (UUID, Int) -> Void,
         onResetMixer: @escaping () -> Void,
         onDock: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onMasterTogglePlayPauseAll: (() -> Void)? = nil,
+        onToggleLockOffsets: (() -> Void)? = nil,
+        onResetOffsets: (() -> Void)? = nil
     ) {
         guard tabs.count >= 2,
               !hasLiveFullscreenTab,
@@ -1993,6 +2312,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.splitRatios = splitRatios
         hoverState.tileVolumes = tileVolumes
         hoverState.hasCustomMix = hasCustomMix
+        hoverState.isOffsetsLocked = isOffsetsLocked
         hoverState.isHovered = false
         hoverState.isPopoverPresented = false
         hoverState.isPeekAwayFaded = false
@@ -2026,7 +2346,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
             onSetTileVolume: onSetTileVolume,
             onResetMixer: onResetMixer,
             onDock: onDock,
-            onClose: onClose
+            onClose: onClose,
+            onMasterTogglePlayPauseAll: onMasterTogglePlayPauseAll,
+            onToggleLockOffsets: onToggleLockOffsets,
+            onResetOffsets: onResetOffsets
         )
         panel.ignoresMouseEvents = false
         panel.alphaValue = CGFloat(hoverState.opacity)
@@ -2041,7 +2364,8 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         layoutMode: MultiviewLayoutMode,
         splitRatios: MultiviewSplitRatios,
         tileVolumes: [UUID: Int] = [:],
-        hasCustomMix: Bool = false
+        hasCustomMix: Bool = false,
+        isOffsetsLocked: Bool? = nil
     ) {
         guard hoverState.mode == .multiviewGrid,
               !hasLiveFullscreenTab,
@@ -2055,6 +2379,9 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         hoverState.splitRatios = splitRatios
         hoverState.tileVolumes = tileVolumes
         hoverState.hasCustomMix = hasCustomMix
+        if let isOffsetsLocked {
+            hoverState.isOffsetsLocked = isOffsetsLocked
+        }
         syncHostedTabURLObservations(for: tabs)
         refreshNightDimmerDRMBypass()
 
@@ -2647,6 +2974,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
     private func installSingleOverlay(
         in panel: NSPanel,
         tab: BrowserTab,
+        isRYDEnabled: Bool? = nil,
         onSeek: @escaping (Double) -> Void,
         onTogglePlay: @escaping () -> Void,
         onToggleMute: @escaping () -> Void,
@@ -2654,7 +2982,14 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onAirPlayResult: @escaping (AirPlayPickerResult) -> Void,
         onOpenDisplaysSettings: @escaping () -> Void,
         onDock: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onSetABLoopStart: (() -> Void)? = nil,
+        onSetABLoopEnd: (() -> Void)? = nil,
+        onToggleABLoop: (() -> Void)? = nil,
+        onClearABLoop: (() -> Void)? = nil,
+        onStepFrame: ((Bool) -> Void)? = nil,
+        onToggleAspectFill: (() -> Void)? = nil,
+        onJumpToHighlight: (() -> Void)? = nil
     ) {
         guard let rootView = panel.contentView else { return }
         overlayHostingView?.removeFromSuperview()
@@ -2707,7 +3042,15 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onClose: { [weak self] in
                     self?.setGhostMode(false)
                     onClose()
-                }
+                },
+                onSetABLoopStart: onSetABLoopStart,
+                onSetABLoopEnd: onSetABLoopEnd,
+                onToggleABLoop: onToggleABLoop,
+                onClearABLoop: onClearABLoop,
+                onStepFrame: onStepFrame,
+                onToggleAspectFill: onToggleAspectFill,
+                onJumpToHighlight: onJumpToHighlight,
+                isRYDEnabledOverride: isRYDEnabled
             )
             .environment(\.font, AppFont.body)
         )
@@ -2769,7 +3112,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         onSetTileVolume: @escaping (UUID, Int) -> Void,
         onResetMixer: @escaping () -> Void,
         onDock: @escaping () -> Void,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onMasterTogglePlayPauseAll: (() -> Void)? = nil,
+        onToggleLockOffsets: (() -> Void)? = nil,
+        onResetOffsets: (() -> Void)? = nil
     ) {
         guard let rootView = panel.contentView else { return }
         overlayHostingView?.removeFromSuperview()
@@ -2824,7 +3170,10 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
                 onClose: { [weak self] in
                     self?.setGhostMode(false)
                     onClose()
-                }
+                },
+                onMasterTogglePlayPauseAll: onMasterTogglePlayPauseAll,
+                onToggleLockOffsets: onToggleLockOffsets,
+                onResetOffsets: onResetOffsets
             )
             .environment(\.font, AppFont.body)
         )
@@ -2849,7 +3198,7 @@ final class FloatingMiniPlayerController: NSObject, NSWindowDelegate {
         let host = PassThroughProgressHostView(frame: .zero)
         host.translatesAutoresizingMaskIntoConstraints = false
         let hairline = NSHostingView(
-            rootView: MiniPlayerProgressHairlineView(timeline: tab.timeline)
+            rootView: MiniPlayerProgressHairlineView(tab: tab)
                 .environment(\.font, AppFont.body)
         )
         hairline.safeAreaRegions = []

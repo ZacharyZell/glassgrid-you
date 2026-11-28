@@ -1,0 +1,112 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.glassgridyou.streamdeck",
+  "Name": "GlassGrid You",
+  "Version": "1.5.0.0",
+  "Author": "GlassGrid You",
+  "Description": "Control playback, Mini-Player, Ghost Mode, Multiview grid, A-B Loop, bookmarks, and Stream Deck+ dials in GlassGrid You over local Streamable HTTP MCP.",
+  "Category": "GlassGrid You",
+  "CodePath": "bin/plugin.js",
+  "PropertyInspectorPath": "ui/settings.html",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.5"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    }
+  ],
+  "Nodejs": {
+    "Version": "20",
+    "Debug": "enabled"
+  },
+  "Actions": [
+    {
+      "UUID": "com.glassgridyou.streamdeck.play-pause",
+      "Name": "Play / Pause",
+      "Tooltip": "Toggle play/pause on the active video or target Multiview slot.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.mute",
+      "Name": "Mute / Unmute",
+      "Tooltip": "Toggle audio mute on the active video or target Multiview slot.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.mini-player",
+      "Name": "Mini-Player",
+      "Tooltip": "Toggle the always-on-top Floating Mini-Player or Floating Multiview Grid.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.ghost-mode",
+      "Name": "Ghost Mode",
+      "Tooltip": "Toggle click-through Ghost Mode on the Floating Mini-Player.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.multiview",
+      "Name": "Multiview",
+      "Tooltip": "Toggle Multiview grid mode in the active GlassGrid You window.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.sync-all",
+      "Name": "Sync All",
+      "Tooltip": "Synchronize all active Multiview tiles to live edge or primary VOD timestamp.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.solo-tile",
+      "Name": "Solo Tile",
+      "Tooltip": "Toggle Solo Tile zoom for a configured Multiview slot (1-4).",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.focus-audio",
+      "Name": "Focus Audio",
+      "Tooltip": "Switch exclusive Multiview audio focus to a configured slot (1-4).",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.add-bookmark",
+      "Name": "Add Bookmark",
+      "Tooltip": "Save a timestamped bookmark for the active video (requires Full Control).",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.ab-loop",
+      "Name": "Toggle A-B Loop",
+      "Tooltip": "Toggle, set A/B, or clear the A-B loop range on the active video.",
+      "Controllers": ["Keypad"],
+      "States": [{ "TitleAlignment": "bottom" }]
+    },
+    {
+      "UUID": "com.glassgridyou.streamdeck.media-dial",
+      "Name": "Media Dial (Seek / Volume / Frame)",
+      "Tooltip": "Rotate to scrub timeline, adjust volume, or step video frames; press to cycle mode or tap to toggle play/pause.",
+      "Controllers": ["Encoder"],
+      "Encoder": {
+        "layout": "$B1",
+        "TriggerDescription": {
+          "Rotate": "Scrub timeline, adjust volume, or step frames",
+          "Push": "Cycle mode (Seek / Volume / Frame)",
+          "Touch": "Toggle Play / Pause"
+        }
+      },
+      "States": [{ "TitleAlignment": "bottom" }]
+    }
+  ]
+}

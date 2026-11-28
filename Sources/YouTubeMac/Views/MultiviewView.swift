@@ -175,6 +175,32 @@ struct MultiviewControlBar: View {
                     savePresetButton
 
                     Button {
+                        controller.masterTogglePlayPauseAllMultiviewTiles()
+                    } label: {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "playpause.fill")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                Text("Play/Pause")
+                                    .font(AppFont.caption(weight: .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, AppSpacing.md)
+
+                            Image(systemName: "playpause.fill")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.86))
+                        .frame(height: 28)
+                        .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Master Play / Pause All Multiview Streams")
+
+                    Button {
                         controller.syncAllMultiviewTilesToLive()
                     } label: {
                         ViewThatFits(in: .horizontal) {
@@ -199,6 +225,90 @@ struct MultiviewControlBar: View {
                     }
                     .buttonStyle(.plain)
                     .help("Sync All Streams to Live Edge")
+
+                    Button {
+                        if controller.multiviewOffsetLockEnabled {
+                            controller.setMultiviewOffsetLock(false)
+                        } else {
+                            controller.lockCurrentMultiviewOffsets()
+                        }
+                    } label: {
+                        let locked = controller.multiviewOffsetLockEnabled
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: locked ? "lock.fill" : "lock.open")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                Text("Lock Offsets")
+                                    .font(AppFont.caption(weight: locked ? .semibold : .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, AppSpacing.md)
+
+                            Image(systemName: locked ? "lock.fill" : "lock.open")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+                        }
+                        .foregroundStyle(locked ? AppleTheme.accentText : Color.primary.opacity(0.86))
+                        .frame(height: 28)
+                        .appleGlass(
+                            in: Capsule(style: .continuous),
+                            tint: locked ? AppleTheme.accentText.opacity(0.16) : nil,
+                            interactive: true
+                        )
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help(controller.multiviewOffsetLockEnabled ? "Unlock Watch-Along Offsets" : "Lock Current Watch-Along Offsets")
+
+                    Menu {
+                        Button("Play / Pause All") {
+                            controller.masterTogglePlayPauseAllMultiviewTiles()
+                        }
+                        Button(controller.multiviewOffsetLockEnabled ? "Unlock Watch-Along Offsets" : "Lock Watch-Along Offsets") {
+                            if controller.multiviewOffsetLockEnabled {
+                                controller.setMultiviewOffsetLock(false)
+                            } else {
+                                controller.lockCurrentMultiviewOffsets()
+                            }
+                        }
+                        Divider()
+                        Button("Nudge All −5s") {
+                            controller.masterNudgeAllMultiviewTiles(by: -5)
+                        }
+                        Button("Nudge All +5s") {
+                            controller.masterNudgeAllMultiviewTiles(by: 5)
+                        }
+                        Divider()
+                        Button("Reset Offsets") {
+                            controller.resetMultiviewSyncOffsets()
+                        }
+                        .disabled(controller.multiviewSyncOffsetsByTabID.isEmpty && !controller.multiviewOffsetLockEnabled)
+                    } label: {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: AppSpacing.xs) {
+                                Image(systemName: "clock.arrow.2.circlepath")
+                                    .font(AppIconFont.sm(weight: .semibold))
+                                Text("Nudge")
+                                    .font(AppFont.caption(weight: .medium))
+                            }
+                            .fixedSize()
+                            .padding(.horizontal, AppSpacing.md)
+
+                            Image(systemName: "clock.arrow.2.circlepath")
+                                .font(AppIconFont.sm(weight: .semibold))
+                                .fixedSize()
+                                .padding(.horizontal, AppSpacing.md)
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.86))
+                        .frame(height: 28)
+                        .appleGlass(in: Capsule(style: .continuous), interactive: true)
+                        .contentShape(Capsule(style: .continuous))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Master Watch-Along Controls (Nudge All −5s / +5s, Lock & Reset Offsets)")
 
                     Button {
                         controller.toggleMultiviewAutoSync()

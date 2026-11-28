@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GlassGrid You — Stream Deck Settings</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1e1e1e;
+      --card: #282828;
+      --border: #3a3a3a;
+      --text: #ececec;
+      --muted: #a6a6a6;
+      --accent: #3b82f6;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 12px 14px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .group {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .group-title {
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+    }
+    label span {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--muted);
+    }
+    input, select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: #171717;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+    .row > label { flex: 1; }
+    .hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 4px 0 0;
+    }
+    .error {
+      font-size: 11px;
+      color: var(--danger);
+      margin: 4px 0 0;
+      display: none;
+    }
+    button {
+      width: 100%;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="group">
+    <div class="group-title">Local GlassGrid You MCP Connection</div>
+    <div class="row">
+      <label>
+        <span>Loopback Host</span>
+        <select id="host">
+          <option value="127.0.0.1">127.0.0.1</option>
+          <option value="localhost">localhost</option>
+        </select>
+      </label>
+      <label>
+        <span>HTTP Port</span>
+        <input id="port" type="number" min="1024" max="65535" placeholder="41773" />
+      </label>
+    </div>
+    <label>
+      <span>Bearer Token</span>
+      <input id="bearerToken" type="password" autocomplete="off" placeholder="Copy from GlassGrid You Settings → AI &amp; Automation" />
+    </label>
+    <p class="hint">Strictly local loopback only (127.0.0.1 or localhost). Never leaves this Mac.</p>
+    <p id="validationError" class="error"></p>
+  </div>
+
+  <div class="group" id="actionSettingsGroup">
+    <div class="group-title">Action Options</div>
+    <label id="slotWrap">
+      <span>Target Multiview Slot (optional / 1–4)</span>
+      <select id="slot">
+        <option value="">Active Tab</option>
+        <option value="1">Slot 1</option>
+        <option value="2">Slot 2</option>
+        <option value="3">Slot 3</option>
+        <option value="4">Slot 4</option>
+      </select>
+    </label>
+    <label id="noteWrap" style="display:none">
+      <span>Bookmark Note (optional)</span>
+      <input id="note" type="text" maxlength="200" placeholder="e.g. Highlight moment" />
+    </label>
+    <label id="abLoopWrap" style="display:none">
+      <span>A-B Loop Action</span>
+      <select id="abLoopAction">
+        <option value="toggle">Toggle Loop</option>
+        <option value="set_a">Set Point A</option>
+        <option value="set_b">Set Point B</option>
+        <option value="clear">Clear Loop</option>
+      </select>
+    </label>
+    <label id="dialModeWrap" style="display:none">
+      <span>Dial Mode</span>
+      <select id="dialMode">
+        <option value="seek">Seek Timeline (5s / tick)</option>
+        <option value="volume">Adjust Volume (5% / tick)</option>
+        <option value="frame">Step Frame (30 fps)</option>
+      </select>
+    </label>
+  </div>
+
+  <button id="saveButton" type="button">Save Settings</button>
+
+  <script>
+    (function () {
+      let websocket = null;
+      let pluginUUID = "";
+      let actionUUID = "";
+      let actionSettings = {};
+      let globalSettings = { host: "127.0.0.1", port: 41773, bearerToken: "" };
+
+      const hostEl = document.getElementById("host");
+      const portEl = document.getElementById("port");
+      const tokenEl = document.getElementById("bearerToken");
+      const slotEl = document.getElementById("slot");
+      const noteEl = document.getElementById("note");
+      const abLoopEl = document.getElementById("abLoopAction");
+      const dialModeEl = document.getElementById("dialMode");
+      const errorEl = document.getElementById("validationError");
+
+      function updateVisibleFields() {
+        const isBookmark = actionUUID === "com.glassgridyou.streamdeck.add-bookmark";
+        const isABLoop = actionUUID === "com.glassgridyou.streamdeck.ab-loop";
+        const isDial = actionUUID === "com.glassgridyou.streamdeck.media-dial";
+        const isSlotAction = [
+          "com.glassgridyou.streamdeck.play-pause",
+          "com.glassgridyou.streamdeck.mute",
+          "com.glassgridyou.streamdeck.solo-tile",
+          "com.glassgridyou.streamdeck.focus-audio",
+          "com.glassgridyou.streamdeck.ab-loop",
+          "com.glassgridyou.streamdeck.media-dial"
+        ].includes(actionUUID);
+
+        document.getElementById("slotWrap").style.display = isSlotAction ? "block" : "none";
+        document.getElementById("noteWrap").style.display = isBookmark ? "block" : "none";
+        document.getElementById("abLoopWrap").style.display = isABLoop ? "block" : "none";
+        document.getElementById("dialModeWrap").style.display = isDial ? "block" : "none";
+      }
+
+      function populateUI() {
+        hostEl.value = globalSettings.host === "localhost" ? "localhost" : "127.0.0.1";
+        portEl.value = String(globalSettings.port || 41773);
+        tokenEl.value = globalSettings.bearerToken || "";
+        slotEl.value = actionSettings.slot ? String(actionSettings.slot) : "";
+        noteEl.value = actionSettings.note || "";
+        abLoopEl.value = actionSettings.abLoopAction || "toggle";
+        dialModeEl.value = actionSettings.dialMode || "seek";
+        updateVisibleFields();
+      }
+
+      function saveAll() {
+        const host = hostEl.value === "localhost" ? "localhost" : "127.0.0.1";
+        const port = Number.parseInt(portEl.value, 10);
+        if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+          errorEl.textContent = "Port must be between 1024 and 65535.";
+          errorEl.style.display = "block";
+          return;
+        }
+        errorEl.style.display = "none";
+
+        globalSettings = {
+          host,
+          port,
+          bearerToken: (tokenEl.value || "").trim()
+        };
+
+        const nextAction = {};
+        if (slotEl.value) {
+          const parsedSlot = Number.parseInt(slotEl.value, 10);
+          if (parsedSlot >= 1 && parsedSlot <= 4) {
+            nextAction.slot = parsedSlot;
+          }
+        }
+        if (noteEl.value && noteEl.value.trim()) {
+          nextAction.note = noteEl.value.trim();
+        }
+        if (actionUUID === "com.glassgridyou.streamdeck.ab-loop") {
+          nextAction.abLoopAction = abLoopEl.value || "toggle";
+        }
+        if (actionUUID === "com.glassgridyou.streamdeck.media-dial") {
+          nextAction.dialMode = dialModeEl.value || "seek";
+        }
+        actionSettings = nextAction;
+
+        if (websocket && websocket.readyState === WebSocket.OPEN) {
+          websocket.send(JSON.stringify({ event: "setGlobalSettings", context: pluginUUID, payload: globalSettings }));
+          websocket.send(JSON.stringify({ event: "setSettings", context: pluginUUID, payload: actionSettings }));
+        }
+      }
+
+      document.getElementById("saveButton").addEventListener("click", saveAll);
+
+      window.connectElgatoStreamDeckSocket = function (inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+        pluginUUID = inUUID;
+        try {
+          const parsedAction = JSON.parse(inActionInfo);
+          actionUUID = parsedAction.action || "";
+          actionSettings = (parsedAction.payload && parsedAction.payload.settings) || {};
+        } catch (_) {}
+
+        websocket = new WebSocket("ws://127.0.0.1:" + inPort);
+        websocket.onopen = function () {
+          websocket.send(JSON.stringify({ event: inRegisterEvent, uuid: inUUID }));
+          websocket.send(JSON.stringify({ event: "getGlobalSettings", context: inUUID }));
+          populateUI();
+        };
+        websocket.onmessage = function (evt) {
+          try {
+            const msg = JSON.parse(evt.data);
+            if (msg.event === "didReceiveGlobalSettings" && msg.payload && msg.payload.settings) {
+              globalSettings = Object.assign({ host: "127.0.0.1", port: 41773, bearerToken: "" }, msg.payload.settings);
+              populateUI();
+            } else if (msg.event === "didReceiveSettings" && msg.payload && msg.payload.settings) {
+              actionSettings = msg.payload.settings;
+              populateUI();
+            }
+          } catch (_) {}
+        };
+      };
+    })();
+  </script>
+</body>
+</html>

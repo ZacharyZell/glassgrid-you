@@ -71,7 +71,7 @@ public struct AgentResourceDefinition: Sendable {
     }
 }
 
-/// Single source of truth for all 32 GlassGrid You MCP tools and 5 read-only resources.
+/// Single source of truth for all 37 GlassGrid You MCP tools and 5 read-only resources.
 public enum AgentToolCatalog {
     public static let resources: [AgentResourceDefinition] = [
         AgentResourceDefinition(
@@ -538,6 +538,84 @@ public enum AgentToolCatalog {
                 "note": strProp("Optional short note attached to the timestamp bookmark."),
                 "window_id": strProp("Optional target window UUID string.")
             ])
+        ),
+
+        // 33-37: v1.5.0 Precision Playback, Watch Queue & Video Notes
+        AgentToolDefinition(
+            name: "ab_loop_control",
+            description: "Control A-B loop playback points (set_a, set_b, toggle, clear, or set_range) on a video tab.",
+            requiredTier: .playbackAndNavigation,
+            inputSchema: schema(
+                properties: [
+                    "action": enumProp(["set_a", "set_b", "toggle", "clear", "set_range"], "A-B loop action."),
+                    "start_seconds": numProp("Optional loop start timestamp in seconds (>= 0).", min: 0),
+                    "end_seconds": numProp("Optional loop end timestamp in seconds (> start_seconds).", min: 0),
+                    "tab_id": strProp("Optional target tab UUID string."),
+                    "slot": intProp("Optional 1-based Multiview slot (1..4).", min: 1, max: 4),
+                    "window_id": strProp("Optional target window UUID string.")
+                ],
+                required: ["action"]
+            )
+        ),
+        AgentToolDefinition(
+            name: "set_video_aspect",
+            description: "Set video aspect mode (fit, fill, or toggle) on non-DRM players; automatically bypassed on FairPlay DRM hosts.",
+            requiredTier: .playbackAndNavigation,
+            inputSchema: schema(
+                properties: [
+                    "mode": enumProp(["fit", "fill", "toggle"], "Target video aspect mode."),
+                    "tab_id": strProp("Optional target tab UUID string."),
+                    "slot": intProp("Optional 1-based Multiview slot (1..4).", min: 1, max: 4),
+                    "window_id": strProp("Optional target window UUID string.")
+                ],
+                required: ["mode"]
+            ),
+            idempotentHint: true
+        ),
+        AgentToolDefinition(
+            name: "step_frame",
+            description: "Pause and step forward or backward by a single video frame on non-DRM VOD playback.",
+            requiredTier: .playbackAndNavigation,
+            inputSchema: schema(
+                properties: [
+                    "direction": enumProp(["forward", "backward"], "Frame step direction."),
+                    "fps": numProp("Optional frame rate used to compute frame duration (15..120, default 30).", min: 15, max: 120),
+                    "tab_id": strProp("Optional target tab UUID string."),
+                    "slot": intProp("Optional 1-based Multiview slot (1..4).", min: 1, max: 4),
+                    "window_id": strProp("Optional target window UUID string.")
+                ],
+                required: ["direction"]
+            )
+        ),
+        AgentToolDefinition(
+            name: "manage_watch_queue",
+            description: "Inspect or update the persistent Up Next Watch Queue (list, add, play_next, advance, remove, or clear).",
+            requiredTier: .playbackAndNavigation,
+            inputSchema: schema(
+                properties: [
+                    "action": enumProp(["list", "add", "play_next", "advance", "remove", "clear"], "Watch Queue action."),
+                    "url": strProp("Validated HTTPS video or streaming URL (required for add or play_next)."),
+                    "title": strProp("Optional title override for queued item."),
+                    "item_id": strProp("Queue item UUID string (required for remove)."),
+                    "window_id": strProp("Optional target window UUID string.")
+                ],
+                required: ["action"]
+            )
+        ),
+        AgentToolDefinition(
+            name: "manage_video_notes",
+            description: "Read, update, append, clear, or export Markdown notes for the active or specified YouTube video.",
+            requiredTier: .fullControl,
+            inputSchema: schema(
+                properties: [
+                    "action": enumProp(["get", "set", "append", "clear", "export_markdown"], "Video notes action."),
+                    "video_id": strProp("Optional YouTube video ID (defaults to active video)."),
+                    "markdown": strProp("Markdown note content (for set or append, sanitized and capped at 8,192 characters)."),
+                    "include_timestamps": boolProp("Include clickable timestamps when action is export_markdown (default true)."),
+                    "window_id": strProp("Optional target window UUID string.")
+                ],
+                required: ["action"]
+            )
         )
     ]
 

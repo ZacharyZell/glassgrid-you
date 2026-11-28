@@ -7,6 +7,7 @@ public struct ESPNGameSummaryUpdate: Equatable, Sendable {
     public let situation: GameSituation?
     public let awayWinProb: Double?
     public let homeWinProb: Double?
+    public let espnWinProbHistory: [WinProbabilityPoint]
     public let spreadSummary: String?
     public let overUnder: Double?
     public let athleteStats: [String: String]
@@ -23,13 +24,15 @@ public struct ESPNGameSummaryUpdate: Equatable, Sendable {
         overUnder: Double? = nil,
         athleteStats: [String: String] = [:],
         athleteStatsByNameAndTeam: [String: String] = [:],
-        recentPlays: [PlayByPlayEvent] = []
+        recentPlays: [PlayByPlayEvent] = [],
+        espnWinProbHistory: [WinProbabilityPoint] = []
     ) {
         self.eventID = eventID
         self.league = league
         self.situation = situation
         self.awayWinProb = awayWinProb
         self.homeWinProb = homeWinProb
+        self.espnWinProbHistory = espnWinProbHistory
         self.spreadSummary = spreadSummary
         self.overUnder = overUnder
         self.athleteStats = athleteStats
@@ -229,13 +232,36 @@ public actor ESPNScoreboardClient {
 
         var homeWinProb: Double?
         var awayWinProb: Double?
-        if let winProbs = root["winprobability"] as? [[String: Any]],
-           let latest = winProbs.last,
-           let homePct = doubleValue(latest["homeWinPercentage"]) {
-            let clamped = min(1.0, max(0.0, homePct > 1.0 ? homePct / 100.0 : homePct))
-            homeWinProb = clamped
-            awayWinProb = 1.0 - clamped
+        var rawWinProbPoints: [WinProbabilityPoint] = []
+        var winProbSwingByPlayID: [String: Double] = [:]
+
+        if let winProbs = root["winprobability"] as? [[String: Any]] {
+            for (idx, point) in winProbs.enumerated() {
+                guard let rawHome = doubleValue(point["homeWinPercentage"]), rawHome.isFinite else {
+                    continue
+                }
+                let normalizedHome = min(1.0, max(0.0, rawHome > 1.0 ? rawHome / 100.0 : rawHome))
+                let normalizedAway = 1.0 - normalizedHome
+                let playID = stringValue(point["playId"]) ?? stringValue(point["playID"])
+                let wp = WinProbabilityPoint(
+                    sequence: idx,
+                    homeWinProb: normalizedHome,
+                    awayWinProb: normalizedAway,
+                    playID: playID
+                )
+                if let prev = rawWinProbPoints.last, let pid = playID, !pid.isEmpty {
+                    let swing = abs(wp.homeWinProb - prev.homeWinProb)
+                    winProbSwingByPlayID[pid] = max(winProbSwingByPlayID[pid] ?? 0, swing)
+                }
+                rawWinProbPoints.append(wp)
+            }
+            if let latest = rawWinProbPoints.last {
+                homeWinProb = latest.homeWinProb
+                awayWinProb = latest.awayWinProb
+            }
         }
+
+        let espnWinProbHistory = downsampleWinProbabilityPoints(rawWinProbPoints, maxCount: 60)
 
         var spreadSummary: String?
         var overUnder: Double?
@@ -260,7 +286,13 @@ public actor ESPNScoreboardClient {
         }
 
         let teamAbbrByID = extractTeamAbbreviationMap(from: root)
-        let recentPlays = extractRecentPlays(from: root, eventID: eventID, teamAbbrByID: teamAbbrByID, limit: 15)
+        let recentPlays = extractRecentPlays(
+            from: root,
+            eventID: eventID,
+            teamAbbrByID: teamAbbrByID,
+            winProbSwingByPlayID: winProbSwingByPlayID,
+            limit: 15
+        )
 
         return ESPNGameSummaryUpdate(
             eventID: eventID,
@@ -272,7 +304,8 @@ public actor ESPNScoreboardClient {
             overUnder: overUnder,
             athleteStats: athleteStats,
             athleteStatsByNameAndTeam: athleteStatsByNameAndTeam,
-            recentPlays: recentPlays
+            recentPlays: recentPlays,
+            espnWinProbHistory: espnWinProbHistory
         )
     }
 
@@ -1103,13 +1136,46 @@ public actor ESPNScoreboardClient {
         return map
     }
 
+    private nonisolated static func downsampleWinProbabilityPoints(
+        _ points: [WinProbabilityPoint],
+        maxCount: Int
+    ) -> [WinProbabilityPoint] {
+        guard maxCount >= 2, points.count > maxCount else {
+            return points
+        }
+        var result: [WinProbabilityPoint] = []
+        result.reserveCapacity(maxCount)
+        let lastIndex = points.count - 1
+        for idx in 0..<maxCount {
+            let mappedIndex: Int
+            if idx == maxCount - 1 {
+                mappedIndex = lastIndex
+            } else {
+                mappedIndex = Int((Double(idx) * Double(lastIndex) / Double(maxCount - 1)).rounded())
+            }
+            result.append(points[mappedIndex])
+        }
+        return result
+    }
+
     private nonisolated static func extractRecentPlays(
         from root: [String: Any],
         eventID: String,
         teamAbbrByID: [String: String],
+        winProbSwingByPlayID: [String: Double] = [:],
         limit: Int
     ) -> [PlayByPlayEvent] {
         var rawPlayObjects: [[String: Any]] = []
+        var sourcedFromKeyEvents = false
+
+        var keyEventIDs: Set<String> = []
+        if let keyEvents = root["keyEvents"] as? [[String: Any]] {
+            for ev in keyEvents {
+                if let eid = stringValue(ev["id"]), !eid.isEmpty {
+                    keyEventIDs.insert(eid)
+                }
+            }
+        }
 
         if let drives = root["drives"] as? [String: Any] {
             if let previous = drives["previous"] as? [[String: Any]] {
@@ -1131,6 +1197,7 @@ public actor ESPNScoreboardClient {
 
         if rawPlayObjects.isEmpty, let keyEvents = root["keyEvents"] as? [[String: Any]] {
             rawPlayObjects = keyEvents
+            sourcedFromKeyEvents = true
         }
 
         guard !rawPlayObjects.isEmpty else { return [] }
@@ -1146,7 +1213,8 @@ public actor ESPNScoreboardClient {
             let cleanText = AgentSecurity.sanitizeWebText(rawText, maxLength: 240).text
             guard !cleanText.isEmpty else { continue }
 
-            let playID = stringValue(play["id"]) ?? "\(eventID):p:\(index)"
+            let explicitPlayID = stringValue(play["id"])
+            let playID = explicitPlayID ?? "\(eventID):p:\(index)"
             let periodObj = play["period"] as? [String: Any]
             let periodText = stringValue(periodObj?["displayValue"])
                 ?? intValue(periodObj?["number"]).map { "P\($0)" }
@@ -1160,6 +1228,12 @@ public actor ESPNScoreboardClient {
             let awayScore = intValue(play["awayScore"])
             let homeScore = intValue(play["homeScore"])
             let wallclock = parseISO8601Date(stringValue(play["wallclock"]))
+            let swing = explicitPlayID.flatMap { winProbSwingByPlayID[$0] } ?? winProbSwingByPlayID[playID] ?? 0
+            let isKey = isScoring
+                || sourcedFromKeyEvents
+                || (explicitPlayID.map { keyEventIDs.contains($0) } ?? false)
+                || swing >= 0.08
+                || isHighImpactPlayText(cleanText)
 
             parsed.append(
                 PlayByPlayEvent(
@@ -1172,13 +1246,25 @@ public actor ESPNScoreboardClient {
                     isScoringPlay: isScoring,
                     awayScore: awayScore,
                     homeScore: homeScore,
-                    wallclock: wallclock
+                    wallclock: wallclock,
+                    isKeyPlay: isKey
                 )
             )
         }
 
         // Return newest-first capped at `limit`.
         return Array(parsed.suffix(limit).reversed())
+    }
+
+    private nonisolated static func isHighImpactPlayText(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let keywords = [
+            "interception", "intercepted", "fumble", "turnover",
+            "sack", "sacked", "fourth down", "4th down",
+            "home run", "grand slam", "red card", "penalty",
+            "power play", "touchdown", "goal", "safety"
+        ]
+        return keywords.contains { lower.contains($0) }
     }
 
     private nonisolated static func doubleValue(_ raw: Any?) -> Double? {

@@ -229,6 +229,16 @@ public enum CommandPaletteAction: String, CaseIterable, Sendable {
     case openBookmarks
     case openTranscript
     case toggleGlobalHotkeys
+    case abLoopSetA
+    case abLoopSetB
+    case abLoopToggle
+    case abLoopClear
+    case toggleAspectFill
+    case stepFrameForward
+    case stepFrameBackward
+    case jumpToHighlight
+    case toggleWatchQueue
+    case toggleMaskScores
 }
 
 /// Action payload executed when a Command Palette row is selected.

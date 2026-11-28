@@ -95,7 +95,7 @@
 
         <ul class="trust-strip" aria-label="Key product highlights">
           <li>macOS 14.0+</li>
-          <li>Apple Notarized v1.4.1</li>
+          <li>Apple Notarized v1.5.0</li>
           <li>Sparkle 2 EdDSA</li>
           <li>Zero Electron</li>
           <li>Free v1.x Updates</li>
@@ -210,8 +210,8 @@
               <h3>Operate GlassGrid You with Claude, Gemini, Grok, Siri, Raycast &amp; CLI.</h3>
               <p>Connect your local AI assistant or macOS Shortcuts workflow via Apple's App Intents, Raycast script commands, or the bundled Model Context Protocol (MCP) server—strictly opt-in, off by default, and local to your Mac.</p>
               <ul class="feature-bullets">
-                <li><strong>32 MCP Tools &amp; 5 Read-Only Resources:</strong> Bundled <code>glassgrid</code> CLI &amp; stdio MCP server (including <code>get_transcript</code>, <code>sync_multiview_all</code>, <code>toggle_ghost_mode</code>, and <code>add_bookmark</code>) with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong>, plus opt-in <code>127.0.0.1</code> Streamable HTTP MCP.</li>
-                <li><strong>Siri, Shortcuts, Carbon Global Hotkeys &amp; Raycast Pack:</strong> 14 native App Intents (10 App Shortcuts), zero-Accessibility system-wide Carbon global hotkeys, and 7 ready-to-run Raycast script commands under <code>extras/raycast-glassgrid/</code>.</li>
+                <li><strong>37 MCP Tools &amp; 5 Read-Only Resources:</strong> Bundled <code>glassgrid</code> CLI &amp; stdio MCP server (including <code>ab_loop_control</code>, <code>set_video_aspect</code>, <code>step_frame</code>, <code>manage_watch_queue</code>, <code>manage_video_notes</code>, <code>get_transcript</code>, <code>sync_multiview_all</code>, <code>toggle_ghost_mode</code>, and <code>add_bookmark</code>) with 1-click config installation for <strong>Claude Desktop, Claude Code, Gemini CLI, Antigravity, and Grok CLI</strong>, plus opt-in <code>127.0.0.1</code> Streamable HTTP MCP.</li>
+                <li><strong>Siri, Shortcuts, Carbon Global Hotkeys, Raycast &amp; Stream Deck:</strong> 14 native App Intents (10 App Shortcuts), customizable zero-Accessibility Carbon global hotkeys (including <code>⌃⌥P</code> &amp; <code>⌃⌥1&ndash;4</code>), Raycast script &amp; TypeScript extension packs, and an official TypeScript <strong>Elgato Stream Deck Plugin</strong> under <code>extras/streamdeck-plugin/</code>.</li>
                 <li><strong>Zero-Trust Local Security:</strong> Owner-only UNIX socket IPC (zero tokens in stdio configs), 3 permission tiers, live Activity Log, and permanent blocks on cookies, logins, arbitrary JS, and site-data wipes.</li>
               </ul>
             </div>
@@ -227,7 +227,7 @@
                     decoding="async">
                 </div>
                 <div class="pedestal-caption" aria-hidden="true">
-                  <span class="pedestal-pill">32 MCP Tools</span>
+                  <span class="pedestal-pill">37 MCP Tools</span>
                   <span class="pedestal-pill">14 Siri Intents</span>
                   <span class="pedestal-pill">Off by Default</span>
                 </div>
@@ -355,31 +355,31 @@
 
         <div class="pricing-grid">
           <div class="pricing-card pricing-card--featured">
-            <span class="pricing-kicker">Recommended · Instant Install (v1.4.1)</span>
+            <span class="pricing-kicker">Recommended · Instant Install (v1.5.0)</span>
             <h3>Notarized macOS Installer</h3>
             <div class="price-row">
               <span class="price-amount">$12</span>
               <span class="price-note">one-time · free v1.x updates</span>
             </div>
-            <p class="pricing-desc">Latest signed &amp; Apple-notarized release is <strong>v1.4.1 (Build 9)</strong>—includes free automatic Sparkle 2 updates for every future v1.x release.</p>
+            <p class="pricing-desc">Latest signed &amp; Apple-notarized release is <strong>v1.5.0 (Build 10)</strong>—includes free automatic Sparkle 2 updates for every future v1.x release.</p>
             <ul class="pricing-list">
               <li>Signed &amp; Apple-Notarized macOS <code>.dmg</code></li>
               <li>Zero Xcode or command-line setup required</li>
               <li>Sparkle 2 EdDSA-verified automatic updates</li>
-              <li>Includes Ghost Mode, Peek-Away, Custom Hotkeys, DeArrow Titles &amp; Thumbnails, Preset JSON &amp; 9-League Live Pulse</li>
+              <li>Includes A-B Loop, Frame Step, 21:9 Fill, Notes &amp; Obsidian Export, Up Next Queue, Sparklines/DVR Mask, Notch Island &amp; Stream Deck</li>
               <li>Directly supports independent macOS development</li>
             </ul>
             <a class="btn btn-primary" href="https://buy.polar.sh/polar_cl_hrRm8ICI2Rcxj2eekSvW7EA6mN6GQHzJypUaN4AEVYb" target="_blank" rel="noopener noreferrer">Download for macOS — $12</a>
           </div>
 
           <div class="pricing-card pricing-card--muted">
-            <span class="pricing-kicker">Open Source · MIT License (v1.4.1 on main)</span>
+            <span class="pricing-kicker">Open Source · MIT License (v1.5.0 on main)</span>
             <h3>Build from Source</h3>
             <div class="price-row">
               <span class="price-amount">$0</span>
               <span class="price-note">forever · full Swift 6 repo</span>
             </div>
-            <p class="pricing-desc">Includes the complete <strong>v1.4.1</strong> codebase on <code>main</code> today—clone the public repository and build locally with Xcode and Swift 6.</p>
+            <p class="pricing-desc">Includes the complete <strong>v1.5.0</strong> codebase on <code>main</code> today—clone the public repository and build locally with Xcode and Swift 6.</p>
             <ul class="pricing-list">
               <li>100% identical feature set—zero locked pro tiers</li>
               <li>Clean Swift Package Manager &amp; <code>./scripts/bundle.sh</code></li>
@@ -428,7 +428,7 @@
           <details class="faq-item">
             <summary>How does AI Agent, MCP, and Siri automation work—and is it private?</summary>
             <div class="faq-answer">
-              <p>All AI, MCP, CLI, URL trigger, and Siri features are strictly opt-in and <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; AI &amp; Automation</strong>, the bundled <code>glassgrid</code> CLI &amp; stdio MCP server (32 tools including on-demand transcripts, bookmarks, Multiview Sync All, and Ghost Mode) lets Claude Desktop, Claude Code, Gemini CLI, Antigravity, Raycast, or Grok CLI operate GlassGrid You over an owner-only local UNIX socket (never transmitting cookies, passwords, or arbitrary JS), alongside 14 native Siri / Shortcuts App Intents.</p>
+              <p>All AI, MCP, CLI, URL trigger, and Siri features are strictly opt-in and <strong>disabled by default</strong>. When enabled in <strong>Settings &rarr; AI &amp; Automation</strong>, the bundled <code>glassgrid</code> CLI &amp; stdio MCP server (37 tools including A-B Loop, Aspect Fill, Frame Step, Watch Queue, Video Notes, on-demand transcripts, bookmarks, Multiview Sync All, and Ghost Mode) lets Claude Desktop, Claude Code, Gemini CLI, Antigravity, Raycast, Elgato Stream Deck, or Grok CLI operate GlassGrid You over an owner-only local UNIX socket or loopback Bearer HTTP endpoint (never transmitting cookies, passwords, or arbitrary JS), alongside 14 native Siri / Shortcuts App Intents.</p>
             </div>
           </details>
 
@@ -456,7 +456,7 @@
           <details class="faq-item">
             <summary>Does GlassGrid You collect any analytics or personal data?</summary>
             <div class="faq-answer">
-              <p>No. GlassGrid You has zero telemetry, zero analytics SDKs, and zero developer backend servers. Your sign-in session stays in your Mac's local WebKit store. Optional features like SponsorBlock (off by default, k-anonymous 4-character SHA-256 video ID prefix) and cookieless search autocomplete can be toggled anytime in Settings. Read our full <a href="privacy.html">Privacy Policy</a>.</p>
+              <p>No. GlassGrid You has zero telemetry, zero analytics SDKs, and zero developer backend servers. Your sign-in session stays in your Mac's local WebKit store. Optional features like SponsorBlock (off by default, k-anonymous 4-character SHA-256 video ID prefix), Return YouTube Dislike (off by default, read-only lookup attributed to <a href="https://returnyoutubedislike.com" target="_blank" rel="noopener noreferrer">returnyoutubedislike.com</a>), and cookieless search autocomplete can be toggled anytime in Settings. Read our full <a href="privacy.html">Privacy Policy</a>.</p>
             </div>
           </details>
 

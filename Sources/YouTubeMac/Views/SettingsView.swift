@@ -124,7 +124,7 @@ struct SettingsView: View {
     @State private var hotKeyErrorByAction: [GlobalHotKeyAction: String] = [:]
     @State private var hotKeyMonitor = LocalHotKeyMonitor()
 
-    private static let speedPresets: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    private static let speedPresets: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
 
     var body: some View {
         TabView {
@@ -374,45 +374,7 @@ struct SettingsView: View {
             }
 
             Section("Segments") {
-                VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                    Toggle("Auto-skip sponsored segments (SponsorBlock)", isOn: $settings.sponsorBlockEnabled)
-                    Text("Opt-in: queries sponsor.ajay.app using a privacy-preserving 4-character SHA-256 video ID prefix and fails silently offline.")
-                        .font(AppFont.caption)
-                        .foregroundStyle(AppleTheme.textSecondary)
-
-                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                        Text("Categories to skip")
-                            .font(AppFont.caption(weight: .semibold))
-                            .foregroundStyle(AppleTheme.textSecondary)
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)],
-                            alignment: .leading,
-                            spacing: AppSpacing.xs
-                        ) {
-                            ForEach(SponsorSegmentCategory.allCases) { category in
-                                Toggle(
-                                    category.shortLabel,
-                                    isOn: Binding(
-                                        get: { settings.sponsorBlockCategories.contains(category.rawValue) },
-                                        set: { enabled in
-                                            var updated = settings.sponsorBlockCategories
-                                            if enabled {
-                                                updated.insert(category.rawValue)
-                                            } else {
-                                                updated.remove(category.rawValue)
-                                            }
-                                            settings.sponsorBlockCategories = updated
-                                        }
-                                    )
-                                )
-                                .toggleStyle(.checkbox)
-                            }
-                        }
-                    }
-                    .disabled(!settings.sponsorBlockEnabled)
-                    .opacity(settings.sponsorBlockEnabled ? 1.0 : 0.55)
-                    .padding(.top, AppSpacing.xs)
-                }
+                sponsorBlockSettingsContent(settings: settings)
             }
         }
         .formStyle(.grouped)
@@ -443,6 +405,28 @@ struct SettingsView: View {
                 Text("Promotes the native video player edge-to-edge on streaming services once playback starts. Browse pages stay untouched; press ⌘⇧B anytime for Full Page.")
                     .font(AppFont.caption)
                     .foregroundStyle(AppleTheme.textSecondary)
+
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("21:9 Aspect Fill (crop letterboxed video to fill player)", isOn: $settings.videoAspectFillEnabled)
+                    Text("Automatically bypassed on YouTube TV and strict FairPlay DRM streaming services.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                }
+            }
+
+            Section("SponsorBlock & Community Ratings") {
+                sponsorBlockSettingsContent(settings: settings)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Toggle("Show Return YouTube Dislike (RYD) estimate", isOn: $settings.rydEnabled)
+                    Text("Opt-in: Sends the active YouTube videoID directly to returnyoutubedislikeapi.com; zero cookies, zero voting.")
+                        .font(AppFont.caption)
+                        .foregroundStyle(AppleTheme.textSecondary)
+                    Link("Attribution: returnyoutubedislike.com", destination: ReturnYouTubeDislikeClient.attributionURL)
+                        .font(AppFont.caption(weight: .medium))
+                }
             }
 
             Section("Title & Content Filter") {
@@ -760,6 +744,51 @@ struct SettingsView: View {
         .padding(.vertical, AppSpacing.xs)
         .onDisappear {
             stopHotKeyRecording()
+        }
+    }
+
+    @ViewBuilder
+    private func sponsorBlockSettingsContent(settings: AppSettings) -> some View {
+        @Bindable var settings = settings
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Toggle("Auto-skip sponsored segments (SponsorBlock)", isOn: $settings.sponsorBlockEnabled)
+            Text("Opt-in: queries sponsor.ajay.app using a privacy-preserving 4-character SHA-256 video ID prefix and fails silently offline.")
+                .font(AppFont.caption)
+                .foregroundStyle(AppleTheme.textSecondary)
+
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                Text("Categories (Highlights show a jump marker only)")
+                    .font(AppFont.caption(weight: .semibold))
+                    .foregroundStyle(AppleTheme.textSecondary)
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), alignment: .leading)],
+                    alignment: .leading,
+                    spacing: AppSpacing.xs
+                ) {
+                    ForEach(SponsorSegmentCategory.allCases) { category in
+                        let label = category == .poiHighlight ? "Highlight (Jump Only)" : category.displayName
+                        Toggle(
+                            label,
+                            isOn: Binding(
+                                get: { settings.sponsorBlockCategories.contains(category.rawValue) },
+                                set: { enabled in
+                                    var updated = settings.sponsorBlockCategories
+                                    if enabled {
+                                        updated.insert(category.rawValue)
+                                    } else {
+                                        updated.remove(category.rawValue)
+                                    }
+                                    settings.sponsorBlockCategories = updated
+                                }
+                            )
+                        )
+                        .toggleStyle(.checkbox)
+                    }
+                }
+            }
+            .disabled(!settings.sponsorBlockEnabled)
+            .opacity(settings.sponsorBlockEnabled ? 1.0 : 0.55)
+            .padding(.top, AppSpacing.xs)
         }
     }
 

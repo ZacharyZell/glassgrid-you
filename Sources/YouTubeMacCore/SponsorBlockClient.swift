@@ -83,8 +83,18 @@ public actor SponsorBlockClient {
                 }
                 let start = seg.segment[0]
                 let end = seg.segment[1]
-                guard start.isFinite, end.isFinite, start >= 0, end > start + 0.5 else {
+                let isPointHighlight = normalizedCategory == SponsorSegmentCategory.poiHighlight.rawValue
+                guard start.isFinite, end.isFinite, start >= 0 else {
                     return nil
+                }
+                if isPointHighlight {
+                    guard end >= start else {
+                        return nil
+                    }
+                } else {
+                    guard end > start + 0.5 else {
+                        return nil
+                    }
                 }
                 return SponsorSegment(start: start, end: end, category: normalizedCategory)
             }

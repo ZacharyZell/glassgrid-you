@@ -88,6 +88,21 @@ public final class BrowserTab: NSObject, Identifiable {
     public var isSleeping: Bool = false
     public var isCleanBoxBypassed: Bool = false
     public private(set) var lastSkippedSponsorSegment: SponsorSegment?
+    public var abLoop: ABLoopRange = .empty {
+        didSet {
+            guard abLoop != oldValue else { return }
+            if !abLoop.isEnabled || !abLoop.isComplete {
+                lastABLoopSeekAt = nil
+            }
+            syncSponsorSegmentsToJS()
+        }
+    }
+    public var currentSponsorSegments: [SponsorSegment] = []
+    public var currentRYDStats: ReturnYouTubeDislikeStats?
+    public var isAspectFillEnabled: Bool = false
+    public var activeHighlightSegment: SponsorSegment? {
+        currentSponsorSegments.first { $0.categoryEnum?.isPointHighlight == true }
+    }
     public var pageZoom: CGFloat = 1.0 {
         didSet {
             webView.pageZoom = pageZoom
@@ -117,6 +132,12 @@ public final class BrowserTab: NSObject, Identifiable {
 
     @ObservationIgnored
     private var lastAppliedSponsorPayload: (videoID: String, segments: [SponsorSegment])?
+
+    @ObservationIgnored
+    private var currentSponsorVideoID: String = ""
+
+    @ObservationIgnored
+    private var lastABLoopSeekAt: Date?
 
     @ObservationIgnored
     var needsPostAttachResize = false
@@ -179,7 +200,7 @@ public final class BrowserTab: NSObject, Identifiable {
     var onFullscreenDidChange: ((UUID, Bool) -> Void)?
 
     @ObservationIgnored
-    var onVideoEnded: ((UUID) -> Void)?
+    public var onVideoEnded: ((UUID, String?) -> Void)?
 
     @ObservationIgnored
     var onWatchProgress: ((_ videoID: String, _ title: String, _ channel: String, _ channelURL: String, _ currentTime: Double, _ duration: Double, _ isNewVideoWatch: Bool) -> Void)?
@@ -337,6 +358,12 @@ public final class BrowserTab: NSObject, Identifiable {
         videoDescriptionWasTruncated = false
         lastSkippedSponsorSegment = nil
         lastAppliedSponsorPayload = nil
+        currentSponsorVideoID = ""
+        currentSponsorSegments = []
+        currentRYDStats = nil
+        abLoop = .empty
+        lastABLoopSeekAt = nil
+        isAspectFillEnabled = false
         mainFrameMediaStatus = .empty
         clearSubframeMediaState()
         documentLoadedOnCompanionAuthPage = false
@@ -377,6 +404,12 @@ public final class BrowserTab: NSObject, Identifiable {
         videoDescriptionWasTruncated = false
         lastSkippedSponsorSegment = nil
         lastAppliedSponsorPayload = nil
+        currentSponsorVideoID = ""
+        currentSponsorSegments = []
+        currentRYDStats = nil
+        abLoop = .empty
+        lastABLoopSeekAt = nil
+        isAspectFillEnabled = false
         loadError = nil
         timeline.update(currentTime: 0, duration: 0)
         if let blankURL = URL(string: "about:blank") {
@@ -450,16 +483,19 @@ public final class BrowserTab: NSObject, Identifiable {
 
     public func applyConfig(_ config: DistractionFreeConfig, force: Bool = false) {
         guard !isTornDown else { return }
-        if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webView.url ?? url) {
+        let activeURL = webView.url ?? url
+        if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(activeURL) {
             return
         }
-        if !force && config == lastAppliedConfig {
+        var effectiveConfig = config
+        effectiveConfig.aspectFill = isAspectFillEnabled && VideoAspectMode.canApplyAspectFill(for: activeURL)
+        if !force && effectiveConfig == lastAppliedConfig {
             return
         }
-        lastAppliedConfig = config
+        lastAppliedConfig = effectiveConfig
         // Never fire JS resize from applyConfig: mini-player CSS already pins video to 100%, and dock-back
         // runs a bounded post-attach resize pass in TabWebViewHost after full-size container layout.
-        let script = EnhancementScript.applyConfigScript(config, triggerResize: false)
+        let script = EnhancementScript.applyConfigScript(effectiveConfig, triggerResize: false)
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
@@ -590,6 +626,15 @@ public final class BrowserTab: NSObject, Identifiable {
         evaluateMediaCommand(EnhancementScript.setPlaybackRateScript(rate: rate))
     }
 
+    @discardableResult
+    public func stepVideoFrame(forward: Bool, fps: Double = 30.0) -> Bool {
+        guard !isTornDown, !isSleeping, pendingLazyURL == nil else { return false }
+        let activeURL = webView.url ?? url
+        guard VideoAspectMode.canApplyAspectFill(for: activeURL) else { return false }
+        evaluateMediaCommand(EnhancementScript.stepVideoFrameScript(forward: forward, fps: fps))
+        return true
+    }
+
     public func togglePictureInPicture() async -> Bool {
         let result = await evaluateMediaCommandAsync(EnhancementScript.togglePictureInPictureScript)
         return (result.value as? Bool) ?? false
@@ -713,18 +758,31 @@ public final class BrowserTab: NSObject, Identifiable {
 
     public func applySponsorSegments(videoID: String, segments: [SponsorSegment]) {
         guard !isTornDown else { return }
-        if let last = lastAppliedSponsorPayload, last.videoID == videoID && last.segments == segments {
-            return
-        }
-        lastAppliedSponsorPayload = (videoID, segments)
-        let script = EnhancementScript.setSponsorSegmentsScript(videoID: videoID, segments: segments)
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        currentSponsorVideoID = videoID
+        currentSponsorSegments = segments
+        syncSponsorSegmentsToJS()
     }
 
     public func clearSponsorSegments() {
+        currentSponsorVideoID = ""
+        currentSponsorSegments = []
         lastAppliedSponsorPayload = nil
         lastSkippedSponsorSegment = nil
         evaluate(EnhancementScript.setSponsorSegmentsScript(videoID: "", segments: []))
+    }
+
+    private func syncSponsorSegmentsToJS() {
+        guard !isTornDown else { return }
+        let suppressAutoSkip = abLoop.isEnabled && abLoop.isComplete
+        let effectiveSegments = suppressAutoSkip ? [] : currentSponsorSegments
+        let videoID = currentSponsorVideoID
+        if let last = lastAppliedSponsorPayload,
+           last.videoID == videoID && last.segments == effectiveSegments {
+            return
+        }
+        lastAppliedSponsorPayload = (videoID, effectiveSegments)
+        let script = EnhancementScript.setSponsorSegmentsScript(videoID: videoID, segments: effectiveSegments)
+        webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
     public func unskipSponsorSegment(_ segment: SponsorSegment) {
@@ -879,6 +937,12 @@ public final class BrowserTab: NSObject, Identifiable {
         onWatchProgress = nil
         onDidFinishNavigation = nil
         lastSkippedSponsorSegment = nil
+        currentSponsorVideoID = ""
+        currentSponsorSegments = []
+        currentRYDStats = nil
+        abLoop = .empty
+        lastABLoopSeekAt = nil
+        isAspectFillEnabled = false
         authFlowServiceID = nil
         lastKnownServiceID = nil
         documentLoadedOnCompanionAuthPage = false
@@ -1008,15 +1072,29 @@ public final class BrowserTab: NSObject, Identifiable {
             if url != webURL {
                 let oldVideoID = YouTubeURLRouter.extractVideoID(from: url)
                 let newVideoID = YouTubeURLRouter.extractVideoID(from: webURL)
-                if oldVideoID != newVideoID {
+                let oldPathKey = (url.host ?? "").lowercased() + "|" + url.path.lowercased() + "|" + (oldVideoID ?? "")
+                let newPathKey = (webURL.host ?? "").lowercased() + "|" + webURL.path.lowercased() + "|" + (newVideoID ?? "")
+                let canFill = VideoAspectMode.canApplyAspectFill(for: webURL)
+                var didResetAspectFill = false
+                if oldVideoID != newVideoID || oldPathKey != newPathKey {
                     chapters = []
                     videoDescription = ""
                     videoDescriptionWasTruncated = false
                     lastSkippedSponsorSegment = nil
                     lastAppliedSponsorPayload = nil
+                    currentSponsorVideoID = ""
+                    currentSponsorSegments = []
+                    currentRYDStats = nil
+                    abLoop = .empty
+                    lastABLoopSeekAt = nil
+                    if isAspectFillEnabled {
+                        isAspectFillEnabled = false
+                        didResetAspectFill = true
+                    }
+                } else if !canFill && isAspectFillEnabled {
+                    isAspectFillEnabled = false
+                    didResetAspectFill = true
                 }
-                let oldPathKey = (url.host ?? "").lowercased() + "|" + url.path.lowercased() + "|" + (oldVideoID ?? "")
-                let newPathKey = (webURL.host ?? "").lowercased() + "|" + webURL.path.lowercased() + "|" + (newVideoID ?? "")
                 var didResetCleanBoxBypass = false
                 if mainFrameMediaStatus.streamContext != .empty {
                     mainFrameMediaStatus.streamContext = .empty
@@ -1035,8 +1113,9 @@ public final class BrowserTab: NSObject, Identifiable {
                 onURLDidChange?(id, webURL)
                 onEffectiveURLChanged?()
                 if isCompanionTab && StreamingServiceCatalog.isTransientAuthURL(webURL) {
-                    if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
+                    if (didResetCleanBoxBypass || didResetAspectFill), var updatedConfig = lastAppliedConfig {
                         updatedConfig.cleanBoxBypassed = false
+                        updatedConfig.aspectFill = isAspectFillEnabled && canFill
                         applyConfig(updatedConfig, force: true)
                     }
                     evaluate(EnhancementScript.teardownCompanionCleanBoxScript)
@@ -1046,11 +1125,13 @@ public final class BrowserTab: NSObject, Identifiable {
                     if didResetCleanBoxBypass {
                         cfg.cleanBoxBypassed = false
                     }
+                    cfg.aspectFill = isAspectFillEnabled && canFill
                     lastAppliedConfig = cfg
                     evaluate(EnhancementScript.bootstrapScript(config: cfg))
                 } else {
-                    if didResetCleanBoxBypass, var updatedConfig = lastAppliedConfig {
+                    if (didResetCleanBoxBypass || didResetAspectFill), var updatedConfig = lastAppliedConfig {
                         updatedConfig.cleanBoxBypassed = false
+                        updatedConfig.aspectFill = isAspectFillEnabled && canFill
                         applyConfig(updatedConfig, force: true)
                     }
                     if let host = webURL.host, !YouTubeURLRouter.isStandardYouTubeHost(host) {
@@ -1059,6 +1140,23 @@ public final class BrowserTab: NSObject, Identifiable {
                 }
             }
         }
+    }
+
+    private func handleTimelineTelemetryUpdate(currentTime: Double, duration: Double) {
+        let now = Date()
+        let effectiveDuration: Double? = (duration.isFinite && duration > 0) ? duration : nil
+        if let loopStart = abLoop.shouldTriggerLoopJump(
+            currentTime: currentTime,
+            duration: effectiveDuration,
+            lastSeekAt: lastABLoopSeekAt,
+            now: now
+        ) {
+            lastABLoopSeekAt = now
+            timeline.update(currentTime: loopStart, duration: duration)
+            seekTo(seconds: loopStart)
+            return
+        }
+        timeline.update(currentTime: currentTime, duration: duration)
     }
 
     private static func parseVolumePercent(from body: [String: Any]) -> Int {
@@ -1379,7 +1477,9 @@ extension BrowserTab: WKScriptMessageHandler {
                         onUnmutedByUser?(id)
                     }
                 } else if event == "videoEnded" {
-                    onVideoEnded?(id)
+                    let eventURL = (body["urlString"] as? String).flatMap(URL.init(string:)) ?? webView.url ?? url
+                    let videoID = YouTubeURLRouter.extractVideoID(from: eventURL)
+                    onVideoEnded?(id, videoID)
                 }
                 return
             }
@@ -1421,7 +1521,7 @@ extension BrowserTab: WKScriptMessageHandler {
             if !mainFrameMediaStatus.hasVideo {
                 let currentTime = body["currentTime"] as? Double ?? 0
                 let duration = body["duration"] as? Double ?? 0
-                timeline.update(currentTime: currentTime, duration: duration)
+                handleTimelineTelemetryUpdate(currentTime: currentTime, duration: duration)
             }
             let shouldSyncCleanBox = !isInFullscreen
                 && webView.fullscreenState == .notInFullscreen
@@ -1460,7 +1560,9 @@ extension BrowserTab: WKScriptMessageHandler {
                     onUnmutedByUser?(id)
                 }
             } else if event == "videoEnded" {
-                onVideoEnded?(id)
+                let eventURL = (body["urlString"] as? String).flatMap(URL.init(string:)) ?? webView.url ?? url
+                let videoID = YouTubeURLRouter.extractVideoID(from: eventURL)
+                onVideoEnded?(id, videoID)
             } else if event == "chaptersUpdated" {
                 let eventVideoID = body["videoId"] as? String ?? ""
                 if eventVideoID.isEmpty {
@@ -1546,7 +1648,7 @@ extension BrowserTab: WKScriptMessageHandler {
         if mainFrameMediaStatus.hasVideo {
             let currentTime = body["currentTime"] as? Double ?? 0
             let duration = body["duration"] as? Double ?? 0
-            timeline.update(currentTime: currentTime, duration: duration)
+            handleTimelineTelemetryUpdate(currentTime: currentTime, duration: duration)
         } else if subframeMediaStatus?.hasVideo != true {
             timeline.update(currentTime: 0, duration: 0)
         }

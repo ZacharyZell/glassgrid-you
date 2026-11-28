@@ -595,6 +595,11 @@ struct YouTubeMacApp: App {
             }
             .disabled(targetSnapshot == nil || ((targetSnapshot?.isMultiviewActive ?? false) && !(targetSnapshot?.canAddMultiviewTile ?? false)) || anyFullscreen)
 
+            Button("Master Play/Pause Multiview") {
+                coordinator.commandTarget?.masterTogglePlayPauseAllMultiviewTiles()
+            }
+            .disabled(!(targetSnapshot?.isMultiviewActive ?? false))
+
             Button("Sync All Multiview Streams") {
                 coordinator.commandTarget?.syncAllMultiviewTilesToLive()
             }
@@ -664,7 +669,7 @@ struct YouTubeMacApp: App {
 
                 Divider()
 
-                ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { rate in
+                ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0], id: \.self) { rate in
                     let isCurrent = activeMediaStatus.hasVideo && abs(activeMediaStatus.playbackRate - rate) < 0.02
                     Button {
                         coordinator.commandTarget?.setPlaybackRate(rate)
@@ -678,6 +683,53 @@ struct YouTubeMacApp: App {
                     .disabled(!activeMediaStatus.hasVideo)
                 }
             }
+
+            Menu("A-B Loop") {
+                Button("Set Loop Start (A)") {
+                    coordinator.commandTarget?.setABLoopStart()
+                }
+                .disabled(!activeMediaStatus.hasVideo)
+
+                Button("Set Loop End (B)") {
+                    coordinator.commandTarget?.setABLoopEnd()
+                }
+                .disabled(!activeMediaStatus.hasVideo)
+
+                Button("Toggle A-B Loop") {
+                    coordinator.commandTarget?.toggleABLoop()
+                }
+                .disabled(!(targetSnapshot?.activeABLoop.isComplete ?? false))
+
+                Button("Clear A-B Loop") {
+                    coordinator.commandTarget?.clearABLoop()
+                }
+                .disabled((targetSnapshot?.activeABLoop.startSeconds == nil) && (targetSnapshot?.activeABLoop.endSeconds == nil))
+            }
+
+            Button("Step Frame Forward") {
+                coordinator.commandTarget?.stepFrame(forward: true)
+            }
+            .disabled(!activeMediaStatus.hasVideo || !(targetSnapshot?.canApplyAspectFill ?? false))
+
+            Button("Step Frame Backward") {
+                coordinator.commandTarget?.stepFrame(forward: false)
+            }
+            .disabled(!activeMediaStatus.hasVideo || !(targetSnapshot?.canApplyAspectFill ?? false))
+
+            Button("Toggle 21:9 Aspect Fill") {
+                coordinator.commandTarget?.toggleAspectFill()
+            }
+            .disabled(!activeMediaStatus.hasVideo || !(targetSnapshot?.canApplyAspectFill ?? false))
+
+            Button("Jump to SponsorBlock Highlight") {
+                coordinator.commandTarget?.jumpToHighlight()
+            }
+            .disabled(targetSnapshot?.currentHighlightSegment == nil)
+
+            Button("Open Notes & Transcript") {
+                coordinator.commandTarget?.openCompanionDrawerNotes()
+            }
+            .disabled(targetSnapshot == nil || anyFullscreen)
 
             Menu("Sleep Timer") {
                 ForEach(SleepTimerOption.allCases) { option in
@@ -754,7 +806,14 @@ struct YouTubeMacApp: App {
             .keyboardShortcut("b", modifiers: [.command, .option])
             .disabled(targetSnapshot == nil || anyFullscreen)
 
-            Button((targetSnapshot?.isLivePulseDrawerVisible ?? false) ? "Hide Live Pulse Drawer" : "Show Live Pulse Drawer") {
+            let drawerLabel: String = {
+                let isOpen = targetSnapshot?.isLivePulseDrawerVisible ?? false
+                if coordinator.settings.livePulseEnabled {
+                    return isOpen ? "Hide Live Pulse Drawer" : "Show Live Pulse Drawer"
+                }
+                return isOpen ? "Hide Companion Drawer" : "Show Companion Drawer"
+            }()
+            Button(drawerLabel) {
                 coordinator.commandTarget?.toggleLivePulseDrawer()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
